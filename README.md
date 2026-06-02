@@ -1,133 +1,91 @@
-# Claw Code
+# VIBE Paper
 
 <p align="center">
-  <a href="https://github.com/ultraworkers/claw-code">ultraworkers/claw-code</a>
-  ·
-  <a href="./USAGE.md">Usage</a>
-  ·
-  <a href="./rust/README.md">Rust workspace</a>
-  ·
-  <a href="./PARITY.md">Parity</a>
-  ·
-  <a href="./ROADMAP.md">Roadmap</a>
-  ·
-  <a href="https://discord.gg/5TUQKqFWd">UltraWorkers Discord</a>
+  <strong>🦞 医学科研助手 — 读写一体，一条龙解决</strong>
 </p>
 
 <p align="center">
-  <a href="https://star-history.com/#ultraworkers/claw-code&Date">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=ultraworkers/claw-code&type=Date&theme=dark" />
-      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=ultraworkers/claw-code&type=Date" />
-      <img alt="Star history for ultraworkers/claw-code" src="https://api.star-history.com/svg?repos=ultraworkers/claw-code&type=Date" width="600" />
-    </picture>
-  </a>
+  <a href="https://github.com/Drehabwen/VIBE-paper">GitHub</a>
+  ·
+  <a href="#快速开始">快速开始</a>
+  ·
+  <a href="#功能">功能</a>
+  ·
+  <a href="#模型配置">模型配置</a>
 </p>
 
-<p align="center">
-  <img src="assets/claw-hero.jpeg" alt="Claw Code" width="300" />
-</p>
+---
 
-Claw Code is the public Rust implementation of the `claw` CLI agent harness.
-The canonical implementation lives in [`rust/`](./rust), and the current source of truth for this repository is **ultraworkers/claw-code**.
+VIBE Paper 是一个**原生桌面应用**，专为医学生设计。双击 exe 即可启动，无需终端、无需编程。
 
-> [!IMPORTANT]
-> Start with [`USAGE.md`](./USAGE.md) for build, auth, CLI, session, and parity-harness workflows. Make `claw doctor` your first health check after building, use [`rust/README.md`](./rust/README.md) for crate-level details, read [`PARITY.md`](./PARITY.md) for the current Rust-port checkpoint, and see [`docs/container.md`](./docs/container.md) for the container-first workflow.
->
-> **ACP / Zed status:** `claw-code` does not ship an ACP/Zed daemon entrypoint yet. Run `claw acp` (or `claw --acp`) for the current status instead of guessing from source layout; `claw acp serve` is currently a discoverability alias only, and real ACP support remains tracked separately in `ROADMAP.md`.
+**核心理念：** 把你留在应用里 —— 搜文献、读论文、写文章、格式化引用，一站式完成。
 
-## Current repository shape
+## 功能
 
-- **`rust/`** — canonical Rust workspace and the `claw` CLI binary
-- **`USAGE.md`** — task-oriented usage guide for the current product surface
-- **`PARITY.md`** — Rust-port parity status and migration notes
-- **`ROADMAP.md`** — active roadmap and cleanup backlog
-- **`PHILOSOPHY.md`** — project intent and system-design framing
-- **`src/` + `tests/`** — companion Python/reference workspace and audit helpers; not the primary runtime surface
+| 模块 | 说明 |
+|------|------|
+| 🤖 **多模型聊天** | 支持 Claude / GPT / 本地模型，流式对话，配置零门槛 |
+| 📚 **文献检索** | PubMed 搜索，一键加载摘要，MeSH 术语查询 |
+| 📝 **引用格式化** | 支持 APA、Vancouver、BibTeX、RIS、MLA 五种格式 |
+| 📄 **工作区** | 左栏查看论文、编辑文档、预览模板 |
+| 🎨 **暗色主题** | 护眼深色界面，中文字体原生支持 |
 
-## Quick start
+## 快速开始
 
-> [!NOTE]
-> [!WARNING]
-> **`cargo install claw-code` installs the wrong thing.** The `claw-code` crate on crates.io is a deprecated stub that places `claw-code-deprecated.exe` — not `claw`. Running it only prints `"claw-code has been renamed to agent-code"`. **Do not use `cargo install claw-code`.** Either build from source (this repo) or install the upstream binary:
-> ```bash
-> cargo install agent-code   # upstream binary — installs 'agent.exe' (Windows) / 'agent' (Unix), NOT 'agent-code'
-> ```
-> This repo (`ultraworkers/claw-code`) is **build-from-source only** — follow the steps below.
+### Windows 用户（推荐）
+
+1. 从 [Releases](../../releases) 下载 `vibe-paper.exe`
+2. 双击运行，窗口自动打开
+3. 选模型、开聊
+
+### 从源码构建
 
 ```bash
-# 1. Clone and build
-git clone https://github.com/ultraworkers/claw-code
-cd claw-code/rust
-cargo build --workspace
-
-# 2. Set your API key (Anthropic API key — not a Claude subscription)
-export ANTHROPIC_API_KEY="sk-ant-..."
-
-# 3. Verify everything is wired correctly
-./target/debug/claw doctor
-
-# 4. Run a prompt
-./target/debug/claw prompt "say hello"
+git clone https://github.com/Drehabwen/VIBE-paper
+cd VIBE-paper/rust
+cargo build --release -p claw-gui
+# exe 在 target/release/claw-gui.exe
 ```
 
-> [!NOTE]
-> **Windows (PowerShell):** the binary is `claw.exe`, not `claw`. Use `.\target\debug\claw.exe` or run `cargo run -- prompt "say hello"` to skip the path lookup.
+## 模型配置
 
-### Windows setup
+在 `%USERPROFILE%\.claw\models.toml` 中配置你的模型：
 
-**PowerShell is a supported Windows path.** Use whichever shell works for you. The common onboarding issues on Windows are:
+```toml
+[router]
+default = "sonnet"
 
-1. **Install Rust first** — download from <https://rustup.rs/> and run the installer. Close and reopen your terminal when it finishes.
-2. **Verify Rust is on PATH:**
-   ```powershell
-   cargo --version
-   ```
-   If this fails, reopen your terminal or run the PATH setup from the Rust installer output, then retry.
-3. **Clone and build** (works in PowerShell, Git Bash, or WSL):
-   ```powershell
-   git clone https://github.com/ultraworkers/claw-code
-   cd claw-code/rust
-   cargo build --workspace
-   ```
-4. **Run** (PowerShell — note `.exe` and backslash):
-   ```powershell
-   $env:ANTHROPIC_API_KEY = "sk-ant-..."
-   .\target\debug\claw.exe prompt "say hello"
-   ```
+[models.sonnet]
+provider = "anthropic"
+api_key = "sk-ant-xxx"
+model_id = "claude-sonnet-4-6"
 
-**Git Bash / WSL** are optional alternatives, not requirements. If you prefer bash-style paths (`/c/Users/you/...` instead of `C:\Users\you\...`), Git Bash (ships with Git for Windows) works well. In Git Bash, the `MINGW64` prompt is expected and normal — not a broken install.
-
-> [!NOTE]
-> **Auth:** claw requires an **API key** (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.) — Claude subscription login is not a supported auth path.
-
-Run the workspace test suite:
-
-```bash
-cd rust
-cargo test --workspace
+[models.gpt4o]
+provider = "openai"
+api_key = "sk-xxx"
+model_id = "gpt-4o"
 ```
 
-## Documentation map
+没有配置文件时，应用会自动检测环境变量中的 API key 并使用内置默认模型列表。
 
-- [`USAGE.md`](./USAGE.md) — quick commands, auth, sessions, config, parity harness
-- [`rust/README.md`](./rust/README.md) — crate map, CLI surface, features, workspace layout
-- [`PARITY.md`](./PARITY.md) — parity status for the Rust port
-- [`rust/MOCK_PARITY_HARNESS.md`](./rust/MOCK_PARITY_HARNESS.md) — deterministic mock-service harness details
-- [`ROADMAP.md`](./ROADMAP.md) — active roadmap and open cleanup work
-- [`PHILOSOPHY.md`](./PHILOSOPHY.md) — why the project exists and how it is operated
+## 架构
 
-## Ecosystem
+```
+model-router/     ── 模型配置抽象，TOML → ProviderClient
+medical-core/     ── PubMed/MeSH 客户端，引用格式化引擎
+claw-gui/         ── egui 桌面应用，2 栏布局，流式聊天
+api/              ── 多 Provider LLM 调用（Anthropic / OpenAI / 兼容）
+runtime/          ── 对话运行时 & 工具执行
+```
 
-Claw Code is built in the open alongside the broader UltraWorkers toolchain:
+新增 crate 不修改现有 api/runtime/tools 核心逻辑，完全向后兼容。
 
-- [clawhip](https://github.com/Yeachan-Heo/clawhip)
-- [oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent)
-- [oh-my-claudecode](https://github.com/Yeachan-Heo/oh-my-claudecode)
-- [oh-my-codex](https://github.com/Yeachan-Heo/oh-my-codex)
-- [UltraWorkers Discord](https://discord.gg/5TUQKqFWd)
+## 许可
 
-## Ownership / affiliation disclaimer
+MIT
 
-- This repository does **not** claim ownership of the original Claude Code source material.
-- This repository is **not affiliated with, endorsed by, or maintained by Anthropic**.
+---
+
+<p align="center">
+  Made for medical students who just want to get work done.
+</p>
