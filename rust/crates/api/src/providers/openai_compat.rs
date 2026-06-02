@@ -493,7 +493,14 @@ impl StreamState {
         }
 
         for choice in chunk.choices {
-            if let Some(content) = choice.delta.content.filter(|value| !value.is_empty()) {
+            // Reasoning models (DeepSeek V4, etc.) emit text in `reasoning_content`
+            // while `content` stays null. Fall back so those models produce visible output.
+            let text_content = choice
+                .delta
+                .content
+                .filter(|v| !v.is_empty())
+                .or_else(|| choice.delta.reasoning_content.filter(|v| !v.is_empty()));
+            if let Some(content) = text_content {
                 if !self.text_started {
                     self.text_started = true;
                     events.push(StreamEvent::ContentBlockStart(ContentBlockStartEvent {
@@ -735,6 +742,8 @@ struct ChunkChoice {
 struct ChunkDelta {
     #[serde(default)]
     content: Option<String>,
+    #[serde(default)]
+    reasoning_content: Option<String>,
     #[serde(default, deserialize_with = "deserialize_null_as_empty_vec")]
     tool_calls: Vec<DeltaToolCall>,
 }
@@ -791,6 +800,8 @@ pub fn is_reasoning_model(model: &str) -> bool {
         || canonical.starts_with("qwen-qwq")
         || canonical.starts_with("qwq")
         || canonical.contains("thinking")
+        // DeepSeek V4 reasoning models
+        || canonical.starts_with("deepseek-v4")
 }
 
 /// Strip routing prefix (e.g., "openai/gpt-4" → "gpt-4") for the wire.
@@ -2195,9 +2206,16 @@ mod tests {
 
     #[test]
     fn provider_specific_size_limits_are_correct() {
-        assert_eq!(OpenAiCompatConfig::dashscope().max_request_body_bytes, 6_291_456); // 6MB
-        assert_eq!(OpenAiCompatConfig::openai().max_request_body_bytes, 104_857_600); // 100MB
-        assert_eq!(OpenAiCompatConfig::xai().max_request_body_bytes, 52_428_800); // 50MB
+        assert_eq!(
+            OpenAiCompatConfig::dashscope().max_request_body_bytes,
+            6_291_456
+        ); // 6MB
+        assert_eq!(
+            OpenAiCompatConfig::openai().max_request_body_bytes,
+            104_857_600
+        ); // 100MB
+        assert_eq!(OpenAiCompatConfig::xai().max_request_body_bytes, 52_428_800);
+        // 50MB
     }
 
     #[test]
