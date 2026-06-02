@@ -1,5 +1,6 @@
 use crate::backend::{ChatBackend, StreamEvent};
 use eframe::egui;
+use medical_core::types::Paper;
 use tokio::sync::mpsc;
 
 #[derive(PartialEq)]
@@ -18,8 +19,8 @@ pub struct ClawMdApp {
     current_model: String,
     available_models: Vec<String>,
     error_text: Option<String>,
-    // Left panel state
-    left_content: String,
+    search_results: Vec<Paper>,
+    selected_paper: Option<Paper>,
 }
 
 #[derive(Clone)]
@@ -100,7 +101,8 @@ impl ClawMdApp {
             current_model: default_model,
             available_models,
             error_text: None,
-            left_content: String::new(),
+            search_results: Vec::new(),
+            selected_paper: None,
         }
     }
 
@@ -123,7 +125,8 @@ impl ClawMdApp {
         let (tx, rx) = mpsc::unbounded_channel();
         self.stream_rx = Some(rx);
 
-        let model_id = self.backend.resolve_model(&self.current_model);
+        let model_alias = self.current_model.clone();
+        let model_id = self.backend.resolve_model(&model_alias);
         let history: Vec<_> = self
             .messages
             .iter()
@@ -136,7 +139,9 @@ impl ClawMdApp {
             })
             .collect();
 
-        ChatBackend::spawn_chat(model_id, text, history, tx);
+        let medical = self.backend.medical.clone();
+        let router = self.backend.router.clone();
+        ChatBackend::spawn_chat(model_alias, model_id, text, history, tx, medical, router);
     }
 
     fn poll_stream(&mut self) {
@@ -155,6 +160,9 @@ impl ClawMdApp {
                         self.stream_rx = None;
                         self.mode = AppMode::Placeholder;
                         break;
+                    }
+                    Ok(StreamEvent::SearchResults(papers)) => {
+                        self.search_results = papers;
                     }
                     Ok(StreamEvent::Error(e)) => {
                         self.error_text = Some(e);
@@ -252,20 +260,85 @@ impl eframe::App for ClawMdApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.columns(2, |columns| {
                 // LEFT: Work area
-                columns[0].vertical_centered(|ui| {
-                    ui.add_space(20.0);
-                    ui.heading("📄 工作区");
-                    ui.add_space(10.0);
-                    if self.left_content.is_empty() {
-                        ui.label("在这里查看论文、编辑文档、预览模板");
+                columns[0].vertical(|ui| {
+                    ui.add_space(8.0);
+                    ui.heading("📄 文献区");
+                    ui.add_space(6.0);
+
+                    if self.search_results.is_empty() {
                         ui.add_space(20.0);
+                        ui.label("在聊天中提出医学问题");
+                        ui.label("AI 会自动检索 PubMed");
+                        ui.add_space(6.0);
                         ui.separator();
-                        ui.add_space(10.0);
-                        ui.label("📋 选中文字 → 右键解释");
-                        ui.label("📚 粘贴 PMID → 加载摘要");
-                        ui.label("📝 选择模板 → 开始写作");
+                        ui.add_space(6.0);
+                        ui.label("💡 试试问:");
+                        ui.label("\"帮我查阿尔茨海默病的最新综述\"");
+                        ui.label("\"二甲双胍的作用机制是什么\"");
                     } else {
-                        ui.label(&self.left_content);
+                        ui.label(format!(
+                            "找到 {} 篇文献",
+                            self.search_results.len()
+                        ));
+                        ui.add_space(4.0);
+                        ui.separator();
+
+                        egui::ScrollArea::vertical()
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                for paper in &self.search_results {
+                                    let selected = self
+                                        .selected_paper
+                                        .as_ref()
+                                        .is_some_and(|s| s.pmid == paper.pmid);
+
+                                    let text = format!(
+                                        "{}",
+                                        paper.title
+                                    );
+                                    let rich = if selected {
+                                        egui::RichText::new(text).color(egui::Color32::from_rgb(144, 238, 144))
+                                    } else {
+                                        egui::RichText::new(text)
+                                    };
+
+                                    if ui.selectable_label(selected, rich).clicked() {
+                                        self.selected_paper = Some(paper.clone());
+                                    }
+
+                                    // Show metadata below title
+                                    let meta = format!(
+                                        "{}  |  {} ({})",
+                                        paper.authors.first().map(|a| a.to_string()).unwrap_or_else(|| "?".into()),
+                                        paper.journal.as_deref().unwrap_or("?"),
+                                        paper.year.as_deref().unwrap_or("?")
+                                    );
+                                    ui.label(
+                                        egui::RichText::new(meta)
+                                            .size(11.0)
+                                            .color(egui::Color32::GRAY),
+                                    );
+                                    ui.label(format!("PMID: {}", paper.pmid));
+                                    ui.add_space(4.0);
+                                }
+                            });
+
+                        // Show selected paper abstract
+                        if let Some(ref paper) = self.selected_paper {
+                            ui.add_space(8.0);
+                            ui.separator();
+                            ui.add_space(4.0);
+                            ui.colored_label(
+                                egui::Color32::from_rgb(144, 238, 144),
+                                "📋 摘要",
+                            );
+                            ui.add_space(4.0);
+                            if let Some(ref abs) = paper.abstract_text {
+                                ui.label(abs);
+                            } else {
+                                ui.label("(无摘要)");
+                            }
+                        }
                     }
                 });
 
