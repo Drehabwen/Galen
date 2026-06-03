@@ -16,6 +16,42 @@ cargo build --workspace
 
 `/doctor` is the built-in setup and preflight diagnostic. Once you have a saved session, you can rerun it with `./target/debug/claw --resume latest /doctor`.
 
+## Windows launcher and logs
+
+On Windows, a shortcut that points directly at `claw.exe` can close immediately after the process exits, hiding setup errors. Use the bundled PowerShell launcher for desktop use:
+
+```powershell
+.\scripts\windows\Install-ClawCodeShortcut.ps1 -NoExit
+```
+
+The shortcut runs `scripts\windows\Start-ClawCode.ps1`, prefers `rust\target\release\claw.exe` when present, falls back to `rust\target\debug\claw.exe`, and writes logs under:
+
+```text
+%LOCALAPPDATA%\ClawCode\logs
+```
+
+To check the launcher inputs without starting a model session:
+
+```powershell
+.\rust\target\debug\claw.exe launch-check
+.\rust\target\debug\claw.exe --output-format json launch-check
+```
+
+To build and install a release binary under `%LOCALAPPDATA%\ClawCode\bin`:
+
+```powershell
+.\scripts\windows\Install-ClawCode.ps1 -AddToPath -NoExit
+```
+
+Use the log commands when a shortcut or launcher exits unexpectedly:
+
+```powershell
+claw logs
+claw logs --last
+claw logs --dir
+claw logs --open
+```
+
 ## Prerequisites
 
 - Rust toolchain with `cargo`
@@ -299,6 +335,8 @@ let client = build_http_client_with(&config).expect("proxy client");
 cd rust
 ./target/debug/claw status
 ./target/debug/claw sandbox
+./target/debug/claw launch-check
+./target/debug/claw logs
 ./target/debug/claw agents
 ./target/debug/claw mcp
 ./target/debug/claw skills

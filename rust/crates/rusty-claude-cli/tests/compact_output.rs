@@ -140,9 +140,18 @@ fn run_claw(
         .env("ANTHROPIC_BASE_URL", base_url)
         .env("CLAW_CONFIG_HOME", config_home)
         .env("HOME", home)
-        .env("NO_COLOR", "1")
-        .env("PATH", "/usr/bin:/bin")
-        .args(args);
+        .env("NO_COLOR", "1");
+    if cfg!(windows) {
+        for key in ["PATH", "SystemRoot", "WINDIR", "ComSpec", "PATHEXT"] {
+            if let Some(value) = std::env::var_os(key) {
+                command.env(key, value);
+            }
+        }
+        command.env("USERPROFILE", home);
+    } else {
+        command.env("PATH", "/usr/bin:/bin");
+    }
+    command.args(args);
     command.output().expect("claw should launch")
 }
 

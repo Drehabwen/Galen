@@ -1,4 +1,5 @@
 use std::ffi::OsStr;
+#[cfg(not(windows))]
 use std::path::Path;
 use std::process::Command;
 
@@ -392,6 +393,30 @@ mod tests {
         let _ = path;
     }
 
+    fn hook_script_name(stem: &str) -> String {
+        if cfg!(windows) {
+            format!("{stem}.cmd")
+        } else {
+            format!("{stem}.sh")
+        }
+    }
+
+    fn hook_script_contents(message: &str) -> String {
+        if cfg!(windows) {
+            format!("@echo off\r\necho {message}\r\n")
+        } else {
+            format!("#!/bin/sh\nprintf '%s\\n' '{message}'\n")
+        }
+    }
+
+    fn hook_command(message: &str, exit_code: i32) -> String {
+        if cfg!(windows) {
+            format!("echo {message} & exit /b {exit_code}")
+        } else {
+            format!("printf '{message}'; exit {exit_code}")
+        }
+    }
+
     fn write_hook_plugin(
         root: &Path,
         name: &str,
@@ -402,33 +427,25 @@ mod tests {
         fs::create_dir_all(root.join(".claude-plugin")).expect("manifest dir");
         fs::create_dir_all(root.join("hooks")).expect("hooks dir");
 
-        let pre_path = root.join("hooks").join("pre.sh");
-        fs::write(
-            &pre_path,
-            format!("#!/bin/sh\nprintf '%s\\n' '{pre_message}'\n"),
-        )
-        .expect("write pre hook");
+        let pre_script = hook_script_name("pre");
+        let pre_path = root.join("hooks").join(&pre_script);
+        fs::write(&pre_path, hook_script_contents(pre_message)).expect("write pre hook");
         make_executable(&pre_path);
 
-        let post_path = root.join("hooks").join("post.sh");
-        fs::write(
-            &post_path,
-            format!("#!/bin/sh\nprintf '%s\\n' '{post_message}'\n"),
-        )
-        .expect("write post hook");
+        let post_script = hook_script_name("post");
+        let post_path = root.join("hooks").join(&post_script);
+        fs::write(&post_path, hook_script_contents(post_message)).expect("write post hook");
         make_executable(&post_path);
 
-        let failure_path = root.join("hooks").join("failure.sh");
-        fs::write(
-            &failure_path,
-            format!("#!/bin/sh\nprintf '%s\\n' '{failure_message}'\n"),
-        )
-        .expect("write failure hook");
+        let failure_script = hook_script_name("failure");
+        let failure_path = root.join("hooks").join(&failure_script);
+        fs::write(&failure_path, hook_script_contents(failure_message))
+            .expect("write failure hook");
         make_executable(&failure_path);
         fs::write(
             root.join(".claude-plugin").join("plugin.json"),
             format!(
-                "{{\n  \"name\": \"{name}\",\n  \"version\": \"1.0.0\",\n  \"description\": \"hook plugin\",\n  \"hooks\": {{\n    \"PreToolUse\": [\"./hooks/pre.sh\"],\n    \"PostToolUse\": [\"./hooks/post.sh\"],\n    \"PostToolUseFailure\": [\"./hooks/failure.sh\"]\n  }}\n}}"
+                "{{\n  \"name\": \"{name}\",\n  \"version\": \"1.0.0\",\n  \"description\": \"hook plugin\",\n  \"hooks\": {{\n    \"PreToolUse\": [\"./hooks/{pre_script}\"],\n    \"PostToolUse\": [\"./hooks/{post_script}\"],\n    \"PostToolUseFailure\": [\"./hooks/{failure_script}\"]\n  }}\n}}"
             ),
         )
         .expect("write plugin manifest");
@@ -499,7 +516,7 @@ mod tests {
     fn pre_tool_use_denies_when_plugin_hook_exits_two() {
         // given
         let runner = HookRunner::new(crate::PluginHooks {
-            pre_tool_use: vec!["printf 'blocked by plugin'; exit 2".to_string()],
+            pre_tool_use: vec![hook_command("blocked by plugin", 2)],
             post_tool_use: Vec::new(),
             post_tool_use_failure: Vec::new(),
         });
@@ -517,8 +534,8 @@ mod tests {
         // given
         let runner = HookRunner::new(crate::PluginHooks {
             pre_tool_use: vec![
-                "printf 'broken plugin hook'; exit 1".to_string(),
-                "printf 'later plugin hook'".to_string(),
+                hook_command("broken plugin hook", 1),
+                hook_command("later plugin hook", 0),
             ],
             post_tool_use: Vec::new(),
             post_tool_use_failure: Vec::new(),

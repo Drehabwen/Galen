@@ -24,6 +24,15 @@ const MEDICAL_SYSTEM_PROMPT: &str = "\
 你是 VIBE Paper，一个医学科研助手。你的任务是通过对话帮助医学研究人员完成文献检索、\
 论文理解和学术写作。\n\
 \n\
+## 工作流程\n\
+收到用户请求后，按以下步骤操作：\n\
+1. 先分析用户意图，判断是文献检索、论文精读、还是学术写作。\n\
+2. 如果是复杂任务，在心里列出需要完成的子任务。\n\
+3. 逐项执行：每轮尽量只调用 1-2 个工具，等结果回来再决定下一步。\n\
+4. 执行完所有子任务后，整理结果，给出完整回答。\n\
+5. 如果工具返回空结果，请更换关键词或放宽条件再试一次，不要放弃。\n\
+6. 如果同一工具反复返回空结果，尝试完全不同的检索策略。\n\
+\n\
 ## 工具使用规则\n\
 1. 当用户提到任何医学术语、疾病、药物、基因时，立刻调用 search_pubmed 检索相关文献。\
 2. 当用户询问某个术语的含义时，调用 lookup_mesh 查询 MeSH 词表。\
@@ -242,12 +251,19 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
 
     // Multi-turn loop: keep going until model responds with text (no tool calls)
     let mut turn = 0;
-    let max_turns = 5;
+    let max_turns = 10;
+    let mut last_tool_name: Option<String> = None;
+    let mut same_tool_streak: u32 = 0;
+    let mut final_chance_used = false;
     loop {
         turn += 1;
         if turn > max_turns {
-            on_event(ChatEvent::Error("Reached max tool-call turns".into()));
-            break;
+            if final_chance_used {
+                on_event(ChatEvent::Error("Reached max tool-call turns".into()));
+                break;
+            }
+            // Smart termination: give one more turn with a hint to summarize
+            final_chance_used = true;
         }
 
         let tools = registry.definitions();
@@ -382,6 +398,16 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
         // Execute tools and build result message
         let mut tool_results: Vec<InputContentBlock> = Vec::new();
         for tool in &tool_calls {
+            // --- stagnation detection ---
+            if let Some(ref last_name) = last_tool_name {
+                if *last_name == tool.name {
+                    same_tool_streak += 1;
+                } else {
+                    same_tool_streak = 0;
+                }
+            }
+            last_tool_name = Some(tool.name.clone());
+
             let input: serde_json::Value =
                 serde_json::from_str(&tool.input_json).unwrap_or(serde_json::Value::Null);
             let result = registry.execute(&tool.name, input, &ctx).await;
@@ -392,6 +418,36 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
                 tool_use_id: tool.id.clone(),
                 content: vec![ToolResultContentBlock::Text { text }],
                 is_error,
+            });
+        }
+
+        // --- result validation hints ---
+        // Check for consecutive empty results
+        if same_tool_streak >= 3 {
+            let hint_name = last_tool_name.as_deref().unwrap_or("unknown");
+            tool_results.push(InputContentBlock::ToolResult {
+                tool_use_id: "__hint_stagnation__".to_string(),
+                content: vec![ToolResultContentBlock::Text {
+                    text: format!(
+                        "[系统提示] 工具 `{hint_name}` 已连续调用 {same_tool_streak} 次。\
+                         请尝试不同的方法或工具来完成任务，例如更换搜索关键词、调整查询策略、\
+                         或使用其他工具获取信息。"
+                    ),
+                }],
+                is_error: false,
+            });
+            same_tool_streak = 0;
+        }
+
+        // --- smart termination hint ---
+        if final_chance_used {
+            tool_results.push(InputContentBlock::ToolResult {
+                tool_use_id: "__hint_final__".to_string(),
+                content: vec![ToolResultContentBlock::Text {
+                    text: "[系统提示] 已达到最大轮次限制。请基于已获取的所有信息，\
+                         给出当前最好的完整回答，不要再调用更多工具。".to_string(),
+                }],
+                is_error: false,
             });
         }
 

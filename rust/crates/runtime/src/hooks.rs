@@ -737,7 +737,7 @@ fn format_hook_failure(command: &str, code: i32, stdout: Option<&str>, stderr: &
 
 fn shell_command(command: &str) -> CommandWithStdin {
     #[cfg(windows)]
-    let mut command_builder = {
+    let command_builder = {
         let mut command_builder = Command::new("cmd");
         command_builder.arg("/C").arg(command);
         CommandWithStdin::new(command_builder)
@@ -818,6 +818,7 @@ enum CommandExecution {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::thread;
     use std::time::Duration;
 
@@ -890,9 +891,7 @@ mod tests {
     #[test]
     fn parses_pre_hook_permission_override_and_updated_input() {
         let runner = HookRunner::new(RuntimeHookConfig::new(
-            vec![shell_snippet(
-                r#"printf '%s' '{"systemMessage":"updated","hookSpecificOutput":{"permissionDecision":"allow","permissionDecisionReason":"hook ok","updatedInput":{"command":"git status"}}}'"#,
-            )],
+            vec![permission_override_command()],
             Vec::new(),
             Vec::new(),
         ));
@@ -957,11 +956,10 @@ mod tests {
     #[test]
     fn executes_hooks_in_configured_order() {
         // given
+        let first_command = shell_snippet("printf 'first'");
+        let second_command = shell_snippet("printf 'second'");
         let runner = HookRunner::new(RuntimeHookConfig::new(
-            vec![
-                shell_snippet("printf 'first'"),
-                shell_snippet("printf 'second'"),
-            ],
+            vec![first_command.clone(), second_command.clone()],
             Vec::new(),
             Vec::new(),
         ));
@@ -987,7 +985,7 @@ mod tests {
                 event: HookEvent::PreToolUse,
                 command,
                 ..
-            } if command == "printf 'first'"
+            } if command == &first_command
         ));
         assert!(matches!(
             &reporter.events[1],
@@ -995,7 +993,7 @@ mod tests {
                 event: HookEvent::PreToolUse,
                 command,
                 ..
-            } if command == "printf 'first'"
+            } if command == &first_command
         ));
         assert!(matches!(
             &reporter.events[2],
@@ -1003,7 +1001,7 @@ mod tests {
                 event: HookEvent::PreToolUse,
                 command,
                 ..
-            } if command == "printf 'second'"
+            } if command == &second_command
         ));
         assert!(matches!(
             &reporter.events[3],
@@ -1011,7 +1009,7 @@ mod tests {
                 event: HookEvent::PreToolUse,
                 command,
                 ..
-            } if command == "printf 'second'"
+            } if command == &second_command
         ));
     }
 
@@ -1041,10 +1039,10 @@ mod tests {
 
     #[test]
     fn malformed_nonempty_hook_output_reports_explicit_diagnostic_with_previews() {
+        let command =
+            shell_snippet("printf '{not-json\nsecond line'; printf 'stderr warning' >&2; exit 1");
         let runner = HookRunner::new(RuntimeHookConfig::new(
-            vec![shell_snippet(
-                "printf '{not-json\nsecond line'; printf 'stderr warning' >&2; exit 1",
-            )],
+            vec![command.clone()],
             Vec::new(),
             Vec::new(),
         ));
@@ -1056,8 +1054,7 @@ mod tests {
         assert!(rendered.contains("hook_invalid_json:"));
         assert!(rendered.contains("phase=PreToolUse"));
         assert!(rendered.contains("tool=Edit"));
-        assert!(rendered.contains("command=printf '{not-json"));
-        assert!(rendered.contains("printf 'stderr warning' >&2; exit 1"));
+        assert!(rendered.contains(&format!("command={command}")));
         assert!(rendered.contains("detail=key must be a string"));
         assert!(rendered.contains("stdout_preview={not-json"));
         assert!(rendered.contains("second line stderr_preview=stderr warning"));
@@ -1106,11 +1103,51 @@ mod tests {
 
     #[cfg(windows)]
     fn shell_snippet(script: &str) -> String {
-        script.replace('\'', "\"")
+        match script {
+            "printf 'pre ok'" => "echo pre ok".to_string(),
+            "printf 'blocked by hook'; exit 2" => "echo blocked by hook & exit /b 2".to_string(),
+            "printf 'warning hook'; exit 1" => "echo warning hook & exit /b 1".to_string(),
+            "printf 'failure hook ran'" => "echo failure hook ran".to_string(),
+            "printf 'broken failure hook'; exit 1" => {
+                "echo broken failure hook & exit /b 1".to_string()
+            }
+            "printf 'later failure hook'" => "echo later failure hook".to_string(),
+            "printf 'first'" => "echo first".to_string(),
+            "printf 'second'" => "echo second".to_string(),
+            "printf 'broken'; exit 1" => "echo broken & exit /b 1".to_string(),
+            "printf 'later'" => "echo later".to_string(),
+            "printf '{not-json\nsecond line'; printf 'stderr warning' >&2; exit 1" => {
+                "echo {not-json & echo second line & echo stderr warning 1>&2 & exit /b 1"
+                    .to_string()
+            }
+            "sleep 5" => "ping 127.0.0.1 -n 6 > nul".to_string(),
+            _ => script.replace('\'', "\""),
+        }
     }
 
     #[cfg(not(windows))]
     fn shell_snippet(script: &str) -> String {
         script.to_string()
+    }
+
+    #[cfg(windows)]
+    fn permission_override_command() -> String {
+        let script_path = std::env::temp_dir().join(format!(
+            "runtime-permission-hook-{}.cmd",
+            std::process::id()
+        ));
+        fs::write(
+            &script_path,
+            "@echo off\r\necho {\"systemMessage\":\"updated\",\"hookSpecificOutput\":{\"permissionDecision\":\"allow\",\"permissionDecisionReason\":\"hook ok\",\"updatedInput\":{\"command\":\"git status\"}}}\r\n",
+        )
+        .expect("write permission hook");
+        script_path.display().to_string()
+    }
+
+    #[cfg(not(windows))]
+    fn permission_override_command() -> String {
+        shell_snippet(
+            r#"printf '%s' '{"systemMessage":"updated","hookSpecificOutput":{"permissionDecision":"allow","permissionDecisionReason":"hook ok","updatedInput":{"command":"git status"}}}'"#,
+        )
     }
 }

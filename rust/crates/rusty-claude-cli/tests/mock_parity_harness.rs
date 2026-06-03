@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::Write;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -316,15 +317,24 @@ fn run_case(case: ScenarioCase, workspace: &HarnessWorkspace, base_url: &str) ->
         .env("ANTHROPIC_BASE_URL", base_url)
         .env("CLAW_CONFIG_HOME", &workspace.config_home)
         .env("HOME", &workspace.home)
-        .env("NO_COLOR", "1")
-        .env("PATH", "/usr/bin:/bin")
-        .args([
-            "--model",
-            "sonnet",
-            "--permission-mode",
-            case.permission_mode,
-            "--output-format=json",
-        ]);
+        .env("NO_COLOR", "1");
+    if cfg!(windows) {
+        for key in ["PATH", "SystemRoot", "WINDIR", "ComSpec", "PATHEXT"] {
+            if let Some(value) = std::env::var_os(key) {
+                command.env(key, value);
+            }
+        }
+        command.env("USERPROFILE", &workspace.home);
+    } else {
+        command.env("PATH", "/usr/bin:/bin");
+    }
+    command.args([
+        "--model",
+        "sonnet",
+        "--permission-mode",
+        case.permission_mode,
+        "--output-format=json",
+    ]);
 
     if let Some(allowed_tools) = case.allowed_tools {
         command.args(["--allowedTools", allowed_tools]);
@@ -352,6 +362,7 @@ fn run_case(case: ScenarioCase, workspace: &HarnessWorkspace, base_url: &str) ->
             .expect("stdin should be piped")
             .write_all(stdin.as_bytes())
             .expect("stdin should write");
+        drop(child.stdin.take());
         child.wait_with_output().expect("claw should finish")
     } else {
         command.output().expect("claw should launch")
@@ -420,21 +431,28 @@ fn prepare_plugin_fixture(workspace: &HarnessWorkspace) {
     fs::create_dir_all(&tool_dir).expect("plugin tools dir");
     fs::create_dir_all(&manifest_dir).expect("plugin manifest dir");
 
-    let script_path = tool_dir.join("echo-json.sh");
-    fs::write(
-        &script_path,
-        "#!/bin/sh\nINPUT=$(cat)\nprintf '{\"plugin\":\"%s\",\"tool\":\"%s\",\"input\":%s}\\n' \"$CLAWD_PLUGIN_ID\" \"$CLAWD_TOOL_NAME\" \"$INPUT\"\n",
-    )
-    .expect("plugin script should write");
-    let mut permissions = fs::metadata(&script_path)
-        .expect("plugin script metadata")
-        .permissions();
-    permissions.set_mode(0o755);
-    fs::set_permissions(&script_path, permissions).expect("plugin script should be executable");
+    let script_name = if cfg!(windows) {
+        "echo-json.cmd"
+    } else {
+        "echo-json.sh"
+    };
+    let script_path = tool_dir.join(script_name);
+    let script_contents = if cfg!(windows) {
+        "@echo off\r\npowershell -NoProfile -Command \"$inputText = [Console]::In.ReadToEnd(); $obj = [ordered]@{plugin=$env:CLAWD_PLUGIN_ID; tool=$env:CLAWD_TOOL_NAME; input=($inputText | ConvertFrom-Json)}; $obj | ConvertTo-Json -Compress -Depth 10\"\r\n"
+    } else {
+        "#!/bin/sh\nINPUT=$(cat)\nprintf '{\"plugin\":\"%s\",\"tool\":\"%s\",\"input\":%s}\\n' \"$CLAWD_PLUGIN_ID\" \"$CLAWD_TOOL_NAME\" \"$INPUT\"\n"
+    };
+    fs::write(&script_path, script_contents).expect("plugin script should write");
+    #[cfg(unix)]
+    {
+        let mut permissions = fs::metadata(&script_path)
+            .expect("plugin script metadata")
+            .permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&script_path, permissions).expect("plugin script should be executable");
+    }
 
-    fs::write(
-        manifest_dir.join("plugin.json"),
-        r#"{
+    let manifest = r#"{
   "name": "parity-plugin",
   "version": "1.0.0",
   "description": "mock parity plugin",
@@ -450,13 +468,13 @@ fn prepare_plugin_fixture(workspace: &HarnessWorkspace) {
         "required": ["message"],
         "additionalProperties": false
       },
-      "command": "./tools/echo-json.sh",
+      "command": "./tools/echo-json.cmd",
       "requiredPermission": "workspace-write"
     }
   ]
-}"#,
-    )
-    .expect("plugin manifest should write");
+}"#
+    .replace("./tools/echo-json.cmd", &format!("./tools/{script_name}"));
+    fs::write(manifest_dir.join("plugin.json"), manifest).expect("plugin manifest should write");
 
     fs::write(
         workspace.config_home.join("settings.json"),

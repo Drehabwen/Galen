@@ -250,6 +250,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             cli.run_turn_with_output(&effective_prompt, output_format, compact)?;
         }
         CliAction::Doctor { output_format } => run_doctor(output_format)?,
+        CliAction::LaunchCheck { output_format } => run_launch_check(output_format)?,
+        CliAction::Logs {
+            action,
+            output_format,
+        } => run_logs(action, output_format)?,
         CliAction::Acp { output_format } => print_acp_status(output_format)?,
         CliAction::State { output_format } => run_worker_state(output_format)?,
         CliAction::Init { output_format } => run_init(output_format)?,
@@ -340,6 +345,13 @@ enum CliAction {
     Doctor {
         output_format: CliOutputFormat,
     },
+    LaunchCheck {
+        output_format: CliOutputFormat,
+    },
+    Logs {
+        action: LogsAction,
+        output_format: CliOutputFormat,
+    },
     Acp {
         output_format: CliOutputFormat,
     },
@@ -374,7 +386,16 @@ enum LocalHelpTopic {
     Status,
     Sandbox,
     Doctor,
+    Logs,
     Acp,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LogsAction {
+    List,
+    Last,
+    Dir,
+    Open,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -673,6 +694,8 @@ fn parse_args(args: &[String]) -> Result<CliAction, String> {
         }
         "system-prompt" => parse_system_prompt_args(&rest[1..], output_format),
         "acp" => parse_acp_args(&rest[1..], output_format),
+        "launch-check" => Ok(CliAction::LaunchCheck { output_format }),
+        "logs" => parse_logs_args(&rest[1..], output_format),
         "login" | "logout" => Err(removed_auth_surface_error(rest[0].as_str())),
         "init" => Ok(CliAction::Init { output_format }),
         "export" => parse_export_args(&rest[1..], output_format),
@@ -727,6 +750,8 @@ fn parse_local_help_action(rest: &[String]) -> Option<Result<CliAction, String>>
         "status" => LocalHelpTopic::Status,
         "sandbox" => LocalHelpTopic::Sandbox,
         "doctor" => LocalHelpTopic::Doctor,
+        "launch-check" => LocalHelpTopic::Doctor,
+        "logs" => LocalHelpTopic::Logs,
         "acp" => LocalHelpTopic::Acp,
         _ => return None,
     };
@@ -757,6 +782,11 @@ fn parse_single_word_command_alias(
         })),
         "sandbox" => Some(Ok(CliAction::Sandbox { output_format })),
         "doctor" => Some(Ok(CliAction::Doctor { output_format })),
+        "launch-check" => Some(Ok(CliAction::LaunchCheck { output_format })),
+        "logs" => Some(Ok(CliAction::Logs {
+            action: LogsAction::List,
+            output_format,
+        })),
         "state" => Some(Ok(CliAction::State { output_format })),
         other => bare_slash_command_guidance(other).map(Err),
     }
@@ -806,6 +836,26 @@ fn parse_acp_args(args: &[String], output_format: CliOutputFormat) -> Result<Cli
             "unsupported ACP invocation. Use `claw acp`, `claw acp serve`, `claw --acp`, or `claw -acp`.",
         )),
     }
+}
+
+fn parse_logs_args(args: &[String], output_format: CliOutputFormat) -> Result<CliAction, String> {
+    let action = match args {
+        [] => LogsAction::List,
+        [flag] if flag == "--last" || flag == "last" => LogsAction::Last,
+        [flag] if flag == "--dir" || flag == "dir" => LogsAction::Dir,
+        [flag] if flag == "--open" || flag == "open" => LogsAction::Open,
+        [flag] if is_help_flag(flag) => return Ok(CliAction::HelpTopic(LocalHelpTopic::Logs)),
+        _ => {
+            return Err(
+                "unsupported logs invocation. Use `claw logs`, `claw logs --last`, `claw logs --dir`, or `claw logs --open`."
+                    .to_string(),
+            )
+        }
+    };
+    Ok(CliAction::Logs {
+        action,
+        output_format,
+    })
 }
 
 fn try_resolve_bare_skill_prompt(cwd: &Path, trimmed: &str) -> Option<String> {
@@ -1522,6 +1572,238 @@ fn run_doctor(output_format: CliOutputFormat) -> Result<(), Box<dyn std::error::
     }
     if report.has_failures() {
         return Err("doctor found failing checks".into());
+    }
+    Ok(())
+}
+
+fn run_launch_check(output_format: CliOutputFormat) -> Result<(), Box<dyn std::error::Error>> {
+    let cwd = env::current_dir()?;
+    let exe = env::current_exe().ok();
+    let local_app_data = env::var("LOCALAPPDATA").ok();
+    let log_dir = local_app_data
+        .as_ref()
+        .map(|path| PathBuf::from(path).join("ClawCode").join("logs"));
+    let launcher = cwd
+        .join("scripts")
+        .join("windows")
+        .join("Start-ClawCode.ps1");
+    let shortcut_installer = cwd
+        .join("scripts")
+        .join("windows")
+        .join("Install-ClawCodeShortcut.ps1");
+    let auth_vars = [
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+        "OPENAI_API_KEY",
+        "XAI_API_KEY",
+        "DASHSCOPE_API_KEY",
+    ];
+    let configured_auth: Vec<&str> = auth_vars
+        .iter()
+        .copied()
+        .filter(|name| env::var(name).is_ok_and(|value| !value.trim().is_empty()))
+        .collect();
+    let warnings: Vec<String> = [
+        (!cfg!(windows))
+            .then(|| "Windows launcher scripts are only useful on Windows.".to_string()),
+        exe.as_ref()
+            .is_some_and(|path| path.to_string_lossy().contains("\\target\\debug\\"))
+            .then(|| {
+                "Running from target\\debug; build --release for a durable local binary."
+                    .to_string()
+            }),
+        (!launcher.exists()).then(|| format!("launcher script not found: {}", launcher.display())),
+        (!shortcut_installer.exists()).then(|| {
+            format!(
+                "shortcut installer script not found: {}",
+                shortcut_installer.display()
+            )
+        }),
+        configured_auth
+            .is_empty()
+            .then(|| "No supported provider auth environment variable is configured.".to_string()),
+        log_dir
+            .as_ref()
+            .is_none()
+            .then(|| "LOCALAPPDATA is not set; launcher log path cannot be resolved.".to_string()),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+
+    match output_format {
+        CliOutputFormat::Json => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&json!({
+                    "type": "launch_check",
+                    "ok": warnings.is_empty(),
+                    "cwd": cwd.display().to_string(),
+                    "executable": exe.as_ref().map(|path| path.display().to_string()),
+                    "launcher": launcher.display().to_string(),
+                    "shortcut_installer": shortcut_installer.display().to_string(),
+                    "log_dir": log_dir.as_ref().map(|path| path.display().to_string()),
+                    "configured_auth": configured_auth,
+                    "warnings": warnings,
+                }))?
+            );
+        }
+        CliOutputFormat::Text => {
+            println!("Launch check");
+            println!();
+            println!(
+                "Executable        {}",
+                display_optional_path(exe.as_deref())
+            );
+            println!("Working directory {}", cwd.display());
+            println!("Launcher          {}", launcher.display());
+            println!("Shortcut script   {}", shortcut_installer.display());
+            println!(
+                "Log directory     {}",
+                display_optional_path(log_dir.as_deref())
+            );
+            println!(
+                "Auth env          {}",
+                if configured_auth.is_empty() {
+                    "<none>".to_string()
+                } else {
+                    configured_auth.join(", ")
+                }
+            );
+            println!();
+            if warnings.is_empty() {
+                println!("Status            ok");
+            } else {
+                println!("Status            warn");
+                for warning in warnings {
+                    println!(" - {warning}");
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn display_optional_path(path: Option<&Path>) -> String {
+    path.map_or_else(
+        || "<unavailable>".to_string(),
+        |path| path.display().to_string(),
+    )
+}
+
+fn claw_log_dir() -> Option<PathBuf> {
+    env::var("LOCALAPPDATA")
+        .ok()
+        .map(|path| PathBuf::from(path).join("ClawCode").join("logs"))
+}
+
+fn collect_claw_logs(log_dir: &Path) -> io::Result<Vec<PathBuf>> {
+    if !log_dir.exists() {
+        return Ok(Vec::new());
+    }
+    let mut logs = fs::read_dir(log_dir)?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "log"))
+        .collect::<Vec<_>>();
+    logs.sort_by_key(|path| {
+        fs::metadata(path)
+            .and_then(|metadata| metadata.modified())
+            .ok()
+    });
+    logs.reverse();
+    Ok(logs)
+}
+
+fn tail_lines(contents: &str, count: usize) -> String {
+    let lines = contents.lines().collect::<Vec<_>>();
+    let start = lines.len().saturating_sub(count);
+    lines[start..].join("\n")
+}
+
+fn run_logs(
+    action: LogsAction,
+    output_format: CliOutputFormat,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let log_dir = claw_log_dir().ok_or("LOCALAPPDATA is not set; cannot resolve ClawCode logs")?;
+    fs::create_dir_all(&log_dir)?;
+    let logs = collect_claw_logs(&log_dir)?;
+
+    match action {
+        LogsAction::Dir => match output_format {
+            CliOutputFormat::Text => println!("{}", log_dir.display()),
+            CliOutputFormat::Json => println!(
+                "{}",
+                serde_json::to_string_pretty(&json!({
+                    "type": "logs",
+                    "action": "dir",
+                    "log_dir": log_dir.display().to_string(),
+                }))?
+            ),
+        },
+        LogsAction::Open => {
+            if cfg!(windows) {
+                Command::new("explorer").arg(&log_dir).spawn()?;
+            } else {
+                return Err("claw logs --open is currently supported on Windows only".into());
+            }
+            match output_format {
+                CliOutputFormat::Text => println!("Opened {}", log_dir.display()),
+                CliOutputFormat::Json => println!(
+                    "{}",
+                    serde_json::to_string_pretty(&json!({
+                        "type": "logs",
+                        "action": "open",
+                        "log_dir": log_dir.display().to_string(),
+                    }))?
+                ),
+            }
+        }
+        LogsAction::List => match output_format {
+            CliOutputFormat::Text => {
+                println!("Log directory     {}", log_dir.display());
+                if logs.is_empty() {
+                    println!("No log files found.");
+                } else {
+                    for path in logs.iter().take(10) {
+                        println!("{}", path.display());
+                    }
+                }
+            }
+            CliOutputFormat::Json => println!(
+                "{}",
+                serde_json::to_string_pretty(&json!({
+                    "type": "logs",
+                    "action": "list",
+                    "log_dir": log_dir.display().to_string(),
+                    "logs": logs.iter().take(10).map(|path| path.display().to_string()).collect::<Vec<_>>(),
+                }))?
+            ),
+        },
+        LogsAction::Last => {
+            let latest = logs
+                .first()
+                .ok_or_else(|| format!("no log files found in {}", log_dir.display()))?;
+            let contents = fs::read_to_string(latest)?;
+            let tail = tail_lines(&contents, 80);
+            match output_format {
+                CliOutputFormat::Text => {
+                    println!("Latest log        {}", latest.display());
+                    println!();
+                    println!("{tail}");
+                }
+                CliOutputFormat::Json => println!(
+                    "{}",
+                    serde_json::to_string_pretty(&json!({
+                        "type": "logs",
+                        "action": "last",
+                        "log_dir": log_dir.display().to_string(),
+                        "path": latest.display().to_string(),
+                        "tail": tail,
+                    }))?
+                ),
+            }
+        }
     }
     Ok(())
 }
@@ -5198,6 +5480,12 @@ fn render_help_topic(topic: LocalHelpTopic) -> String {
   Output           local-only health report; no provider request or session resume required
   Related          /doctor · claw --resume latest /doctor"
             .to_string(),
+        LocalHelpTopic::Logs => "Logs
+  Usage            claw logs [--last|--dir|--open]
+  Purpose          inspect Windows launcher logs without hunting through AppData
+  Output           log directory, recent log paths, or the latest log tail
+  Related          claw launch-check · scripts/windows/Start-ClawCode.ps1"
+            .to_string(),
         LocalHelpTopic::Acp => "ACP / Zed
   Usage            claw acp [serve]
   Aliases          claw --acp · claw -acp
@@ -8211,6 +8499,16 @@ fn print_help_to(out: &mut impl Write) -> io::Result<()> {
         out,
         "      Diagnose local auth, config, workspace, and sandbox health"
     )?;
+    writeln!(out, "  claw launch-check")?;
+    writeln!(
+        out,
+        "      Check Windows launcher, logs, executable path, and auth visibility"
+    )?;
+    writeln!(out, "  claw logs [--last|--dir|--open]")?;
+    writeln!(
+        out,
+        "      Inspect Windows launcher logs under LOCALAPPDATA\\ClawCode\\logs"
+    )?;
     writeln!(out, "  claw acp [serve]")?;
     writeln!(
         out,
@@ -8363,8 +8661,8 @@ mod tests {
         summarize_tool_payload_for_markdown, try_resolve_bare_skill_prompt, validate_no_args,
         write_mcp_server_fixture, CliAction, CliOutputFormat, CliToolExecutor, GitWorkspaceSummary,
         InternalPromptProgressEvent, InternalPromptProgressState, LiveCli, LocalHelpTopic,
-        PromptHistoryEntry, SlashCommand, StatusUsage, DEFAULT_MODEL, LATEST_SESSION_REFERENCE,
-        STUB_COMMANDS,
+        LogsAction, PromptHistoryEntry, SlashCommand, StatusUsage, DEFAULT_MODEL,
+        LATEST_SESSION_REFERENCE, STUB_COMMANDS,
     };
     use api::{ApiError, MessageResponse, OutputContentBlock, Usage};
     use plugins::{
@@ -8421,6 +8719,7 @@ mod tests {
             request_id: Some("req_jobdori_789".to_string()),
             body: String::new(),
             retryable: true,
+            suggested_action: None,
         };
 
         let rendered = format_user_visible_api_error("session-issue-22", &error);
@@ -8443,6 +8742,7 @@ mod tests {
                 request_id: Some("req_jobdori_790".to_string()),
                 body: String::new(),
                 retryable: true,
+                suggested_action: None,
             }),
         };
 
@@ -8506,6 +8806,7 @@ mod tests {
             request_id: Some("req_ctx_456".to_string()),
             body: String::new(),
             retryable: false,
+            suggested_action: None,
         };
 
         let rendered = format_user_visible_api_error("session-issue-32", &error);
@@ -8537,6 +8838,7 @@ mod tests {
                 request_id: Some("req_ctx_retry_789".to_string()),
                 body: String::new(),
                 retryable: false,
+                suggested_action: None,
             }),
         };
 
@@ -8615,39 +8917,66 @@ mod tests {
         .expect("skill file should write");
     }
 
+    fn plugin_script_name(stem: &str) -> String {
+        if cfg!(windows) {
+            format!("{stem}.cmd")
+        } else {
+            format!("{stem}.sh")
+        }
+    }
+
+    fn python_command() -> &'static str {
+        if cfg!(windows) {
+            "python"
+        } else {
+            "python3"
+        }
+    }
+
     fn write_plugin_fixture(root: &Path, name: &str, include_hooks: bool, include_lifecycle: bool) {
         fs::create_dir_all(root.join(".claude-plugin")).expect("manifest dir");
+        let hook_script = plugin_script_name("pre");
         if include_hooks {
             fs::create_dir_all(root.join("hooks")).expect("hooks dir");
-            fs::write(
-                root.join("hooks").join("pre.sh"),
-                "#!/bin/sh\nprintf 'plugin pre hook'\n",
-            )
-            .expect("write hook");
+            let hook_contents = if cfg!(windows) {
+                "@echo off\r\necho plugin pre hook\r\n"
+            } else {
+                "#!/bin/sh\nprintf 'plugin pre hook'\n"
+            };
+            fs::write(root.join("hooks").join(&hook_script), hook_contents).expect("write hook");
         }
+        let init_script = plugin_script_name("init");
+        let shutdown_script = plugin_script_name("shutdown");
         if include_lifecycle {
             fs::create_dir_all(root.join("lifecycle")).expect("lifecycle dir");
+            let init_contents = if cfg!(windows) {
+                "@echo off\r\necho init>> lifecycle.log\r\n"
+            } else {
+                "#!/bin/sh\nprintf 'init\\n' >> lifecycle.log\n"
+            };
+            let shutdown_contents = if cfg!(windows) {
+                "@echo off\r\necho shutdown>> lifecycle.log\r\n"
+            } else {
+                "#!/bin/sh\nprintf 'shutdown\\n' >> lifecycle.log\n"
+            };
+            fs::write(root.join("lifecycle").join(&init_script), init_contents)
+                .expect("write init lifecycle");
             fs::write(
-                root.join("lifecycle").join("init.sh"),
-                "#!/bin/sh\nprintf 'init\\n' >> lifecycle.log\n",
-            )
-            .expect("write init lifecycle");
-            fs::write(
-                root.join("lifecycle").join("shutdown.sh"),
-                "#!/bin/sh\nprintf 'shutdown\\n' >> lifecycle.log\n",
+                root.join("lifecycle").join(&shutdown_script),
+                shutdown_contents,
             )
             .expect("write shutdown lifecycle");
         }
 
         let hooks = if include_hooks {
-            ",\n  \"hooks\": {\n    \"PreToolUse\": [\"./hooks/pre.sh\"]\n  }"
+            format!(",\n  \"hooks\": {{\n    \"PreToolUse\": [\"./hooks/{hook_script}\"]\n  }}")
         } else {
-            ""
+            String::new()
         };
         let lifecycle = if include_lifecycle {
-            ",\n  \"lifecycle\": {\n    \"Init\": [\"./lifecycle/init.sh\"],\n    \"Shutdown\": [\"./lifecycle/shutdown.sh\"]\n  }"
+            format!(",\n  \"lifecycle\": {{\n    \"Init\": [\"./lifecycle/{init_script}\"],\n    \"Shutdown\": [\"./lifecycle/{shutdown_script}\"]\n  }}")
         } else {
-            ""
+            String::new()
         };
         fs::write(
             root.join(".claude-plugin").join("plugin.json"),
@@ -9167,6 +9496,48 @@ mod tests {
             CliAction::Doctor {
                 output_format: CliOutputFormat::Text,
             }
+        );
+        assert_eq!(
+            parse_args(&["launch-check".to_string()]).expect("launch-check should parse"),
+            CliAction::LaunchCheck {
+                output_format: CliOutputFormat::Text,
+            }
+        );
+        assert_eq!(
+            parse_args(&["logs".to_string()]).expect("logs should parse"),
+            CliAction::Logs {
+                action: LogsAction::List,
+                output_format: CliOutputFormat::Text,
+            }
+        );
+        assert_eq!(
+            parse_args(&["logs".to_string(), "--last".to_string()])
+                .expect("logs --last should parse"),
+            CliAction::Logs {
+                action: LogsAction::Last,
+                output_format: CliOutputFormat::Text,
+            }
+        );
+        assert_eq!(
+            parse_args(&["logs".to_string(), "--dir".to_string()])
+                .expect("logs --dir should parse"),
+            CliAction::Logs {
+                action: LogsAction::Dir,
+                output_format: CliOutputFormat::Text,
+            }
+        );
+        assert_eq!(
+            parse_args(&["logs".to_string(), "--open".to_string()])
+                .expect("logs --open should parse"),
+            CliAction::Logs {
+                action: LogsAction::Open,
+                output_format: CliOutputFormat::Text,
+            }
+        );
+        assert_eq!(
+            parse_args(&["logs".to_string(), "--help".to_string()])
+                .expect("logs help should parse"),
+            CliAction::HelpTopic(LocalHelpTopic::Logs)
         );
         assert_eq!(
             parse_args(&["state".to_string()]).expect("state should parse"),
@@ -11362,8 +11733,11 @@ UU conflicted.rs",
             .expect("plugin state should load");
         let pre_hooks = state.feature_config.hooks().pre_tool_use();
         assert_eq!(pre_hooks.len(), 1);
+        let expected_hook_suffix = format!("hooks/{}", plugin_script_name("pre"));
         assert!(
-            pre_hooks[0].ends_with("hooks/pre.sh"),
+            pre_hooks[0]
+                .replace('\\', "/")
+                .ends_with(&expected_hook_suffix),
             "expected installed plugin hook path, got {pre_hooks:?}"
         );
 
@@ -11383,21 +11757,19 @@ UU conflicted.rs",
         write_mcp_server_fixture(&script_path);
         fs::write(
             config_home.join("settings.json"),
-            format!(
-                r#"{{
-                  "mcpServers": {{
-                    "alpha": {{
-                      "command": "python3",
-                      "args": ["{}"]
-                    }},
-                    "broken": {{
-                      "command": "python3",
-                      "args": ["-c", "import sys; sys.exit(0)"]
-                    }}
-                  }}
-                }}"#,
-                script_path.to_string_lossy()
-            ),
+            serde_json::to_string_pretty(&json!({
+                "mcpServers": {
+                    "alpha": {
+                        "command": python_command(),
+                        "args": [script_path.to_string_lossy()]
+                    },
+                    "broken": {
+                        "command": python_command(),
+                        "args": ["-c", "import sys; sys.exit(0)"]
+                    }
+                }
+            }))
+            .expect("mcp settings should serialize"),
         )
         .expect("write mcp settings");
 
@@ -11583,7 +11955,9 @@ UU conflicted.rs",
         .expect("runtime should build");
 
         assert_eq!(
-            fs::read_to_string(&log_path).expect("init log should exist"),
+            fs::read_to_string(&log_path)
+                .expect("init log should exist")
+                .replace("\r\n", "\n"),
             "init\n"
         );
 
@@ -11592,7 +11966,9 @@ UU conflicted.rs",
             .expect("plugin shutdown should succeed");
 
         assert_eq!(
-            fs::read_to_string(&log_path).expect("shutdown log should exist"),
+            fs::read_to_string(&log_path)
+                .expect("shutdown log should exist")
+                .replace("\r\n", "\n"),
             "init\nshutdown\n"
         );
 
