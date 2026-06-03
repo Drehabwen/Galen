@@ -2,8 +2,14 @@
 
 mod app;
 mod backend;
+mod workspace;
 
 fn main() -> eframe::Result {
+    // Load workspace config
+    let ws_config = workspace::WorkspaceConfig::load();
+    let initial_workspace = ws_config.workspace_root.as_ref()
+        .map(|p| std::path::PathBuf::from(p));
+
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1200.0, 800.0])
@@ -15,6 +21,9 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "VIBE Paper",
         options,
-        Box::new(|cc| Ok(Box::new(app::ClawMdApp::new(cc)))),
+        Box::new(move |cc| {
+            let app = app::ClawMdApp::new(cc, initial_workspace.clone());
+            Ok(Box::new(app))
+        }),
     )
 }

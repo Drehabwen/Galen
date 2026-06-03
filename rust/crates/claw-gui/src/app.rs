@@ -1,4 +1,8 @@
-use crate::backend::{ChatBackend, StreamEvent};
+use std::path::PathBuf;
+use std::sync::Mutex;
+
+use crate::backend::{ChatBackend, FileEntry, StreamEvent};
+use crate::workspace::WorkspaceConfig;
 use eframe::egui;
 use medical_core::types::Paper;
 use tokio::sync::mpsc;
@@ -7,6 +11,13 @@ use tokio::sync::mpsc;
 enum AppMode {
     Placeholder,
     Chatting,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum LeftPanelTab {
+    Workspace,
+    Papers,
+    Notes,
 }
 
 pub struct ClawMdApp {
@@ -21,6 +32,13 @@ pub struct ClawMdApp {
     error_text: Option<String>,
     search_results: Vec<Paper>,
     selected_paper: Option<Paper>,
+    workspace_root: Option<PathBuf>,
+    workspace_files: Vec<FileEntry>,
+    workspace_selected_file: Option<String>,
+    workspace_file_content: Option<String>,
+    show_workspace_picker: bool,
+    left_panel_tab: LeftPanelTab,
+    workspace_input: String,
 }
 
 #[derive(Clone)]
@@ -71,7 +89,7 @@ fn load_fonts(ctx: &egui::Context) {
 }
 
 impl ClawMdApp {
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(_cc: &eframe::CreationContext<'_>, workspace_root: Option<PathBuf>) -> Self {
         load_fonts(&_cc.egui_ctx);
 
         let backend = ChatBackend::new();
@@ -88,6 +106,11 @@ impl ClawMdApp {
 
         _cc.egui_ctx.set_visuals(egui::Visuals::dark());
 
+        // If we have a saved workspace, set it in backend
+        if let Some(ref root) = workspace_root {
+            backend.set_workspace_root(Some(root.clone()));
+        }
+
         Self {
             backend,
             messages: vec![ChatMessage {
@@ -103,6 +126,13 @@ impl ClawMdApp {
             error_text: None,
             search_results: Vec::new(),
             selected_paper: None,
+            workspace_root,
+            workspace_files: Vec::new(),
+            workspace_selected_file: None,
+            workspace_file_content: None,
+            show_workspace_picker: false,
+            left_panel_tab: LeftPanelTab::Papers,
+            workspace_input: String::new(),
         }
     }
 
@@ -139,9 +169,12 @@ impl ClawMdApp {
             })
             .collect();
 
+        // Update workspace root in backend before sending
+        self.backend.set_workspace_root(self.workspace_root.clone());
+
         let medical = self.backend.medical.clone();
         let router = self.backend.router.clone();
-        ChatBackend::spawn_chat(model_alias, model_id, text, history, tx, medical, router);
+        ChatBackend::spawn_chat(model_alias, model_id, text, history, tx, medical, router, Mutex::new(self.workspace_root.clone()));
     }
 
     fn poll_stream(&mut self) {
@@ -163,6 +196,16 @@ impl ClawMdApp {
                     }
                     Ok(StreamEvent::SearchResults(papers)) => {
                         self.search_results = papers;
+                    }
+                    Ok(StreamEvent::WorkspaceRoot(path)) => {
+                        self.workspace_root = Some(PathBuf::from(path));
+                    }
+                    Ok(StreamEvent::WorkspaceFileList(files)) => {
+                        self.workspace_files = files;
+                    }
+                    Ok(StreamEvent::WorkspaceFileContent { path, content }) => {
+                        self.workspace_selected_file = Some(path);
+                        self.workspace_file_content = Some(content);
                     }
                     Ok(StreamEvent::Error(e)) => {
                         self.error_text = Some(e);
@@ -214,6 +257,20 @@ impl eframe::App for ClawMdApp {
                         }
                     });
                 ui.separator();
+
+                // Workspace section
+                if ui.button("📁 选择工作区").clicked() {
+                    self.show_workspace_picker = true;
+                }
+                if let Some(ref root) = self.workspace_root {
+                    let dir_name = root
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "?".to_string());
+                    ui.label(format!("📂 {}", dir_name));
+                }
+
+                ui.separator();
                 if self.mode == AppMode::Chatting {
                     ui.spinner();
                     ui.label("思考中...");
@@ -228,6 +285,34 @@ impl eframe::App for ClawMdApp {
                     }
                 });
             });
+
+            // Workspace picker inline
+            if self.show_workspace_picker {
+                ui.horizontal(|ui| {
+                    ui.label("工作区路径:");
+                    let response = ui.text_edit_singleline(&mut self.workspace_input);
+                    if response.lost_focus()
+                        && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                    {
+                        let path = PathBuf::from(self.workspace_input.trim());
+                        if path.exists() && path.is_dir() {
+                            self.workspace_root = Some(path.clone());
+                            self.backend.set_workspace_root(Some(path.clone()));
+                            let path_display = format!("{}", path.display());
+                            let _ = self.backend
+                                .send_workspace_event(path_display.clone());
+                            // Persist workspace choice
+                            let mut config = WorkspaceConfig::load();
+                            config.set_workspace(&path_display);
+                        }
+                        self.show_workspace_picker = false;
+                        self.workspace_input.clear();
+                    }
+                    if ui.button("取消").clicked() {
+                        self.show_workspace_picker = false;
+                    }
+                });
+            }
         });
 
         egui::TopBottomPanel::bottom("bottom_bar").show(ctx, |ui| {
@@ -259,85 +344,162 @@ impl eframe::App for ClawMdApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.columns(2, |columns| {
-                // LEFT: Work area
+                // LEFT: Tabbed panel (Workspace / Papers / Notes)
                 columns[0].vertical(|ui| {
-                    ui.add_space(8.0);
-                    ui.heading("📄 文献区");
-                    ui.add_space(6.0);
+                    ui.add_space(4.0);
 
-                    if self.search_results.is_empty() {
-                        ui.add_space(20.0);
-                        ui.label("在聊天中提出医学问题");
-                        ui.label("AI 会自动检索 PubMed");
-                        ui.add_space(6.0);
-                        ui.separator();
-                        ui.add_space(6.0);
-                        ui.label("💡 试试问:");
-                        ui.label("\"帮我查阿尔茨海默病的最新综述\"");
-                        ui.label("\"二甲双胍的作用机制是什么\"");
-                    } else {
-                        ui.label(format!(
-                            "找到 {} 篇文献",
-                            self.search_results.len()
-                        ));
-                        ui.add_space(4.0);
-                        ui.separator();
+                    // Tab bar
+                    ui.horizontal(|ui| {
+                        ui.selectable_value(
+                            &mut self.left_panel_tab,
+                            LeftPanelTab::Workspace,
+                            "📁 工作区",
+                        );
+                        ui.selectable_value(
+                            &mut self.left_panel_tab,
+                            LeftPanelTab::Papers,
+                            "📄 文献",
+                        );
+                        ui.selectable_value(
+                            &mut self.left_panel_tab,
+                            LeftPanelTab::Notes,
+                            "📝 笔记",
+                        );
+                    });
+                    ui.separator();
 
-                        egui::ScrollArea::vertical()
-                            .auto_shrink([false, false])
-                            .show(ui, |ui| {
-                                for paper in &self.search_results {
-                                    let selected = self
-                                        .selected_paper
-                                        .as_ref()
-                                        .is_some_and(|s| s.pmid == paper.pmid);
-
-                                    let text = format!(
-                                        "{}",
-                                        paper.title
-                                    );
-                                    let rich = if selected {
-                                        egui::RichText::new(text).color(egui::Color32::from_rgb(144, 238, 144))
-                                    } else {
-                                        egui::RichText::new(text)
-                                    };
-
-                                    if ui.selectable_label(selected, rich).clicked() {
-                                        self.selected_paper = Some(paper.clone());
-                                    }
-
-                                    // Show metadata below title
-                                    let meta = format!(
-                                        "{}  |  {} ({})",
-                                        paper.authors.first().map(|a| a.to_string()).unwrap_or_else(|| "?".into()),
-                                        paper.journal.as_deref().unwrap_or("?"),
-                                        paper.year.as_deref().unwrap_or("?")
-                                    );
-                                    ui.label(
-                                        egui::RichText::new(meta)
-                                            .size(11.0)
-                                            .color(egui::Color32::GRAY),
-                                    );
-                                    ui.label(format!("PMID: {}", paper.pmid));
-                                    ui.add_space(4.0);
-                                }
-                            });
-
-                        // Show selected paper abstract
-                        if let Some(ref paper) = self.selected_paper {
-                            ui.add_space(8.0);
-                            ui.separator();
-                            ui.add_space(4.0);
-                            ui.colored_label(
-                                egui::Color32::from_rgb(144, 238, 144),
-                                "📋 摘要",
-                            );
-                            ui.add_space(4.0);
-                            if let Some(ref abs) = paper.abstract_text {
-                                ui.label(abs);
+                    match self.left_panel_tab {
+                        LeftPanelTab::Workspace => {
+                            if self.workspace_root.is_none() {
+                                ui.add_space(20.0);
+                                ui.label("尚未选择工作区");
+                                ui.label("点击顶部 \"📁 选择工作区\" 开始");
                             } else {
-                                ui.label("(无摘要)");
+                                let root_label = self
+                                    .workspace_root
+                                    .as_ref()
+                                    .map(|p| p.display().to_string())
+                                    .unwrap_or_default();
+                                ui.label(format!("📂 {}", root_label));
+                                ui.separator();
+                                egui::ScrollArea::vertical()
+                                    .auto_shrink([false, false])
+                                    .show(ui, |ui| {
+                                        // Clone to avoid borrow conflict when calling send_message
+                                        let workspace_entries = self.workspace_files.clone();
+                                        let mut pending_send = false;
+                                        for entry in &workspace_entries {
+                                            let icon = if entry.is_dir { "📁" } else { "📄" };
+                                            if ui
+                                                .selectable_label(
+                                                    self.workspace_selected_file.as_deref()
+                                                        == Some(&entry.path),
+                                                    format!("{} {}", icon, entry.name),
+                                                )
+                                                .clicked()
+                                            {
+                                                self.workspace_selected_file =
+                                                    Some(entry.path.clone());
+                                                self.input = format!(
+                                                    "请读取工作区文件: {}",
+                                                    entry.path
+                                                );
+                                                pending_send = true;
+                                            }
+                                        }
+                                        if pending_send {
+                                            self.send_message();
+                                        }
+                                    });
                             }
+                        }
+                        LeftPanelTab::Papers => {
+                            ui.add_space(4.0);
+
+                            if self.search_results.is_empty() {
+                                ui.add_space(20.0);
+                                ui.label("在聊天中提出医学问题");
+                                ui.label("AI 会自动检索 PubMed");
+                                ui.add_space(6.0);
+                                ui.separator();
+                                ui.add_space(6.0);
+                                ui.label("💡 试试问:");
+                                ui.label("\"帮我查阿尔茨海默病的最新综述\"");
+                                ui.label("\"二甲双胍的作用机制是什么\"");
+                            } else {
+                                ui.label(format!(
+                                    "找到 {} 篇文献",
+                                    self.search_results.len()
+                                ));
+                                ui.add_space(4.0);
+                                ui.separator();
+
+                                egui::ScrollArea::vertical()
+                                    .auto_shrink([false, false])
+                                    .show(ui, |ui| {
+                                        for paper in &self.search_results {
+                                            let selected = self
+                                                .selected_paper
+                                                .as_ref()
+                                                .is_some_and(|s| s.pmid == paper.pmid);
+
+                                            let text = format!("{}", paper.title);
+                                            let rich = if selected {
+                                                egui::RichText::new(text)
+                                                    .color(egui::Color32::from_rgb(
+                                                        144, 238, 144,
+                                                    ))
+                                            } else {
+                                                egui::RichText::new(text)
+                                            };
+
+                                            if ui.selectable_label(selected, rich).clicked() {
+                                                self.selected_paper = Some(paper.clone());
+                                            }
+
+                                            // Show metadata below title
+                                            let meta = format!(
+                                                "{}  |  {} ({})",
+                                                paper
+                                                    .authors
+                                                    .first()
+                                                    .map(|a| a.to_string())
+                                                    .unwrap_or_else(|| "?".into()),
+                                                paper.journal.as_deref().unwrap_or("?"),
+                                                paper.year.as_deref().unwrap_or("?")
+                                            );
+                                            ui.label(
+                                                egui::RichText::new(meta)
+                                                    .size(11.0)
+                                                    .color(egui::Color32::GRAY),
+                                            );
+                                            ui.label(format!("PMID: {}", paper.pmid));
+                                            ui.add_space(4.0);
+                                        }
+                                    });
+
+                                // Show selected paper abstract
+                                if let Some(ref paper) = self.selected_paper {
+                                    ui.add_space(8.0);
+                                    ui.separator();
+                                    ui.add_space(4.0);
+                                    ui.colored_label(
+                                        egui::Color32::from_rgb(144, 238, 144),
+                                        "📋 摘要",
+                                    );
+                                    ui.add_space(4.0);
+                                    if let Some(ref abs) = paper.abstract_text {
+                                        ui.label(abs);
+                                    } else {
+                                        ui.label("(无摘要)");
+                                    }
+                                }
+                            }
+                        }
+                        LeftPanelTab::Notes => {
+                            ui.add_space(20.0);
+                            ui.label("笔记功能即将推出");
+                            ui.label("AI 可以将研究笔记保存到工作区");
                         }
                     }
                 });
@@ -350,8 +512,14 @@ impl eframe::App for ClawMdApp {
                         .show(ui, |ui| {
                             for msg in &self.messages {
                                 let (color, label) = match msg.role.as_str() {
-                                    "user" => (egui::Color32::from_rgb(100, 149, 237), "🧑 你"),
-                                    "assistant" => (egui::Color32::from_rgb(144, 238, 144), "🤖 VIBE Paper"),
+                                    "user" => (
+                                        egui::Color32::from_rgb(100, 149, 237),
+                                        "🧑 你",
+                                    ),
+                                    "assistant" => (
+                                        egui::Color32::from_rgb(144, 238, 144),
+                                        "🤖 VIBE Paper",
+                                    ),
                                     _ => (egui::Color32::GRAY, "❓"),
                                 };
 
@@ -379,7 +547,10 @@ impl eframe::App for ClawMdApp {
                             }
 
                             if let Some(ref error) = self.error_text {
-                                ui.colored_label(egui::Color32::RED, format!("❌ {error}"));
+                                ui.colored_label(
+                                    egui::Color32::RED,
+                                    format!("❌ {error}"),
+                                );
                             }
                         });
                 });
