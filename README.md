@@ -19,6 +19,19 @@
 Galen 是一个**原生桌面应用**，专为医学生和科研人员设计。双击 exe 即可启动，无需终端、无需编程。命名致敬古希腊医学之父盖伦（Galen of Pergamon），寓意用最前沿的 AI 技术延续最古老的医学求真传统。
 
 **核心理念：** 把你留在应用里——搜文献、读论文、写文章、格式化引用，一站式完成。
+## 技术亮点
+
+Galen 不只是一个医学科研助手界面，它也是一个 Rust/Tauri 医疗 AI 工作台实验：
+
+| 技术层 | 说明 |
+|------|------|
+| **Rust workspace** | 多 crate 架构，拆分 `api`、`model-router`、`medical-core`、`runtime`、`tools`、`plugins` 和桌面端集成层 |
+| **多模型路由** | 通过 TOML 配置抽象 Claude、OpenAI、DeepSeek、本地模型和 OpenAI-compatible provider |
+| **医学核心模块** | `medical-core` 封装 PubMed / MeSH 检索、医学提示词和 APA / Vancouver / BibTeX / RIS / MLA 引用格式化 |
+| **Agent runtime** | 包含会话、权限、MCP、插件、工具调用、hooks、usage、policy、worker 等运行时基础设施 |
+| **桌面产品化** | Tauri 2.x + React/TypeScript 前端，面向 Windows 双击启动和 release 分发 |
+
+如果只看应用层，Galen 是“搜文献、读论文、写文章”的医学科研助手；如果看工程层，它展示的是一个面向医学场景的多模型 agent/runtime 到桌面产品的完整落地链路。
 
 ## 功能
 
