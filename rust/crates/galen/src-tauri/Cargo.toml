@@ -1,0 +1,33 @@
+[package]
+name = "galen"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+description = "Galen — AI-powered medical research desktop app"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[lib]
+name = "galen_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "process", "time"] }
+dirs = "6"
+glob = "0.3"
+api = { path = "../../api" }
+runtime = { path = "../../runtime" }
+async-trait = "0.1"
+model-router = { path = "../../model-router" }
+medical-core = { path = "../../medical-core" }
+which = "7"

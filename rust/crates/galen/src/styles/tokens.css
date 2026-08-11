@@ -1,0 +1,142 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Galen Design System — Tokens
+   Single source of truth.  All components reference these variables.
+
+   Phase 1 migration:  warm-white → clinical white,  orange → brand green.
+   Legacy var names kept for backward compat; semantic vars added.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Colors: Canvas & Backgrounds ── */
+  --bg-root:             #fcfdfc;    /* document canvas — warm off-white */
+  --bg-surface:          #f5f8f6;    /* app shell — subtle green-grey */
+  --bg-elevated:         #eef4f1;    /* sidebar, elevated — more depth */
+  --bg-overlay:          #ffffff;    /* floating panels */
+  --bg-hover:            rgba(0 107 90 / 0.06);  /* brand-tinted hover */
+  --bg-active:           rgba(0 107 90 / 0.10);
+  --bg-panel-subtle:     #f8faf9;    /* input backgrounds */
+
+  /* ── Colors: Brand (medical green — deeper + brighter accent) ── */
+  --accent:              #007a65;    /* primary action — brighter */
+  --accent-hover:        #005f4f;    /* hover */
+  --accent-bright:       #009177;    /* highlights, focus rings, glow */
+  --accent-muted:        #e5f3ef;    /* soft brand background */
+  --accent-subtle:       #f0f8f5;    /* even softer brand tint */
+  --accent-text:         #006653;    /* brand text, links — slightly warmer */
+  --border-accent:       #b3d9ce;    /* brand borders */
+
+  /* ── Colors: Text — warmer, less harsh ── */
+  --text-primary:        #1a2e27;
+  --text-secondary:      #4d6058;
+  --text-tertiary:       #83918b;
+  --text-disabled:       #b4bfb9;
+  --text-inverse:        #ffffff;
+
+  /* ── Colors: Semantic — more saturated for visibility ── */
+  --color-info:          #1d4ed8;
+  --color-info-soft:     #eef4ff;
+  --success:             #059669;
+  --success-soft:        #ecfdf5;
+  --warning:             #d97706;
+  --warning-muted:       #fffbeb;
+  --error:               #dc2626;
+  --error-muted:         #fef2f2;
+  --color-neutral-tag:     #5a6861;
+  --color-neutral-tag-soft: #f2f5f3;
+
+  /* ── Colors: Borders — more definition ── */
+  --border:              #d9e2dd;
+  --border-muted:        #e8efeb;
+
+  /* ── Typography: Font Stack ── */
+  --font-sans:      'Microsoft YaHei UI', 'PingFang SC', 'Noto Sans CJK SC',
+                    -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono:      'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  --font-display:   'Microsoft YaHei UI', 'PingFang SC', -apple-system, sans-serif;
+
+  /* ── Typography: Scale (1.25 ratio) ── */
+  --text-xs:        0.6875rem;   /* 11px */
+  --text-sm:        0.8125rem;   /* 13px */
+  --text-base:      0.875rem;    /* 14px */
+  --text-md:        1rem;        /* 16px */
+  --text-lg:        1.125rem;    /* 18px */
+  --text-xl:        1.25rem;     /* 20px */
+  --text-2xl:       1.5rem;      /* 24px */
+  --text-3xl:       1.75rem;     /* 28px */
+
+  /* ── Typography: Weight ── */
+  --font-normal:    400;
+  --font-medium:    500;
+  --font-semibold:  600;
+
+  /* ── Typography: Leading ── */
+  --leading-tight:    1.15;
+  --leading-normal:   1.55;
+  --leading-relaxed:  1.7;
+
+  /* ── Typography: Tracking ── */
+  --tracking-tight:   -0.02em;
+  --tracking-normal:   0;
+  --tracking-wide:     0.03em;
+  --tracking-mono:     0;
+
+  /* ── Spacing: 4px grid ── */
+  --space-0:         0;
+  --space-1:         0.25rem;   /* 4px  */
+  --space-2:         0.5rem;    /* 8px  */
+  --space-3:         0.75rem;   /* 12px */
+  --space-4:         1rem;      /* 16px */
+  --space-5:         1.25rem;   /* 20px */
+  --space-6:         1.5rem;    /* 24px */
+  --space-8:         2rem;      /* 32px */
+  --space-10:        2.5rem;    /* 40px */
+  --space-12:        3rem;      /* 48px */
+
+  /* ── Radii ── */
+  --radius-none:     0;
+  --radius-sm:       3px;
+  --radius-md:       6px;
+  --radius-lg:       8px;
+  --radius-pill:     999px;
+
+  /* ── Shadows — more depth, brand-tinted ── */
+  --shadow-xs:       0 1px 2px rgba(26 46 39 / 0.04);
+  --shadow-sm:       0 2px 4px rgba(26 46 39 / 0.06);
+  --shadow-md:       0 4px 12px rgba(26 46 39 / 0.08);
+  --shadow-lg:       0 8px 24px rgba(26 46 39 / 0.12);
+  --shadow-glow:     0 0 0 3px rgba(0 122 101 / 0.15);  /* focus ring glow */
+
+  /* ── Transitions ── */
+  --transition-fast:    120ms ease;
+  --transition-normal:  200ms ease;
+  --transition-slow:    300ms ease;
+
+  /* ── Layout ── */
+  --topbar-height:      64px;
+  --statusbar-height:   28px;
+  --sidebar-width:      256px;
+  --chat-min-width:     280px;
+  --chat-max-width:     480px;
+
+  /* ── Z-Index Scale ── */
+  --z-base:        0;
+  --z-panel:       10;
+  --z-sticky:      20;
+  --z-overlay:     50;
+  --z-modal:       100;
+  --z-tooltip:     200;
+
+  /* ── Tag semantic aliases (migrate to these in Phase 2+) ── */
+  --tag-phase-bg:       var(--color-neutral-tag-soft);
+  --tag-phase-text:     var(--color-neutral-tag);
+  --tag-status-bg:      var(--color-info-soft);
+  --tag-status-text:    var(--color-info);
+  --tag-evidence-bg:    var(--success-soft);
+  --tag-evidence-text:  var(--success);
+  --tag-risk-bg:        var(--error-muted);
+  --tag-risk-text:      var(--error);
+  --tag-owner-bg:       var(--color-neutral-tag-soft);
+  --tag-owner-text:     var(--color-neutral-tag);
+  --tag-execution-bg:   var(--success-soft);
+  --tag-execution-text: var(--success);
+}

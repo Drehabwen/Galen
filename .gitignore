@@ -1,0 +1,38 @@
+__pycache__/
+archive/
+.omx/
+.clawd-agents/
+# Claude Code local artifacts
+.claude/settings.local.json
+.claude/sessions/
+# Claw Code local artifacts
+.claw/settings.local.json
+.claw/sessions/
+.clawhip/
+status-help.txt
+# Rust build artifacts
+rust/target/
+rust/.vite/
+# Logs & temp
+*.log
+stderr.txt
+stdout.txt
+progress.txt
+# Local agent tooling
+.reasonix/
+.agents/
+.claude/launch.json
+.claude/skills/
+.claw.json
+.claude/sessions/
+rust/.claude/sessions/
+rust/.claw/sessions/
+rust/.clawd-todos.json
+rust/.omc/
+rust/.sandbox-home/
+# Bundled runtimes (download/build artifacts, not source)
+rust/crates/galen/src-tauri/binaries/
+# Root-level scratch files
+progress.txt
+stderr.txt
+stdout.txt

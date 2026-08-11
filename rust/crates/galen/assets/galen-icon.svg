@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Background: deep teal gradient -->
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0d9488"/>
+      <stop offset="100%" style="stop-color:#115e59"/>
+    </linearGradient>
+    <linearGradient id="dna" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f0fdfa"/>
+      <stop offset="100%" style="stop-color:#ccfbf1"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded square background -->
+  <rect x="0" y="0" width="512" height="512" rx="96" fill="url(#bg)"/>
+
+  <!-- DNA double helix (rotated 45deg for dynamism) -->
+  <g transform="translate(256,256) rotate(-15) translate(-256,-256)" opacity="0.95">
+    <!-- Left strand -->
+    <path d="M180 100 C130 180, 170 300, 200 400"
+          fill="none" stroke="#f0fdfa" stroke-width="14" stroke-linecap="round"/>
+    <!-- Right strand -->
+    <path d="M332 100 C382 180, 342 300, 312 400"
+          fill="none" stroke="#f0fdfa" stroke-width="14" stroke-linecap="round"/>
+
+    <!-- Cross-bars (base pairs) -->
+    <line x1="185" y1="160" x2="330" y2="140" stroke="#5eead4" stroke-width="8" stroke-linecap="round"/>
+    <line x1="190" y1="210" x2="325" y2="190" stroke="#5eead4" stroke-width="8" stroke-linecap="round"/>
+    <line x1="195" y1="260" x2="318" y2="240" stroke="#5eead4" stroke-width="8" stroke-linecap="round"/>
+    <line x1="198" y1="310" x2="312" y2="290" stroke="#5eead4" stroke-width="8" stroke-linecap="round"/>
+
+    <!-- Superimposed medical cross on DNA -->
+    <g transform="translate(256, 250)">
+      <rect x="-40" y="-12" width="80" height="24" rx="12" fill="#f0fdfa"/>
+      <rect x="-12" y="-40" width="24" height="80" rx="12" fill="#f0fdfa"/>
+    </g>
+  </g>
+
+  <!-- Small accent: data/stats dot clusters -->
+  <circle cx="380" cy="100" r="8" fill="#fef3c7" opacity="0.85"/>
+  <circle cx="400" cy="120" r="6" fill="#fef3c7" opacity="0.7"/>
+  <circle cx="388" cy="136" r="5" fill="#fef3c7" opacity="0.55"/>
+</svg>
