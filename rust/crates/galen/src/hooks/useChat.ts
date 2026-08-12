@@ -134,7 +134,7 @@ export function useChat() {
           modelAlias: modelAlias,
           historyJson: historyJson,
           mode: mode || "discuss",
-          personaId: personaId || "dev",
+          personaId: personaId || "medical",
           thinkingLevel: thinkingLevel || "medium",
         });
       } catch (e) {

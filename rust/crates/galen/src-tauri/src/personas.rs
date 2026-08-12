@@ -138,19 +138,26 @@ pub fn all_personas() -> Vec<Persona> {
     ]
 }
 
-/// Look up a persona by id. Falls back to "dev" if not found.
+/// The medical research persona — the single persona used by the rehab research workbench.
+pub fn medical_persona() -> Persona {
+    all_personas()
+        .into_iter()
+        .find(|p| p.id == "medical")
+        .expect("medical persona must exist")
+}
+
+/// Look up a persona by id. Falls back to the medical persona if not found.
 pub fn find_persona(id: &str) -> Persona {
     all_personas()
         .into_iter()
         .find(|p| p.id == id)
-        .unwrap_or_else(|| all_personas().into_iter().next().expect("at least one persona"))
+        .unwrap_or_else(|| medical_persona())
 }
 
 /// Default persona for a given project kind (from frontend domain detection).
 pub fn default_for_project(project_kind: &str) -> &str {
     match project_kind {
         "clinical" => "medical",
-        "software" => "dev",
-        _ => "dev",
+        _ => "medical",
     }
 }

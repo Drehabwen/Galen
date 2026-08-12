@@ -26,7 +26,7 @@ pub fn run() {
             backend: std::sync::Mutex::new(backend),
             ws_config: std::sync::Mutex::new(ws_config),
             mode: std::sync::Mutex::new(ChatMode::default()),
-            persona: std::sync::Mutex::new(personas::find_persona("dev")),
+            persona: std::sync::Mutex::new(personas::medical_persona()),
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_models,

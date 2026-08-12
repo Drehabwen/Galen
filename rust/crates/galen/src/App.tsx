@@ -14,7 +14,6 @@ import { WelcomeWizard } from "./components/WelcomeWizard";
 import { useEnvironment } from "./hooks/useEnvironment";
 import { useMode } from "./hooks/useMode";
 import type { ChatMode } from "./hooks/useMode";
-import { usePersona } from "./hooks/usePersona";
 import type { ModelConfig, ModelStatus } from "./types";
 import { ModelStatusPanel } from "./components/ModelStatusPanel";
 import { StatusDot } from "./components/ui/primitives";
@@ -28,7 +27,6 @@ export default function App() {
   const chat = useChat();
   const env = useEnvironment();
   const modeState = useMode();
-  const personaState = usePersona();
   const [input, setInput] = useState("");
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [model, setModel] = useState("");
@@ -139,7 +137,7 @@ export default function App() {
         "计划已确认。请开始执行第一个节点。",
         model || "",
         modeState.mode,
-        personaState.persona?.id ?? "dev",
+        "medical",
         thinkingLevel,
       );
     }
@@ -243,7 +241,7 @@ export default function App() {
       input,
       model || "",
       modeState.mode,
-      personaState.persona?.id ?? "dev",
+      "medical",
       thinkingLevel,
     );
     setInput("");
@@ -278,7 +276,7 @@ export default function App() {
         `计划进度: ${completedCount}/${total} 完成`,
       model || "",
       modeState.mode,
-      personaState.persona?.id ?? "dev",
+      "medical",
       thinkingLevel,
     );
     // Loop output becomes project memory (GALEN.md), feeding next-task context
@@ -307,11 +305,11 @@ export default function App() {
           "请基于各 Session 回流的证据链，整合生成最终成果（研究报告/论文/报告），并列出仍需人工签核的内容。",
         model || "",
         modeState.mode,
-        personaState.persona?.id ?? "dev",
+        "medical",
         thinkingLevel,
       );
     }
-  }, [planConfirmed, planNodes, chat, model, modeState.mode, personaState.persona?.id, thinkingLevel]);
+  }, [planConfirmed, planNodes, chat, model, modeState.mode, thinkingLevel]);
 
   const handleThinkingLevelChange = (level: string) => {
     setThinkingLevel(level);
@@ -400,20 +398,6 @@ export default function App() {
               </button>
             );
           })}
-        </div>
-
-        {/* Persona */}
-        <div className="model-chips">
-          {personaState.allPersonas.map((p) => (
-            <button
-              key={p.id}
-              className={`model-chip ${p.id === (personaState.persona?.id ?? "dev") ? "active" : ""}`}
-              onClick={() => personaState.switchPersona(p.id)}
-              title={p.description}
-            >
-              {p.label}
-            </button>
-          ))}
         </div>
 
         {/* Memory badge */}
@@ -560,7 +544,7 @@ export default function App() {
                           `[选区修订: ${actionId}]\n选中文本: ${selectedText}`,
                           model || "",
                           modeState.mode,
-                          personaState.persona?.id ?? "dev",
+                          "medical",
                         );
                       }}
                     />
@@ -581,7 +565,7 @@ export default function App() {
                 prompt,
                 model || "",
                 modeState.mode,
-                personaState.persona?.id ?? "dev",
+                "medical",
               );
             }}
             onReadFile={() => {}}

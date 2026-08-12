@@ -130,7 +130,7 @@ export function SessionChat({
             { role: "user", content: trimmed },
           ]),
           mode: "auto",
-          personaId: "dev",
+          personaId: "medical",
           tag: node.id,
           thinkingLevel: thinkingLevel || "medium",
         });
