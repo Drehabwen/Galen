@@ -1,7 +1,7 @@
-# 🏛️ Galen
+# 🏛️ Galen — 康复科研闭环工作台
 
 <p align="center">
-  <strong>医学科研助手 — 搜文献、读论文、写文章，一站式搞定</strong>
+  <strong>面向康复科研与临床团队的闭环工具 —— 采集 · 处理 · 分析 · 成文 · 签核</strong>
 </p>
 
 <p align="center">
@@ -9,61 +9,64 @@
   ·
   <a href="#快速开始">快速开始</a>
   ·
-  <a href="#功能">功能</a>
+  <a href="#核心能力">核心能力</a>
   ·
-  <a href="#模型配置">模型配置</a>
+  <a href="#架构">架构</a>
+  ·
+  <a href="#文档">文档</a>
 </p>
 
 ---
 
-Galen 是一个**原生桌面应用**，专为医学生和科研人员设计。双击 exe 即可启动，无需终端、无需编程。命名致敬古希腊医学之父盖伦（Galen of Pergamon），寓意用最前沿的 AI 技术延续最古老的医学求真传统。
+Galen 是面向**康复科研**的闭环工作台：一线场景的多模态数据（量表 / 评估 / 视频 / 语音）统一接入后，由 AI 自主完成数据处理、证据分析、报告成文，人类只做**计划把关**与**最终签核**。命名致敬古希腊医学之父盖伦（Galen of Pergamon）。
 
-**核心理念：** 把你留在应用里——搜文献、读论文、写文章、格式化引用，一站式完成。
+**核心信念**
 
-## 技术亮点
+- **数据基础设施与模型能力并重** —— 数据质量在源头产生，管道和模型同等重要
+- **科研品味驱动，而非通用对话** —— 由装配版科研技能库驱动自主执行，不靠提示词堆砌
+- **闭环、证据链、可复现** —— 每个结论都能回溯到原始数据与执行过程
 
-Galen 不只是一个医学科研助手界面，它也是一个 Rust/Tauri 医疗 AI 工作台实验：
-
-| 技术层 | 说明 |
-|------|------|
-| **Rust workspace** | 多 crate 架构，拆分 `api`、`model-router`、`medical-core`、`runtime`、`tools`、`plugins` 和桌面端集成层 |
-| **多模型路由** | 通过 TOML 配置抽象 Claude、OpenAI、DeepSeek、本地模型和 OpenAI-compatible provider |
-| **医学核心模块** | `medical-core` 封装 PubMed / MeSH 检索、医学提示词和 APA / Vancouver / BibTeX / RIS / MLA 引用格式化 |
-| **Agent runtime** | 包含会话、权限、MCP、插件、工具调用、hooks、usage、policy、worker 等运行时基础设施 |
-| **桌面产品化** | Tauri 2.x + React/TypeScript 前端，面向 Windows 双击启动和 release 分发 |
-
-如果只看应用层，Galen 是“搜文献、读论文、写文章”的医学科研助手；如果看工程层，它展示的是一个面向医学场景的多模型 agent/runtime 到桌面产品的完整落地链路。
-
-## 功能
+## 核心能力
 
 | 模块 | 说明 |
 |------|------|
-| 🤖 **多模型聊天** | 支持 Claude / GPT / DeepSeek / 本地模型，流式对话，零门槛配置 |
-| 📚 **文献检索** | PubMed 搜索，一键加载摘要，MeSH 术语查询 |
-| 📝 **引用格式化** | 支持 APA、Vancouver、BibTeX、RIS、MLA 五种格式 |
-| 📄 **工作区** | 左栏查看论文、编辑文档、预览模板 |
-| 🎨 **暗色主题** | 护眼深色界面，中文字体原生支持 |
+| 🔁 **任务级闭环** | 输入任务 → 计划画布 → 节点自动执行 → 证据回流 → 全部完成自动成文，人类随时可介入签核 |
+| 🧠 **科研品味内核** | 主编人格 + 装配版科研技能库（设计评审 / 检索 / 证据提取 / 数据分析 / 写作 / 自审），七条科研品味判断标准 |
+| 🚀 **DeepSeek 默认** | 默认 DeepSeek V4 Pro，可选 V4 Flash，思考强度四档；不再依赖 Anthropic |
+| 📚 **文献检索** | 修复后的 PubMed 检索（兼容 XML DTD），支持摘要加载与证据分级整理 |
+| 🏥 **康复数据接入** | 只读 SQLite 数据工具，7 种操作，查询结果带来源头；支持量表、评估、视频、语音四类数据 |
+| 📐 **统一数据模型** | `subject → assessment_session → scale / measure / video / audio → evidence`，跨模态可查询、证据可追溯 |
+| 💾 **持久化与记忆** | 计划存 `plan.json`，节点回流自动追加 `GALEN.md` 项目记忆，重启后闭环继续 |
 
 ## 快速开始
 
-### Windows 用户（推荐）
+### Windows 用户
 
-1. 从 [Releases](../../releases) 下载 `galen.exe`
-2. 双击运行，窗口自动打开
-3. 选模型、开聊
+1. 从 [Releases](https://github.com/Drehabwen/Galen/releases) 下载 `Galen_0.1.0_x64-setup.exe`
+2. 双击安装，首次启动按向导配置 DeepSeek API Key 与工作区
+3. 在工作台输入科研任务，确认计划后 AI 自动推进闭环
+
+### macOS 用户
+
+1. 从 GitHub Actions（[galen-macos.yml](https://github.com/Drehabwen/Galen/actions/workflows/galen-macos.yml)）下载构建产物：
+   - `galen-x86_64-apple-darwin`（Intel Mac）
+   - `galen-aarch64-apple-darwin`（Apple Silicon）
+2. 解压后拖入「应用程序」；首次打开未签名应用需右键 → 打开
 
 ### 从源码构建
 
 ```bash
-git clone https://github.com/Drehabwen/Galen
+git clone -b galen-research-workbench https://github.com/Drehabwen/Galen.git
 cd Galen/rust
 cargo build --release -p galen
-# exe 在 target/release/galen.exe
+# 桌面应用入口在 rust/crates/galen/
 ```
+
+详细步骤见 [docs/DEVELOPER_ONBOARDING.md](docs/DEVELOPER_ONBOARDING.md)。
 
 ## 模型配置
 
-在 `%USERPROFILE%\.galen\models.toml` 中配置你的模型：
+模型配置保存在 `~/.galen/models.toml`（Windows 为 `%USERPROFILE%\.galen\models.toml`），应用首次启动会引导保存 DeepSeek API Key：
 
 ```toml
 [router]
@@ -76,19 +79,39 @@ model_id = "deepseek-v4-pro"
 base_url = "https://api.deepseek.com/v1"
 ```
 
-没有配置文件时，应用会弹出欢迎向导引导你保存 DeepSeek API Key（写入 `~/.galen/models.toml`）。
-
 ## 架构
 
 ```
-api/              ── 多 Provider LLM 调用（Anthropic / OpenAI / DeepSeek / 兼容）
-model-router/     ── 模型配置抽象，TOML → ProviderClient
-medical-core/     ── PubMed/MeSH 客户端，引用格式化引擎
-galen/            ── Tauri 2.x 桌面应用，React + TypeScript 前端
-runtime/          ── 对话运行时 & 工具执行
-plugins/          ── 插件系统 & MCP 集成
-tools/            ── 工具注册与执行
+rust/
+  crates/api               ── 多 Provider LLM 调用抽象
+  crates/model-router      ── 模型配置抽象，TOML → ProviderClient
+  crates/medical-core      ── PubMed / MeSH 检索、引用格式化、医学提示词
+  crates/runtime           ── 对话运行时与工具执行
+  crates/tools             ── 工具注册与执行（含康复数据工具）
+  crates/plugins           ── 插件系统与 MCP 集成
+  crates/galen             ── Tauri 2.x 桌面应用（React + TypeScript 前端）
+       src-tauri/src/tools/rehab.rs  ── 康复数据只读接入
+       src/                ── 前端：任务闭环状态机、计划画布、会话自动执行
 ```
+
+- 桌面框架：Tauri 2.x + React 18 + TypeScript + Vite 5
+- 外部依赖（sidecar）：typst / deno / uv，由 `rust/scripts/download_sidecars.py` 按平台下载
+- CI：GitHub Actions 同时构建 Windows（NSIS）与 macOS（app + dmg，Intel / Apple Silicon）
+
+## 文档
+
+| 文档 | 说明 |
+|------|------|
+| [产品使用说明](docs/GALEN_USER_GUIDE.md) | 面向使用者的完整操作手册 |
+| [统一数据模型](docs/rehab-data-model.md) | 多模态康复数据的接入与证据链设计 |
+| [开发者接入](docs/DEVELOPER_ONBOARDING.md) | macOS / Windows 开发者环境、构建与协作规则 |
+| [PRD](docs/galen-prd-v0.2.md) | 产品需求与迭代方向 |
+| [产品对比](docs/rehab-product-comparison.md) | 同类产品调研 |
+
+## 分支与协作
+
+- 唯一维护分支：`galen-research-workbench`（`main` 为历史导入，不再维护）
+- 所有开发直接在 research 分支协作；成员需由仓库管理员添加为 collaborator
 
 ## 许可
 
@@ -97,5 +120,5 @@ MIT
 ---
 
 <p align="center">
-  Made for medical researchers who just want to get work done.
+  Made for rehab researchers who want the loop closed.
 </p>
