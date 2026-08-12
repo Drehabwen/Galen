@@ -377,6 +377,31 @@ export default function App() {
 
         <div className="galen-topbar-spacer" />
 
+        {/* Mode switch (click to change; Ctrl+1/2/3 also works) */}
+        <div className="galen-mode-switch" role="group" aria-label="工作模式">
+          {(["discuss", "plan", "auto"] as ChatMode[]).map((id) => {
+            const meta = modeState.modes.find((m) => m.id === id);
+            const label = meta?.label ?? (id === "discuss" ? "讨论" : id === "plan" ? "计划" : "自动");
+            const description =
+              meta?.description ??
+              (id === "discuss"
+                ? "只读顾问：检索文献、查询康复数据、追问分析"
+                : id === "plan"
+                  ? "制定方案，列出步骤，确认后执行"
+                  : "自主分解目标，并行执行，汇总产出");
+            return (
+              <button
+                key={id}
+                className={`galen-mode-btn ${modeState.mode === id ? "active" : ""}`}
+                onClick={() => modeState.switchMode(id)}
+                title={description}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
         {/* Persona */}
         <div className="model-chips">
           {personaState.allPersonas.map((p) => (

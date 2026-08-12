@@ -204,11 +204,11 @@ impl ToolRegistry {
         if ctx.mode == crate::modes::ChatMode::Discuss {
             if let Some(tool) = self.tools.get(name) {
                 if tool.is_write() {
-                    return Err("当前模式为「讨论」，不允许执行写操作。\n请切换到「计划」或「自动」模式后重试 (Ctrl+2 / Ctrl+3)。".into());
+                    return Err("当前模式为「讨论」，不允许执行写操作。\n请点击顶栏模式按钮，切换到「计划」或「自动」模式后重试。".into());
                 }
             }
             if name.starts_with("mcp__") {
-                return Err("当前模式为「讨论」，不允许执行 MCP 工具。\n请切换到「计划」或「自动」模式后重试 (Ctrl+2 / Ctrl+3)。".into());
+                return Err("当前模式为「讨论」，不允许执行 MCP 工具。\n请点击顶栏模式按钮，切换到「计划」或「自动」模式后重试。".into());
             }
         }
 
@@ -301,13 +301,13 @@ mod tests {
     // ── Registry ──
 
     #[test]
-    fn registry_has_all_14_builtin_definitions() {
+    fn registry_has_all_builtin_definitions() {
         let registry = ToolRegistry::default();
         let defs = registry.definitions();
-        assert_eq!(defs.len(), 14);
+        assert_eq!(defs.len(), 15);
         let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
         for expected in &["search_pubmed", "fetch_article", "format_citation",
-            "analyze_clinical_case", "write_file", "read_file", "delete_file",
+            "analyze_clinical_case", "rehab_data", "write_file", "read_file", "delete_file",
             "execute_command", "search_files"] {
             assert!(names.contains(expected), "missing: {expected}");
         }

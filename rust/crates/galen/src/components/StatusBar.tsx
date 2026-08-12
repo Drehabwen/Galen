@@ -24,7 +24,7 @@ export function StatusBar({ statusMessage, environment, mcpServers, mode, modeLa
     <div className="bottom-bar status-bar-compact">
       {mode && modeLabel && (
         <>
-          <span className={`status-mode mode-${mode}`} title="Ctrl+1/2/3 切换模式">
+          <span className={`status-mode mode-${mode}`} title="点击顶栏模式按钮或 Ctrl+1/2/3 切换模式">
             {modeLabel}
           </span>
           <span className="status-separator">|</span>

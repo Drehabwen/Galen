@@ -28,7 +28,7 @@ impl ChatMode {
 
     pub fn description(&self) -> &'static str {
         match self {
-            Self::Discuss => "只读顾问，追问分析，不执行代码",
+            Self::Discuss => "只读顾问 · 检索文献、查询康复数据、追问分析",
             Self::Plan => "制定方案，列出步骤，确认后执行",
             Self::Auto => "自主分解目标，并行执行，汇总产出",
         }
@@ -97,9 +97,14 @@ const DISCUSS_PROMPT: &str = r##"
    【下一步方向】用户接下来可以做什么
 
 ### 行为边界
-- 只读工具：search_pubmed, fetch_article, read_file, list_files, format_citation
+- 所有只读工具均可使用，包括：
+  - 文献检索：search_pubmed, fetch_article, format_citation
+  - 工作区读取：read_file, list_files, search_files
+  - 康复数据查询：rehab_data（查询对象、量表记录、评估测量、视频/语音资产等，只读，放心使用）
+  - 临床案例：analyze_clinical_case
 - 不写文件、不执行代码、不改动任何数据
-- 如果需要数据操作，向用户说明"切换到自动模式后我可以帮你执行"
+- MCP 工具不在本模式开放
+- 如果用户需要写文件或执行分析，引导用户点击顶栏按钮切换到「计划」或「自动」模式
 
 ### 语气
 专业、耐心、像导师一样的引导式对话。推荐方法时解释背后的统计学原理。
