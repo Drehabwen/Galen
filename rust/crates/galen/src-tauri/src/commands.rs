@@ -183,16 +183,26 @@ pub async fn send_message(
     mode: ChatMode,
     persona_id: String,
     tag: Option<String>, // Session tag for event isolation (empty = main chat)
+    thinking_level: Option<String>,
 ) -> Result<(), String> {
+    let thinking_level = thinking_level.unwrap_or_else(|| "medium".to_string());
     // Phase 1: extract all needed data from locked state (before any .await)
-    let (model_id, medical, router, workspace_root, persona) = {
+    let (model_alias, model_id, medical, router, workspace_root, persona) = {
         let backend = lock_mutex(&state.backend)?;
+        // The UI may send an empty/unknown alias before a model is selected;
+        // normalize to the configured default so we never fall back to a
+        // hardcoded provider (previously Anthropic).
+        let model_alias = if backend.router.get_model(&model_alias).is_some() {
+            model_alias.clone()
+        } else {
+            backend.router.default_alias().to_string()
+        };
         let model_id = backend.resolve_model(&model_alias);
         let medical = backend.medical.clone();
         let router = backend.router.clone();
         let ws = Mutex::new(backend.workspace_root.lock().map_err(|e| format!("{e}"))?.clone());
         let persona = crate::personas::find_persona(&persona_id);
-        (model_id, medical, router, ws, persona)
+        (model_alias, model_id, medical, router, ws, persona)
     };
 
     // Build tagged event names for session isolation
@@ -205,7 +215,7 @@ pub async fn send_message(
         // Parse history from frontend (simple {role, content}[] format)
         let input_messages = backend::parse_history_json(&history_json);
         let result = backend::run_chat(
-            model_alias, model_id, message, input_messages, mode, persona,
+            model_alias, model_id, message, input_messages, mode, persona, thinking_level,
             medical, router, workspace_root,
             {
                 let suffix = suffix.clone();
@@ -270,14 +280,23 @@ pub async fn get_mcp_status() -> Vec<McpServerStatus> {
 /// Provider defaults to DeepSeek (the most common choice for Chinese users),
 /// but the file can be hand-edited for any OpenAI-compatible provider.
 const DEFAULT_MODEL_TEMPLATE: &str = r#"[router]
-default = "default"
+default = "deepseek-v4-pro"
+fast = "deepseek-v4-flash"
 
-[models.default]
+[models.deepseek-v4-pro]
 provider = "openai_compat"
 api_key = "{api_key}"
 model_id = "deepseek-v4-pro"
 base_url = "https://api.deepseek.com/v1"
-description = "Default model — edit this file to change provider/model"
+description = "DeepSeek V4 Pro（默认，最强推理）"
+max_tokens = 32768
+
+[models.deepseek-v4-flash]
+provider = "openai_compat"
+api_key = "{api_key}"
+model_id = "deepseek-v4-flash"
+base_url = "https://api.deepseek.com/v1"
+description = "DeepSeek V4 Flash（快速）"
 max_tokens = 32768
 "#;
 
@@ -292,9 +311,17 @@ pub fn save_api_key(api_key: String) -> Result<(), String> {
     let content = if models_path.exists() {
         let existing =
             std::fs::read_to_string(&models_path).map_err(|e| format!("读取配置失败: {e}"))?;
-        // Inject api_key into the first [models.*] block that lacks one
-        if existing.contains("[models.deepseek]") && !existing.contains("api_key =") {
-            existing.replace("[models.deepseek]", &format!("[models.deepseek]\napi_key = \"{api_key}\""))
+        // Inject api_key into the DeepSeek template blocks that lack one
+        if existing.contains("[models.deepseek-v4-pro]") && !existing.contains("api_key =") {
+            existing
+                .replace(
+                    "[models.deepseek-v4-pro]",
+                    &format!("[models.deepseek-v4-pro]\napi_key = \"{api_key}\""),
+                )
+                .replace(
+                    "[models.deepseek-v4-flash]",
+                    &format!("[models.deepseek-v4-flash]\napi_key = \"{api_key}\""),
+                )
         } else if existing.contains("[models.default]") && !existing.contains("api_key =") {
             existing.replace("[models.default]", &format!("[models.default]\napi_key = \"{api_key}\""))
         } else {
@@ -347,4 +374,108 @@ pub fn get_memory_status(state: State<AppState>) -> Result<MemoryStatus, String>
             preview: String::new(),
         }),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Plan persistence (task-level loop state)
+// ---------------------------------------------------------------------------
+
+/// Persist the research plan (nodes + evidence) to `<workspace>/plan.json`.
+/// The loop's output is stored so it survives restarts and feeds the next
+/// task's context.
+#[tauri::command]
+pub fn save_plan(state: State<AppState>, plan_json: String) -> Result<(), String> {
+    let backend = lock_mutex(&state.backend)?;
+    let root = backend.get_workspace_root().ok_or("请先选择工作区")?;
+    let path = root.join("plan.json");
+    std::fs::write(&path, plan_json).map_err(|e| format!("写入 plan.json 失败: {e}"))
+}
+
+/// Load a previously persisted plan, if any.
+#[tauri::command]
+pub fn load_plan(state: State<AppState>) -> Result<Option<String>, String> {
+    let backend = lock_mutex(&state.backend)?;
+    let root = match backend.get_workspace_root() {
+        Some(r) => r,
+        None => return Ok(None),
+    };
+    let path = root.join("plan.json");
+    match std::fs::read_to_string(&path) {
+        Ok(content) => Ok(Some(content)),
+        Err(_) => Ok(None),
+    }
+}
+
+/// Append one line to `<workspace>/GALEN.md` (loop output becomes memory).
+/// Entry format follows the convention: `date | source | key finding | related file`.
+#[tauri::command]
+pub fn append_memory(state: State<AppState>, entry: String) -> Result<(), String> {
+    let backend = lock_mutex(&state.backend)?;
+    let root = backend.get_workspace_root().ok_or("请先选择工作区")?;
+    let path = root.join("GALEN.md");
+    let mut content = std::fs::read_to_string(&path).unwrap_or_default();
+    if content.trim().is_empty() {
+        content.push_str("# GALEN 项目记忆\n\n");
+    }
+    if !content.ends_with('\n') {
+        content.push('\n');
+    }
+    content.push_str(&format!("- {entry}\n"));
+    std::fs::write(&path, content).map_err(|e| format!("写入 GALEN.md 失败: {e}"))
+}
+
+// ---------------------------------------------------------------------------
+// Model / API key status
+// ---------------------------------------------------------------------------
+
+#[derive(serde::Serialize)]
+pub struct ModelStatus {
+    pub name: String,
+    pub model_id: String,
+    pub description: Option<String>,
+    pub api_key_present: bool,
+    pub api_key_masked: Option<String>,
+    pub base_url: Option<String>,
+    pub max_tokens: Option<u32>,
+    pub is_default: bool,
+}
+
+fn mask_key(key: &str) -> String {
+    if key.len() <= 8 {
+        "••••".to_string()
+    } else {
+        format!("{}…{}", &key[..4], &key[key.len() - 4..])
+    }
+}
+
+/// Report configured models and whether each has an API key (masked only).
+/// Lets the user verify at a glance that credentials are in place.
+#[tauri::command]
+pub fn get_model_status(state: State<AppState>) -> Result<Vec<ModelStatus>, String> {
+    let backend = lock_mutex(&state.backend)?;
+    let default_alias = backend.router.default_alias().to_string();
+    let mut statuses: Vec<ModelStatus> = backend
+        .router
+        .all_models()
+        .iter()
+        .map(|(alias, entry)| {
+            let masked = entry
+                .api_key
+                .as_deref()
+                .filter(|k| !k.is_empty())
+                .map(mask_key);
+            ModelStatus {
+                name: alias.clone(),
+                model_id: entry.model_id.clone(),
+                description: entry.description.clone(),
+                api_key_present: masked.is_some(),
+                api_key_masked: masked,
+                base_url: entry.base_url.clone(),
+                max_tokens: entry.max_tokens,
+                is_default: *alias == default_alias,
+            }
+        })
+        .collect();
+    statuses.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(statuses)
 }

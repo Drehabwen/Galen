@@ -96,7 +96,13 @@ export function useChat() {
   }, [backendAvailable]);
 
   const send = useCallback(
-    async (text: string, modelAlias: string, mode?: string, personaId?: string) => {
+    async (
+      text: string,
+      modelAlias: string,
+      mode?: string,
+      personaId?: string,
+      thinkingLevel?: string,
+    ) => {
       if (!text.trim() || sendingRef.current) return;
 
       if (!backendAvailable) {
@@ -129,6 +135,7 @@ export function useChat() {
           historyJson: historyJson,
           mode: mode || "discuss",
           personaId: personaId || "dev",
+          thinkingLevel: thinkingLevel || "medium",
         });
       } catch (e) {
         setError(String(e));

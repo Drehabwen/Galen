@@ -192,7 +192,13 @@ struct ESpellInner {
 }
 
 fn parse_pubmed_xml(xml: &str) -> Result<Vec<Paper>, PubMedError> {
-    let doc = roxmltree::Document::parse(xml)
+    // NCBI efetch responses always carry a `<!DOCTYPE ...>` declaration;
+    // roxmltree rejects DTD by default, so allow it (it is never fetched).
+    let options = roxmltree::ParsingOptions {
+        allow_dtd: true,
+        ..Default::default()
+    };
+    let doc = roxmltree::Document::parse_with_options(xml, options)
         .map_err(|e| PubMedError::Parse(format!("XML parse: {e}")))?;
 
     let mut papers = Vec::new();
@@ -359,7 +365,11 @@ fn parse_pubmed_article(_doc: &roxmltree::Document, article: roxmltree::Node) ->
 }
 
 fn parse_pmc_fulltext(xml: &str) -> Result<Vec<FullText>, PubMedError> {
-    let doc = roxmltree::Document::parse(xml)
+    let options = roxmltree::ParsingOptions {
+        allow_dtd: true,
+        ..Default::default()
+    };
+    let doc = roxmltree::Document::parse_with_options(xml, options)
         .map_err(|e| PubMedError::Parse(format!("PMC XML parse: {e}")))?;
 
     let mut fulltexts = Vec::new();

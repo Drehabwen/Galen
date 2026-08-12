@@ -90,6 +90,7 @@ struct JsonRpcRequest {
     params: Option<Value>,
 }
 
+#[allow(dead_code)] // JSON-RPC protocol fields kept for response completeness
 #[derive(Debug, Clone, Deserialize)]
 struct JsonRpcResponse {
     id: u64,
@@ -105,6 +106,7 @@ struct JsonRpcError {
     message: String,
 }
 
+#[allow(dead_code)] // protocol_version/capabilities are deserialized but not read yet
 #[derive(Debug, Clone, Deserialize)]
 struct InitializeResult {
     protocol_version: String,
@@ -134,6 +136,7 @@ struct CallToolResult {
     is_error: Option<bool>,
 }
 
+#[allow(dead_code)] // content_type/resource are protocol fields kept for completeness
 #[derive(Debug, Clone, Deserialize)]
 struct McpContent {
     #[serde(rename = "type")]

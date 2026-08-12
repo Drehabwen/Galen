@@ -32,6 +32,7 @@ rust/.omc/
 rust/.sandbox-home/
 # Bundled runtimes (download/build artifacts, not source)
 rust/crates/galen/src-tauri/binaries/
+tmp/
 # Root-level scratch files
 progress.txt
 stderr.txt

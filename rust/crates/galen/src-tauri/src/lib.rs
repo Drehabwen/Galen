@@ -45,6 +45,10 @@ pub fn run() {
             commands::get_runtime_status,
             commands::get_mcp_status,
             commands::get_memory_status,
+            commands::save_plan,
+            commands::load_plan,
+            commands::append_memory,
+            commands::get_model_status,
             commands::save_api_key,
         ])
         .run(tauri::generate_context!())

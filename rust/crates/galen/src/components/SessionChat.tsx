@@ -16,6 +16,10 @@ interface SessionChatProps {
   onFlowBack?: (node: SessionNode, summary: string) => void;
   backendAvailable: boolean;
   modelAlias: string;
+  thinkingLevel?: string;
+  /** When true, the session starts autonomously: the node goal is sent
+   *  automatically and [SESSION_DONE] triggers an automatic flow-back. */
+  autoRun?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -27,6 +31,8 @@ export function SessionChat({
   onFlowBack,
   backendAvailable,
   modelAlias,
+  thinkingLevel,
+  autoRun,
 }: SessionChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -37,6 +43,13 @@ export function SessionChat({
   const sendingRef = useRef(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const doneHandledRef = useRef(false);
+  const messagesRef = useRef(messages);
+  const onFlowBackRef = useRef(onFlowBack);
+  const autoRunRef = useRef(false);
+  onFlowBackRef.current = onFlowBack;
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   // Register tagged event listeners for this session (isolated from main chat)
   const tag = node.id;
@@ -52,10 +65,17 @@ export function SessionChat({
       const u2 = await listen<string>(`chat-done:${tag}`, (e) => {
         if (cancelled || doneHandledRef.current) return;
         doneHandledRef.current = true;
-        setMessages((p) => [...p, { role: "assistant", content: e.payload, timestamp: Date.now() }]);
+        const content = e.payload;
+        setMessages((p) => [...p, { role: "assistant", content, timestamp: Date.now() }]);
         setStreaming("");
         setSending(false);
         sendingRef.current = false;
+        // Autonomous completion: the agent signals SESSION_DONE -> flow back
+        if (content.includes("[SESSION_DONE]")) {
+          const summary =
+            content.replace(/\[SESSION_DONE\]\s*/, "").trim() || content;
+          onFlowBackRef.current?.(node, summary);
+        }
       });
       const u3 = await listen<string>(`chat-error:${tag}`, (e) => {
         if (!cancelled) {
@@ -83,36 +103,67 @@ export function SessionChat({
   // Build session system prompt
   const sessionPrompt = buildSessionPrompt(node);
 
-  const handleSend = useCallback(async () => {
-    if (!input.trim() || sendingRef.current || !backendAvailable) return;
-    const text = input.trim();
-    setInput("");
-    setMessages((p) => [...p, { role: "user", content: text, timestamp: Date.now() }]);
-    setSending(true);
-    sendingRef.current = true;
-    doneHandledRef.current = false;
-    setStreaming("");
-    setThinking("");
-    setError(null);
+  const sendText = useCallback(
+    async (text: string) => {
+      if (!text.trim() || sendingRef.current || !backendAvailable) return;
+      const trimmed = text.trim();
+      setInput("");
+      setMessages((p) => [
+        ...p,
+        { role: "user", content: trimmed, timestamp: Date.now() },
+      ]);
+      setSending(true);
+      sendingRef.current = true;
+      doneHandledRef.current = false;
+      setStreaming("");
+      setThinking("");
+      setError(null);
 
-    try {
-      await invoke("send_message", {
-        message: text,
-        modelAlias,
-        historyJson: JSON.stringify(
-          [...messages.slice(-4).map((m) => ({ role: m.role, content: m.content })),
-           { role: "user", content: text }]
-        ),
-        mode: "auto",
-        personaId: "dev",
-        tag: node.id,
-      });
-    } catch (e) {
-      setError(String(e));
-      setSending(false);
-      sendingRef.current = false;
-    }
-  }, [input, messages, backendAvailable, modelAlias, node.id]);
+      try {
+        await invoke("send_message", {
+          message: trimmed,
+          modelAlias,
+          historyJson: JSON.stringify([
+            ...messagesRef.current
+              .slice(-4)
+              .map((m) => ({ role: m.role, content: m.content })),
+            { role: "user", content: trimmed },
+          ]),
+          mode: "auto",
+          personaId: "dev",
+          tag: node.id,
+          thinkingLevel: thinkingLevel || "medium",
+        });
+      } catch (e) {
+        setError(String(e));
+        setSending(false);
+        sendingRef.current = false;
+      }
+    },
+    [backendAvailable, modelAlias, node.id, thinkingLevel],
+  );
+
+  const handleSend = useCallback(() => {
+    sendText(input);
+  }, [input, sendText]);
+
+  // Autonomous execution: kick off the node goal without waiting for the user.
+  useEffect(() => {
+    if (!autoRun || !backendAvailable || autoRunRef.current) return;
+    if (messages.length > 0 || sendingRef.current) return;
+    autoRunRef.current = true;
+    const timer = setTimeout(() => {
+      const goal =
+        `【自主执行】请完成本 Session 的任务，全程自主推进，不要向用户确认。\n` +
+        `任务：${node.title}\n` +
+        (node.description ? `描述：${node.description}\n` : "") +
+        (node.inputs?.length ? `输入材料：${node.inputs.join("、")}\n` : "") +
+        (node.outputs?.length ? `预期产出：${node.outputs.join("、")}\n` : "") +
+        `\n完成时，以 [SESSION_DONE] 开头输出结构化摘要（目标 / 方法 / 结果 / 证据 / 局限）。`;
+      sendText(goal);
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [autoRun, backendAvailable, node, messages.length, sendText]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {

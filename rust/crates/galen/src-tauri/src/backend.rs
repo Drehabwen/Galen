@@ -20,6 +20,8 @@ use crate::tools::{ToolContext, ToolRegistry};
 pub struct ModelConfig {
     pub name: String,
     pub model_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -77,6 +79,7 @@ impl ChatBackend {
             .map(|(alias, entry)| ModelConfig {
                 name: alias.clone(),
                 model_id: entry.model_id.clone(),
+                description: entry.description.clone(),
             })
             .collect()
     }
@@ -127,9 +130,8 @@ fn intern(s: String) -> &'static str {
 
 fn make_client(
     model_alias: &str,
-    model_id: &str,
     router: &ModelRouter,
-) -> Result<ProviderClient, Box<dyn std::error::Error + Send>> {
+) -> Result<ProviderClient, String> {
     // Try model-router config first (for models.toml entries)
     if let Some(provider_config) = router.to_provider_config(model_alias) {
         if let Some(api_key) = provider_config.api_key() {
@@ -145,10 +147,12 @@ fn make_client(
                 api_key, config,
             )));
         }
+        return Err(format!(
+            "模型 \"{model_alias}\" 缺少 API Key：请在 ~/.galen/models.toml 的 [models.{model_alias}] 中填写 api_key"
+        ));
     }
-    // Fall back to built-in model resolution
-    ProviderClient::from_model(model_id)
-        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send>)
+    Err("未配置可用模型：请在 ~/.galen/models.toml 中配置 DeepSeek（provider = \"openai_compat\"，model_id = \"deepseek-v4-pro\"，base_url = \"https://api.deepseek.com/v1\"），或重启应用后在欢迎向导中保存 DeepSeek API Key。"
+        .to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -187,7 +191,15 @@ fn build_system_prompt(
     let status = crate::runtime_manager::detect_all();
     let env_summary = crate::runtime_manager::status_summary(&status);
     let mode_prompt = crate::modes::mode_prompt(mode);
-    let skills = if persona.id == "medical" { crate::skills::RESEARCH_SKILLS } else { "" };
+    let skills = if persona.id == "medical" {
+        format!(
+            "{}\n\n{}",
+            crate::skills::RESEARCH_TASTE,
+            crate::skills::RESEARCH_SKILLS_V2
+        )
+    } else {
+        String::new()
+    };
     let ws = workspace_summary(workspace_root);
     // Stable prefix — loaded once, never mutated mid-session
     format!(
@@ -305,13 +317,39 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
     history: Vec<InputMessage>,
     mode: crate::modes::ChatMode,
     persona: crate::personas::Persona,
+    thinking_level: String,
     medical: Arc<MedicalCore>,
     router: ModelRouter,
     workspace_root: Mutex<Option<PathBuf>>,
     on_event: F,
 ) -> Result<(), String> {
-    let client = make_client(&model_alias, &model_id, &router)
-        .map_err(|e| format!("Failed to create client: {e}"))?;
+    let client = make_client(&model_alias, &router)
+        .map_err(|e| format!("创建模型客户端失败: {e}"))?;
+
+    // Map user-facing thinking intensity to provider params.
+    // DeepSeek V4 (and compatible reasoning models) accept low/medium/high;
+    // "off" disables reasoning entirely. Unknown values fall back to medium.
+    let (reasoning_effort, thinking) = match thinking_level.as_str() {
+        "off" => (None, None),
+        "high" => (
+            Some("high".to_string()),
+            Some(ThinkingConfig {
+                thinking_type: "enabled".to_string(),
+            }),
+        ),
+        "low" => (
+            Some("low".to_string()),
+            Some(ThinkingConfig {
+                thinking_type: "enabled".to_string(),
+            }),
+        ),
+        _ => (
+            Some("medium".to_string()),
+            Some(ThinkingConfig {
+                thinking_type: "enabled".to_string(),
+            }),
+        ),
+    };
 
     // Build cache-stable prefix
     let system_prompt = build_system_prompt(&persona, mode, &workspace_root);
@@ -420,11 +458,8 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
             tools: Some(tools.clone()),
             tool_choice: Some(ToolChoice::Auto),
             stream: true,
-            // DeepSeek V4 reasoning control: keep thinking visible but moderate
-            reasoning_effort: Some("medium".to_string()),
-            thinking: Some(ThinkingConfig {
-                thinking_type: "enabled".to_string(),
-            }),
+            reasoning_effort: reasoning_effort.clone(),
+            thinking: thinking.clone(),
             ..Default::default()
         };
 

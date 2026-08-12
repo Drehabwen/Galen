@@ -67,20 +67,16 @@ cargo build --release -p galen
 
 ```toml
 [router]
-default = "sonnet"
+default = "default"
 
-[models.sonnet]
-provider = "anthropic"
-api_key = "sk-ant-xxx"
-model_id = "claude-sonnet-4-6"
-
-[models.gpt4o]
-provider = "openai"
+[models.default]
+provider = "openai_compat"
 api_key = "sk-xxx"
-model_id = "gpt-4o"
+model_id = "deepseek-v4-pro"
+base_url = "https://api.deepseek.com/v1"
 ```
 
-没有配置文件时，应用会自动检测环境变量中的 API key 并使用内置默认模型列表。
+没有配置文件时，应用会弹出欢迎向导引导你保存 DeepSeek API Key（写入 `~/.galen/models.toml`）。
 
 ## 架构
 

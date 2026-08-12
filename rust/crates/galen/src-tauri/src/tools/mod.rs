@@ -29,6 +29,7 @@ pub mod clinical;
 pub mod command;
 pub mod fs;
 pub mod medical;
+pub mod rehab;
 pub mod search;
 pub mod workspace_path;
 
@@ -152,6 +153,7 @@ impl ToolRegistry {
         self.register(medical::FetchArticle);
         self.register(medical::FormatCitation);
         self.register(clinical::AnalyzeClinicalCase);
+        self.register(rehab::RehabData);
 
         // File operations
         self.register(fs::CreateDirectory);

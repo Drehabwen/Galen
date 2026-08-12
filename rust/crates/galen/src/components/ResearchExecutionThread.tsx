@@ -55,6 +55,8 @@ interface ResearchExecutionThreadProps {
   models: ModelConfig[];
   selectedModel: string;
   onModelChange: (model: string) => void;
+  thinkingLevel: string;
+  onThinkingLevelChange: (level: string) => void;
   // Callbacks for thread actions
   onApprove?: (messageId: number) => void;
   onReject?: (messageId: number) => void;
@@ -67,6 +69,84 @@ interface ModelSelectorProps {
   value: string;
   onChange: (model: string) => void;
   disabled: boolean;
+}
+
+const THINKING_OPTIONS = [
+  { value: "off", label: "思考·关" },
+  { value: "low", label: "思考·低" },
+  { value: "medium", label: "思考·中" },
+  { value: "high", label: "思考·高" },
+] as const;
+
+interface ThinkingSelectorProps {
+  value: string;
+  onChange: (level: string) => void;
+  disabled: boolean;
+}
+
+function ThinkingSelector({ value, onChange, disabled }: ThinkingSelectorProps) {
+  const [expanded, setExpanded] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!expanded) return;
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setExpanded(false);
+    };
+    window.addEventListener("pointerdown", closeOnOutsideClick);
+    return () => window.removeEventListener("pointerdown", closeOnOutsideClick);
+  }, [expanded]);
+
+  const current =
+    THINKING_OPTIONS.find((option) => option.value === value) ?? THINKING_OPTIONS[2];
+
+  return (
+    <div
+      className={`composer-model-selector ${expanded ? "expanded" : ""}`}
+      ref={rootRef}
+    >
+      <button
+        type="button"
+        className="composer-model-trigger"
+        onClick={() => setExpanded((open) => !open)}
+        disabled={disabled}
+        title="思考强度"
+      >
+        <span className="composer-model-mark" aria-hidden="true" />
+        <span className="composer-model-current">{current.label}</span>
+        <span className="composer-model-chevron" aria-hidden="true">
+          ▾
+        </span>
+      </button>
+
+      <div className="composer-model-panel" role="listbox" aria-label="思考强度">
+        <div className="composer-model-panel-label">思考强度</div>
+        {THINKING_OPTIONS.map((option) => {
+          const active = option.value === value;
+          return (
+            <button
+              type="button"
+              key={option.value}
+              className={`composer-model-option ${active ? "active" : ""}`}
+              role="option"
+              aria-selected={active}
+              onClick={() => {
+                onChange(option.value);
+                setExpanded(false);
+              }}
+            >
+              <span className="composer-model-option-copy">
+                <strong>{option.label}</strong>
+              </span>
+              <span className="composer-model-check" aria-hidden="true">
+                {active ? "✓" : ""}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 function ModelSelector({ models, value, onChange, disabled }: ModelSelectorProps) {
@@ -148,6 +228,8 @@ export function ResearchExecutionThread({
   models,
   selectedModel,
   onModelChange,
+  thinkingLevel,
+  onThinkingLevelChange,
   onApprove,
   onReject,
   onViewEvidence,
@@ -412,6 +494,11 @@ export function ResearchExecutionThread({
               models={models}
               value={selectedModel}
               onChange={onModelChange}
+              disabled={!backendAvailable || sending}
+            />
+            <ThinkingSelector
+              value={thinkingLevel}
+              onChange={onThinkingLevelChange}
               disabled={!backendAvailable || sending}
             />
             <span className="thread-composer-hint">Enter 发送 · Shift+Enter 换行</span>

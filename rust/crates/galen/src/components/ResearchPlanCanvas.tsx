@@ -48,7 +48,9 @@ export function ResearchPlanCanvas({
       {/* Canvas header */}
       <div className="plan-canvas-header">
         <span className="plan-canvas-title">科研计划画布</span>
-        <span className="plan-canvas-status">计划已确认 · {nodes.length} 个节点</span>
+        <span className="plan-canvas-status">
+          计划已确认 · {nodes.filter((n) => n.status === "completed").length}/{nodes.length} 完成
+        </span>
       </div>
 
       {/* Nodes */}
@@ -78,6 +80,14 @@ export function ResearchPlanCanvas({
                 </span>
               </div>
               <div className="plan-node-title">{node.title}</div>
+              {node.status === "completed" && node.result && (
+                <div className="plan-node-result">
+                  {node.result.length > 120 ? `${node.result.slice(0, 120)}…` : node.result}
+                </div>
+              )}
+              {node.evidence && node.evidence.length > 0 && (
+                <div className="plan-node-evidence">证据 {node.evidence.length} 条</div>
+              )}
               <div className="plan-node-meta">
                 {node.owner && <span>负责人: {node.owner}</span>}
                 {node.riskLevel && (

@@ -83,6 +83,12 @@ impl ModelRouter {
         self.config.models.get(&self.config.router.default)
     }
 
+    /// The configured default model alias (e.g. `"default"` when using the
+    /// DeepSeek template). Used when the UI sends an empty/unknown alias.
+    pub fn default_alias(&self) -> &str {
+        &self.config.router.default
+    }
+
     pub fn all_models(&self) -> &HashMap<String, ModelEntry> {
         &self.config.models
     }

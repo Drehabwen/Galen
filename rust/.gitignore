@@ -1,3 +1,4 @@
 target/
+prompt_probe.py
 .omx/
 .clawd-agents/

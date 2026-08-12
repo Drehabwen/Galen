@@ -14,6 +14,10 @@ export interface SessionNode {
   riskLevel?: "low" | "medium" | "high";
   approvalRequired?: boolean;
   subSessions?: SessionNode[];
+  /** Structured outcome attached when the session flows back to the main thread. */
+  result?: string;
+  /** Key evidence points extracted from the session summary (loop output). */
+  evidence?: string[];
 }
 
 // Mock data for M1 static UI

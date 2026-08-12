@@ -197,6 +197,102 @@
   color: var(--text-primary);
   margin-bottom: var(--space-2);
 }
+.plan-node-result {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  line-height: 1.45;
+  background: var(--bg-elevated);
+  border-left: 2px solid var(--success);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--space-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.plan-node-evidence {
+  font-size: var(--text-xs);
+  color: var(--color-info);
+  margin-bottom: var(--space-2);
+}
+.model-status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.model-status-dot.ok { background: var(--success); }
+.model-status-dot.missing { background: var(--warning); }
+.model-status-panel {
+  position: relative;
+  width: min(520px, 90vw);
+  max-height: 80vh;
+  overflow: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-5);
+  box-shadow: var(--shadow-lg);
+}
+.model-status-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-4);
+}
+.model-status-header h2 {
+  font-size: var(--text-lg);
+  margin: 0;
+}
+.model-status-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.model-status-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+}
+.model-status-card.default { border-color: var(--success); }
+.model-status-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-1);
+}
+.model-status-default-badge {
+  font-size: var(--text-xs);
+  color: var(--success);
+  background: var(--success-soft);
+  padding: 0 8px;
+  border-radius: var(--radius-pill);
+}
+.model-status-key {
+  font-size: var(--text-xs);
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+}
+.model-status-key.ok { color: var(--success); background: var(--success-soft); }
+.model-status-key.missing { color: var(--warning); background: var(--warning-muted); }
+.model-status-card-sub {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  margin-top: 2px;
+  word-break: break-all;
+}
+.model-status-empty {
+  color: var(--text-secondary);
+  padding: var(--space-4) 0;
+}
+.model-status-hint {
+  margin-top: var(--space-4);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
 .plan-node-meta {
   display: flex;
   gap: var(--space-3);

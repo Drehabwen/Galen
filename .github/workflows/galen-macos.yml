@@ -1,0 +1,68 @@
+name: Galen macOS build
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - galen-research-workbench
+
+permissions:
+  contents: write
+
+concurrency:
+  group: galen-macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: galen-${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: x86_64-apple-darwin
+          - os: macos-14-arm64
+            target: aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust -> rust/target
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: rust/crates/galen/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: rust/crates/galen
+        run: npm ci
+
+      - name: Download platform sidecars (typst/deno/uv)
+        run: python3 rust/scripts/download_sidecars.py
+
+      - name: Build macOS app (app + dmg)
+        working-directory: rust/crates/galen
+        run: npm run tauri -- build --bundles app,dmg
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: galen-${{ matrix.target }}
+          path: rust/target/release/bundle/
+
+      - name: Upload release assets
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            rust/target/release/bundle/dmg/*.dmg
+          fail_on_unmatched_files: false

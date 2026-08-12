@@ -1,6 +1,18 @@
 export interface ModelConfig {
   name: string;
   model_id: string;
+  description?: string;
+}
+
+export interface ModelStatus {
+  name: string;
+  model_id: string;
+  description?: string;
+  api_key_present: boolean;
+  api_key_masked?: string;
+  base_url?: string;
+  max_tokens?: number;
+  is_default: boolean;
 }
 
 export interface FileEntry {
