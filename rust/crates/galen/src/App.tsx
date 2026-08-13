@@ -619,6 +619,9 @@ export default function App() {
           memoryExists={memoryStatus?.exists ?? false}
           envStatus={env.status}
           mcpServers={env.mcpServers}
+          mode={modeState.mode}
+          modes={modeState.modes}
+          onSwitchMode={modeState.switchMode}
         />
       )}
       {showModelStatus && (

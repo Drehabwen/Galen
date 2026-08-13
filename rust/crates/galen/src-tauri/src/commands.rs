@@ -35,6 +35,7 @@ pub fn get_mode(state: State<AppState>) -> Result<ChatMode, String> {
 pub fn set_mode(state: State<AppState>, mode: ChatMode) -> Result<ChatMode, String> {
     let mut guard = lock_mutex(&state.mode)?;
     *guard = mode;
+    crate::modes::save_mode(mode);
     Ok(*guard)
 }
 

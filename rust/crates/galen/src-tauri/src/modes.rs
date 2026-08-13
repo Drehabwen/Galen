@@ -2,7 +2,12 @@
 //!
 //! 三种模式各有独立的 System Prompt，控制 Agent 的行为边界、工具权限和语气风格。
 
+use std::path::PathBuf;
+
 use serde::{Deserialize, Serialize};
+
+const SETTINGS_FILE: &str = "settings.toml";
+const MODE_KEY: &str = "mode";
 
 // ---------------------------------------------------------------------------
 // Mode enum
@@ -12,9 +17,9 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "lowercase")]
 pub enum ChatMode {
     #[default]
-    Discuss,
-    Plan,
     Auto,
+    Plan,
+    Discuss,
 }
 
 impl ChatMode {
@@ -241,6 +246,85 @@ pub fn all_modes() -> Vec<ModeMeta> {
     ]
 }
 
+pub fn settings_path() -> PathBuf {
+    let mut dir = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    dir.push(".galen");
+    dir.push(SETTINGS_FILE);
+    dir
+}
+
+/// Load the persisted mode, falling back to the default.
+pub fn load_mode() -> ChatMode {
+    load_mode_from(&settings_path())
+}
+
+fn load_mode_from(path: &std::path::Path) -> ChatMode {
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return ChatMode::default();
+    };
+    content
+        .lines()
+        .find_map(|line| {
+            let line = line.trim();
+            let (key, value) = line.split_once('=')?;
+            if key.trim() != MODE_KEY {
+                return None;
+            }
+            let value = value.trim().trim_matches('"');
+            match value {
+                "discuss" => Some(ChatMode::Discuss),
+                "plan" => Some(ChatMode::Plan),
+                "auto" => Some(ChatMode::Auto),
+                _ => None,
+            }
+        })
+        .unwrap_or_default()
+}
+
+/// Persist the chosen mode so restarts keep the user's preference.
+pub fn save_mode(mode: ChatMode) {
+    save_mode_to(&settings_path(), mode);
+}
+
+fn save_mode_to(path: &std::path::Path, mode: ChatMode) {
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let key = match mode {
+        ChatMode::Discuss => "discuss",
+        ChatMode::Plan => "plan",
+        ChatMode::Auto => "auto",
+    };
+    // Read existing file, replace the mode line if present, otherwise append.
+    let mut content = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut replaced = false;
+    let updated = content
+        .lines()
+        .map(|line| {
+            let trimmed = line.trim();
+            if trimmed.starts_with(MODE_KEY) && trimmed.contains('=') {
+                replaced = true;
+                format!("{MODE_KEY} = \"{key}\"")
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    content = if replaced {
+        updated
+    } else {
+        let mut base = if updated.trim().is_empty() {
+            String::new()
+        } else {
+            updated.trim_end().to_string() + "\n"
+        };
+        base.push_str(&format!("{MODE_KEY} = \"{key}\"\n"));
+        base
+    };
+    let _ = std::fs::write(&path, content);
+}
+
 /// Get the full system prompt for a given mode.
 /// This is appended to the base MEDICAL_SYSTEM_PROMPT from backend.rs.
 pub fn mode_prompt(mode: ChatMode) -> &'static str {
@@ -256,11 +340,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn mode_default_is_discuss() {
+    fn mode_default_is_auto() {
         let mode = ChatMode::default();
-        assert_eq!(mode, ChatMode::Discuss);
-        assert!(!mode.auto_confirm());
-        assert!(!mode.write_allowed());
+        assert_eq!(mode, ChatMode::Auto);
+        assert!(mode.auto_confirm());
+        assert!(mode.write_allowed());
     }
 
     #[test]
@@ -284,5 +368,29 @@ mod tests {
             assert!(!prompt.is_empty());
             assert!(prompt.len() > 100, "Mode {mode:?} prompt too short: {}", prompt.len());
         }
+    }
+
+    #[test]
+    fn mode_persistence_round_trip() {
+        let dir = std::env::temp_dir().join(format!("galen-mode-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.toml");
+
+        // Fresh file -> default (Auto)
+        assert_eq!(load_mode_from(&path), ChatMode::Auto);
+
+        // Save plan -> loads back as plan
+        save_mode_to(&path, ChatMode::Plan);
+        assert_eq!(load_mode_from(&path), ChatMode::Plan);
+
+        // Save discuss -> replaces the existing line
+        save_mode_to(&path, ChatMode::Discuss);
+        assert_eq!(load_mode_from(&path), ChatMode::Discuss);
+
+        // File keeps no duplicate mode keys
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(content.matches("mode =").count(), 1);
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

@@ -26,7 +26,7 @@ pub fn run() {
         .manage(AppState {
             backend: std::sync::Mutex::new(backend),
             ws_config: std::sync::Mutex::new(ws_config),
-            mode: std::sync::Mutex::new(ChatMode::default()),
+            mode: std::sync::Mutex::new(crate::modes::load_mode()),
             persona: std::sync::Mutex::new(personas::medical_persona()),
         })
         .invoke_handler(tauri::generate_handler![
