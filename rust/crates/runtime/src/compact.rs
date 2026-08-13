@@ -1,4 +1,4 @@
-use crate::session::{ContentBlock, ConversationMessage, MessageRole, Session};
+use crate::session::{CompactionTrigger, ContentBlock, ConversationMessage, MessageRole, Session};
 
 const COMPACT_CONTINUATION_PREAMBLE: &str =
     "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\n";
@@ -28,6 +28,9 @@ pub struct CompactionResult {
     pub formatted_summary: String,
     pub compacted_session: Session,
     pub removed_message_count: usize,
+    /// Persistence error while appending the compaction event, if any. The
+    /// compaction itself still succeeded in memory.
+    pub persist_error: Option<String>,
 }
 
 /// Roughly estimates the token footprint of the current session transcript.
@@ -100,6 +103,7 @@ pub fn compact_session(session: &Session, config: CompactionConfig) -> Compactio
             formatted_summary: String::new(),
             compacted_session: session.clone(),
             removed_message_count: 0,
+            persist_error: None,
         };
     }
 
@@ -172,13 +176,22 @@ pub fn compact_session(session: &Session, config: CompactionConfig) -> Compactio
 
     let mut compacted_session = session.clone();
     compacted_session.messages = compacted_messages;
-    compacted_session.record_compaction(summary.clone(), removed.len());
+    let persist_error = compacted_session
+        .record_compaction(
+            summary.clone(),
+            removed,
+            CompactionTrigger::Auto,
+            existing_summary.as_deref(),
+        )
+        .err()
+        .map(|error| error.to_string());
 
     CompactionResult {
         summary,
         formatted_summary,
         compacted_session,
         removed_message_count: removed.len(),
+        persist_error,
     }
 }
 
@@ -557,7 +570,9 @@ mod tests {
         collect_key_files, compact_session, format_compact_summary,
         get_compact_continuation_message, infer_pending_work, should_compact, CompactionConfig,
     };
-    use crate::session::{ContentBlock, ConversationMessage, MessageRole, Session};
+    use crate::session::{
+        CompactionTrigger, ContentBlock, ConversationMessage, MessageRole, Session,
+    };
 
     #[test]
     fn formats_compact_summary_like_upstream() {
@@ -636,6 +651,112 @@ mod tests {
             result.removed_message_count > 0,
             "compaction must remove at least one message"
         );
+    }
+
+    #[test]
+    fn records_compaction_event_with_archived_messages() {
+        // given a session large enough to compact
+        let mut session = Session::new();
+        session.messages = vec![
+            ConversationMessage::user_text("first ".repeat(200)),
+            ConversationMessage::assistant(vec![ContentBlock::Text {
+                text: "second ".repeat(200),
+            }]),
+            ConversationMessage::tool_result("1", "bash", "ok ".repeat(200), false),
+            ConversationMessage {
+                role: MessageRole::Assistant,
+                blocks: vec![ContentBlock::Text {
+                    text: "recent".to_string(),
+                }],
+                usage: None,
+            },
+        ];
+
+        // when
+        let result = compact_session(
+            &session,
+            CompactionConfig {
+                preserve_recent_messages: 2,
+                max_estimated_tokens: 1,
+            },
+        );
+
+        // then the compaction event is recorded with the original messages archived
+        assert!(result.persist_error.is_none());
+        let history = &result.compacted_session.compaction_history;
+        assert_eq!(history.len(), 1, "one compaction event expected");
+        let event = &history[0];
+        assert_eq!(event.trigger, CompactionTrigger::Auto);
+        assert_eq!(event.count, 1);
+        assert_eq!(event.removed_message_count, result.removed_message_count);
+        assert_eq!(event.archived_messages.len(), event.removed_message_count);
+        assert!(event.timestamp_ms > 0, "event must carry a timestamp");
+        assert_eq!(event.prior_summary, None);
+        assert!(event.summary.contains("Scope:"), "summary body recorded");
+        assert!(
+            event
+                .archived_messages
+                .iter()
+                .any(|m| m.role == MessageRole::User),
+            "archived messages include the removed user turn"
+        );
+        // the compacted session still holds the recent tail
+        assert!(
+            result
+                .compacted_session
+                .messages
+                .iter()
+                .any(|m| m.blocks.iter().any(|b| matches!(
+                    b,
+                    ContentBlock::Text { text } if text == "recent"
+                ))),
+            "recent message must survive compaction"
+        );
+    }
+
+    #[test]
+    fn records_prior_summary_when_session_was_already_compacted() {
+        // given a session whose first message already carries a compacted summary
+        let preamble = super::COMPACT_CONTINUATION_PREAMBLE;
+        let mut session = Session::new();
+        session.messages = vec![
+            ConversationMessage {
+                role: MessageRole::System,
+                blocks: vec![ContentBlock::Text {
+                    text: format!("{preamble}earlier work"),
+                }],
+                usage: None,
+            },
+            ConversationMessage::user_text("first ".repeat(200)),
+            ConversationMessage::assistant(vec![ContentBlock::Text {
+                text: "second ".repeat(200),
+            }]),
+            ConversationMessage {
+                role: MessageRole::Assistant,
+                blocks: vec![ContentBlock::Text {
+                    text: "recent".to_string(),
+                }],
+                usage: None,
+            },
+        ];
+
+        // when
+        let result = compact_session(
+            &session,
+            CompactionConfig {
+                preserve_recent_messages: 2,
+                max_estimated_tokens: 1,
+            },
+        );
+
+        // then the compaction event records the merged-in prior summary
+        let event = result
+            .compacted_session
+            .compaction_history
+            .last()
+            .expect("compaction event recorded");
+        assert_eq!(event.prior_summary.as_deref(), Some("earlier work"));
+        assert_eq!(event.count, 1);
     }
 
     #[test]

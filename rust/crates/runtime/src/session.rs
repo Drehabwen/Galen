@@ -51,12 +51,44 @@ pub struct ConversationMessage {
     pub usage: Option<TokenUsage>,
 }
 
-/// Metadata describing the latest compaction that summarized a session.
+/// How a session compaction was triggered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompactionTrigger {
+    /// Compaction ran automatically when the session exceeded its budget.
+    Auto,
+    /// Compaction was requested explicitly (e.g. by a user command).
+    Manual,
+}
+
+impl CompactionTrigger {
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Manual => "manual",
+        }
+    }
+}
+
+/// One persisted compaction event: which original messages were summarized,
+/// when, why, and what the model actually saw afterwards.
+///
+/// `archived_messages` keeps the exact removed messages so a compaction is
+/// replayable — "model-visible is logged". A session keeps the full history
+/// of these events in [`Session::compaction_history`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionCompaction {
     pub count: u32,
     pub removed_message_count: usize,
     pub summary: String,
+    /// Wall-clock time the compaction happened, in milliseconds.
+    pub timestamp_ms: u64,
+    /// Whether the compaction was automatic or explicit.
+    pub trigger: CompactionTrigger,
+    /// The summary that existed before this compaction merged it, if any.
+    pub prior_summary: Option<String>,
+    /// The exact original messages removed by this compaction.
+    pub archived_messages: Vec<ConversationMessage>,
 }
 
 /// Provenance recorded when a session is forked from another session.
@@ -94,6 +126,8 @@ pub struct Session {
     pub updated_at_ms: u64,
     pub messages: Vec<ConversationMessage>,
     pub compaction: Option<SessionCompaction>,
+    /// Every compaction event, oldest first, with archived original messages.
+    pub compaction_history: Vec<SessionCompaction>,
     pub fork: Option<SessionFork>,
     pub workspace_root: Option<PathBuf>,
     pub prompt_history: Vec<SessionPromptEntry>,
@@ -113,6 +147,7 @@ impl PartialEq for Session {
             && self.updated_at_ms == other.updated_at_ms
             && self.messages == other.messages
             && self.compaction == other.compaction
+            && self.compaction_history == other.compaction_history
             && self.fork == other.fork
             && self.workspace_root == other.workspace_root
             && self.prompt_history == other.prompt_history
@@ -165,6 +200,7 @@ impl Session {
             updated_at_ms: now,
             messages: Vec::new(),
             compaction: None,
+            compaction_history: Vec::new(),
             fork: None,
             workspace_root: None,
             prompt_history: Vec::new(),
@@ -246,14 +282,39 @@ impl Session {
         self.push_message(ConversationMessage::user_text(text))
     }
 
-    pub fn record_compaction(&mut self, summary: impl Into<String>, removed_message_count: usize) {
+    /// Record a compaction event: archive the removed messages, update the
+    /// latest-compaction metadata, and append the event to the JSONL session
+    /// file when a persistence path is configured.
+    ///
+    /// On persistence failure the in-memory change is rolled back so the
+    /// in-memory session never diverges from what was actually written.
+    pub fn record_compaction(
+        &mut self,
+        summary: impl Into<String>,
+        removed: &[ConversationMessage],
+        trigger: CompactionTrigger,
+        prior_summary: Option<&str>,
+    ) -> Result<(), SessionError> {
         self.touch();
         let count = self.compaction.as_ref().map_or(1, |value| value.count + 1);
-        self.compaction = Some(SessionCompaction {
+        let record = SessionCompaction {
             count,
-            removed_message_count,
+            removed_message_count: removed.len(),
             summary: summary.into(),
-        });
+            timestamp_ms: current_time_millis(),
+            trigger,
+            prior_summary: prior_summary.map(ToOwned::to_owned),
+            archived_messages: removed.to_vec(),
+        };
+        self.compaction_history.push(record.clone());
+        self.compaction = Some(record);
+
+        if let Err(error) = self.append_persisted_compaction() {
+            self.compaction_history.pop();
+            self.compaction = self.compaction_history.last().cloned();
+            return Err(error);
+        }
+        Ok(())
     }
 
     #[must_use]
@@ -266,6 +327,7 @@ impl Session {
             updated_at_ms: now,
             messages: self.messages.clone(),
             compaction: self.compaction.clone(),
+            compaction_history: self.compaction_history.clone(),
             fork: Some(SessionFork {
                 parent_session_id: self.session_id.clone(),
                 branch_name: normalize_optional_string(branch_name),
@@ -307,6 +369,17 @@ impl Session {
         );
         if let Some(compaction) = &self.compaction {
             object.insert("compaction".to_string(), compaction.to_json()?);
+        }
+        if !self.compaction_history.is_empty() {
+            object.insert(
+                "compaction_history".to_string(),
+                JsonValue::Array(
+                    self.compaction_history
+                        .iter()
+                        .map(SessionCompaction::to_json)
+                        .collect::<Result<Vec<_>, _>>()?,
+                ),
+            );
         }
         if let Some(fork) = &self.fork {
             object.insert("fork".to_string(), fork.to_json());
@@ -367,6 +440,17 @@ impl Session {
             .get("compaction")
             .map(SessionCompaction::from_json)
             .transpose()?;
+        let compaction_history = object
+            .get("compaction_history")
+            .and_then(JsonValue::as_array)
+            .map(|entries| {
+                entries
+                    .iter()
+                    .map(SessionCompaction::from_json)
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
         let fork = object.get("fork").map(SessionFork::from_json).transpose()?;
         let workspace_root = object
             .get("workspace_root")
@@ -393,6 +477,7 @@ impl Session {
             updated_at_ms,
             messages,
             compaction,
+            compaction_history,
             fork,
             workspace_root,
             prompt_history,
@@ -409,6 +494,7 @@ impl Session {
         let mut updated_at_ms = None;
         let mut messages = Vec::new();
         let mut compaction = None;
+        let mut compaction_history = Vec::new();
         let mut fork = None;
         let mut workspace_root = None;
         let mut model = None;
@@ -466,9 +552,9 @@ impl Session {
                     messages.push(ConversationMessage::from_json(message_value)?);
                 }
                 "compaction" => {
-                    compaction = Some(SessionCompaction::from_json(&JsonValue::Object(
-                        object.clone(),
-                    ))?);
+                    let record = SessionCompaction::from_json(&JsonValue::Object(object.clone()))?;
+                    compaction = Some(record.clone());
+                    compaction_history.push(record);
                 }
                 "prompt_history" => {
                     if let Some(entry) =
@@ -494,6 +580,7 @@ impl Session {
             updated_at_ms: updated_at_ms.unwrap_or(created_at_ms.unwrap_or(now)),
             messages,
             compaction,
+            compaction_history,
             fork,
             workspace_root,
             prompt_history,
@@ -520,7 +607,7 @@ impl Session {
 
     fn render_jsonl_snapshot(&self) -> Result<String, SessionError> {
         let mut lines = vec![self.meta_record()?.render()];
-        if let Some(compaction) = &self.compaction {
+        for compaction in &self.compaction_history {
             lines.push(compaction.to_jsonl_record()?.render());
         }
         lines.extend(
@@ -570,6 +657,24 @@ impl Session {
 
         let mut file = OpenOptions::new().append(true).open(path)?;
         writeln!(file, "{}", entry.to_jsonl_record().render())?;
+        Ok(())
+    }
+
+    fn append_persisted_compaction(&self) -> Result<(), SessionError> {
+        let Some(path) = self.persistence_path() else {
+            return Ok(());
+        };
+        let Some(record) = self.compaction_history.last() else {
+            return Ok(());
+        };
+
+        let needs_bootstrap = !path.exists() || fs::metadata(path)?.len() == 0;
+        if needs_bootstrap {
+            return self.save_to_path(path);
+        }
+
+        let mut file = OpenOptions::new().append(true).open(path)?;
+        writeln!(file, "{}", record.to_jsonl_record()?.render())?;
         Ok(())
     }
 
@@ -822,6 +927,29 @@ impl SessionCompaction {
             "summary".to_string(),
             JsonValue::String(self.summary.clone()),
         );
+        object.insert(
+            "timestamp_ms".to_string(),
+            JsonValue::Number(i64_from_u64(self.timestamp_ms, "timestamp_ms")?),
+        );
+        object.insert(
+            "trigger".to_string(),
+            JsonValue::String(self.trigger.as_str().to_string()),
+        );
+        if let Some(prior_summary) = &self.prior_summary {
+            object.insert(
+                "prior_summary".to_string(),
+                JsonValue::String(prior_summary.clone()),
+            );
+        }
+        object.insert(
+            "archived_messages".to_string(),
+            JsonValue::Array(
+                self.archived_messages
+                    .iter()
+                    .map(ConversationMessage::to_json)
+                    .collect(),
+            ),
+        );
         Ok(JsonValue::Object(object))
     }
 
@@ -846,6 +974,29 @@ impl SessionCompaction {
             "summary".to_string(),
             JsonValue::String(self.summary.clone()),
         );
+        object.insert(
+            "timestamp_ms".to_string(),
+            JsonValue::Number(i64_from_u64(self.timestamp_ms, "timestamp_ms")?),
+        );
+        object.insert(
+            "trigger".to_string(),
+            JsonValue::String(self.trigger.as_str().to_string()),
+        );
+        if let Some(prior_summary) = &self.prior_summary {
+            object.insert(
+                "prior_summary".to_string(),
+                JsonValue::String(prior_summary.clone()),
+            );
+        }
+        object.insert(
+            "archived_messages".to_string(),
+            JsonValue::Array(
+                self.archived_messages
+                    .iter()
+                    .map(ConversationMessage::to_json)
+                    .collect(),
+            ),
+        );
         Ok(JsonValue::Object(object))
     }
 
@@ -853,10 +1004,45 @@ impl SessionCompaction {
         let object = value
             .as_object()
             .ok_or_else(|| SessionError::Format("compaction must be an object".to_string()))?;
+        let trigger = match object
+            .get("trigger")
+            .and_then(JsonValue::as_str)
+            .unwrap_or("auto")
+        {
+            "auto" => CompactionTrigger::Auto,
+            "manual" => CompactionTrigger::Manual,
+            other => {
+                return Err(SessionError::Format(format!(
+                    "unsupported compaction trigger: {other}"
+                )))
+            }
+        };
+        let archived_messages = object
+            .get("archived_messages")
+            .and_then(JsonValue::as_array)
+            .map(|entries| {
+                entries
+                    .iter()
+                    .map(ConversationMessage::from_json)
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
         Ok(Self {
             count: required_u32(object, "count")?,
             removed_message_count: required_usize(object, "removed_message_count")?,
             summary: required_string(object, "summary")?,
+            timestamp_ms: object
+                .get("timestamp_ms")
+                .map(|value| required_u64_from_value(value, "timestamp_ms"))
+                .transpose()?
+                .unwrap_or(0),
+            trigger,
+            prior_summary: object
+                .get("prior_summary")
+                .and_then(JsonValue::as_str)
+                .map(ToOwned::to_owned),
+            archived_messages,
         })
     }
 }
@@ -1143,8 +1329,8 @@ fn cleanup_rotated_logs(path: &Path) -> Result<(), SessionError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        cleanup_rotated_logs, current_time_millis, rotate_session_file_if_needed, ContentBlock,
-        ConversationMessage, MessageRole, Session, SessionFork,
+        cleanup_rotated_logs, current_time_millis, rotate_session_file_if_needed, CompactionTrigger,
+        ContentBlock, ConversationMessage, MessageRole, Session, SessionFork,
     };
     use crate::json::JsonValue;
     use crate::usage::TokenUsage;
@@ -1265,7 +1451,20 @@ mod tests {
         session
             .push_user_text("before")
             .expect("message should append");
-        session.record_compaction("summarized earlier work", 4);
+        let removed = vec![
+            ConversationMessage::user_text("one"),
+            ConversationMessage::user_text("two"),
+            ConversationMessage::user_text("three"),
+            ConversationMessage::user_text("four"),
+        ];
+        session
+            .record_compaction(
+                "summarized earlier work",
+                &removed,
+                CompactionTrigger::Auto,
+                None,
+            )
+            .expect("compaction should record");
         session.save_to_path(&path).expect("session should save");
 
         let restored = Session::load_from_path(&path).expect("session should load");
@@ -1274,7 +1473,12 @@ mod tests {
         let compaction = restored.compaction.expect("compaction metadata");
         assert_eq!(compaction.count, 1);
         assert_eq!(compaction.removed_message_count, 4);
+        assert_eq!(compaction.trigger, CompactionTrigger::Auto);
+        assert_eq!(compaction.prior_summary, None);
         assert!(compaction.summary.contains("summarized"));
+        assert_eq!(compaction.archived_messages, removed);
+        assert_eq!(restored.compaction_history.len(), 1);
+        assert_eq!(restored.compaction_history[0].archived_messages, removed);
     }
 
     #[test]

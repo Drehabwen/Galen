@@ -117,9 +117,11 @@ pub struct TurnSummary {
 }
 
 /// Details about automatic session compaction applied during a turn.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AutoCompactionEvent {
     pub removed_message_count: usize,
+    /// Persistence error while appending the compaction event, if any.
+    pub persist_error: Option<String>,
 }
 
 /// Coordinates the model loop, tool execution, hooks, and session updates.
@@ -571,9 +573,11 @@ where
             return None;
         }
 
+        let persist_error = result.persist_error.clone();
         self.session = result.compacted_session;
         Some(AutoCompactionEvent {
             removed_message_count: result.removed_message_count,
+            persist_error,
         })
     }
 
@@ -833,7 +837,7 @@ mod tests {
         PermissionRequest,
     };
     use crate::prompt::{ProjectContext, SystemPromptBuilder};
-    use crate::session::{ContentBlock, MessageRole, Session};
+    use crate::session::{CompactionTrigger, ContentBlock, ConversationMessage, MessageRole, Session};
     use crate::usage::TokenUsage;
     use crate::ToolError;
     use std::fs;
@@ -1552,6 +1556,7 @@ mod tests {
             summary.auto_compaction,
             Some(AutoCompactionEvent {
                 removed_message_count: 2,
+                persist_error: None,
             })
         );
         assert_eq!(runtime.session().messages[0].role, MessageRole::System);
@@ -1624,7 +1629,20 @@ mod tests {
         }
 
         let mut session = Session::new();
-        session.record_compaction("summarized earlier work", 4);
+        let removed = vec![
+            ConversationMessage::user_text("one"),
+            ConversationMessage::user_text("two"),
+            ConversationMessage::user_text("three"),
+            ConversationMessage::user_text("four"),
+        ];
+        session
+            .record_compaction(
+                "summarized earlier work",
+                &removed,
+                CompactionTrigger::Auto,
+                None,
+            )
+            .expect("compaction should record");
         session
             .push_user_text("previous message")
             .expect("message should append");
@@ -1671,7 +1689,13 @@ mod tests {
         }
 
         let mut session = Session::new();
-        session.record_compaction("fresh summary", 2);
+        let removed = vec![
+            ConversationMessage::user_text("one"),
+            ConversationMessage::user_text("two"),
+        ];
+        session
+            .record_compaction("fresh summary", &removed, CompactionTrigger::Auto, None)
+            .expect("compaction should record");
 
         let tool_executor = StaticToolExecutor::new().register("glob_search", |_input| {
             Err(ToolError::new(
