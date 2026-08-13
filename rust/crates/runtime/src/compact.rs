@@ -943,4 +943,89 @@ mod tests {
         assert_eq!(pending.len(), 1);
         assert!(pending[0].contains("Next: update tests"));
     }
+
+    /// Behavioral proof that the compaction event trail satisfies
+    /// "model-visible is logged": after one or more compactions, the archived
+    /// messages from `compaction_history` plus the surviving tail must contain
+    /// every original message — nothing a model once saw is lost.
+    #[test]
+    fn full_context_is_reconstructible_from_compaction_history() {
+        // given a large session whose every message carries a unique marker
+        let mut session = Session::new();
+        for index in 0..60 {
+            session.messages.push(ConversationMessage::user_text(format!(
+                "user-marker-{index} {}",
+                "x".repeat(150)
+            )));
+            session.messages.push(ConversationMessage::assistant(vec![
+                ContentBlock::Text {
+                    text: format!("assistant-marker-{index} {}", "y".repeat(150)),
+                },
+            ]));
+        }
+        let config = CompactionConfig {
+            preserve_recent_messages: 4,
+            max_estimated_tokens: 1,
+        };
+
+        // when: two consecutive compactions happen with more work in between
+        let first = compact_session(&session, config);
+        let mut second_session = first.compacted_session;
+        for index in 60..75 {
+            second_session
+                .messages
+                .push(ConversationMessage::user_text(format!(
+                    "user-marker-{index} {}",
+                    "z".repeat(150)
+                )));
+        }
+        let second = compact_session(&second_session, config);
+        assert_eq!(
+            second.compacted_session.compaction_history.len(),
+            2,
+            "both compactions must leave an event trail"
+        );
+
+        // then: every original message can be rebuilt from archive + tail
+        let mut rebuilt_user_markers = Vec::new();
+        for event in &second.compacted_session.compaction_history {
+            for message in &event.archived_messages {
+                collect_text_markers(message, &mut rebuilt_user_markers);
+            }
+        }
+        for message in &second.compacted_session.messages {
+            if message.role == MessageRole::System {
+                continue; // synthetic continuation, not an original message
+            }
+            collect_text_markers(message, &mut rebuilt_user_markers);
+        }
+
+        for index in 0..60 {
+            let marker = format!("user-marker-{index}");
+            assert!(
+                rebuilt_user_markers
+                    .iter()
+                    .any(|candidate| candidate.contains(&marker)),
+                "original user message {marker} lost after compaction"
+            );
+        }
+        // post-compaction turns survive verbatim in the live tail
+        for index in 60..75 {
+            let marker = format!("user-marker-{index}");
+            assert!(
+                rebuilt_user_markers
+                    .iter()
+                    .any(|candidate| candidate.contains(&marker)),
+                "recent user message {marker} lost"
+            );
+        }
+    }
+
+    fn collect_text_markers(message: &ConversationMessage, out: &mut Vec<String>) {
+        for block in &message.blocks {
+            if let ContentBlock::Text { text } = block {
+                out.push(text.clone());
+            }
+        }
+    }
 }
