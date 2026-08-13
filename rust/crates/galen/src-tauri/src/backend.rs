@@ -219,6 +219,7 @@ fn build_first_turn_tail(user_message: &str, workspace_root: &Mutex<Option<PathB
     let evidence = workspace_root_path(workspace_root)
         .map(|root| crate::evidence::evidence_chain_summary(&root, 8))
         .unwrap_or_default();
+    let resume = resume_protocol(workspace_root);
     let plan_format = "\n\n## 科研计划格式\n\
         需要制定研究计划时用以下格式输出：\n\
         <!-- PLAN_START -->\n\
@@ -226,7 +227,15 @@ fn build_first_turn_tail(user_message: &str, workspace_root: &Mutex<Option<PathB
         01 | 课题定义 | 明确研究问题 | -\n\
         <!-- PLAN_END -->\n\
         规则：`|` 分隔四个字段，编号两位数字，依赖逗号分隔。确认前询问用户。";
-    format!("{skills}\n\n{plan}\n\n{memory}{evidence}{plan_format}")
+    let opening = format!(
+        "\n\n## 会话开局（本轮对话开始前先完成）\n\
+         1. 用一句话陈述本次任务目标。\n\
+         2. 陈述当前工作区状态（哪些证据/计划/记忆已存在，哪些缺失）。\n\
+         3. 列出本次任务的收尾标准（什么样算完成、交付什么）。\n\
+         4. 然后再开始执行。\n\
+         小心：不要复述全部记忆/列表；只需在回答里体现\"我理解了哪些状态、接下来做什么\"，一段话即可。"
+    );
+    format!("{opening}{skills}\n\n{plan}\n\n{memory}{evidence}{resume}{plan_format}")
 }
 
 /// 读取工作区根目录；无工作区返回 None。
@@ -297,6 +306,36 @@ fn plan_progress_summary(workspace_root: &Mutex<Option<PathBuf>>) -> String {
             let snippet: String = r.chars().take(80).collect();
             out.push_str(&format!("\n- 已产出：{} → {}", n.title, snippet));
         }
+    }
+    out
+}
+
+
+/// 任务恢复协议：如果存在进行中的计划，提醒模型先交代【已做到哪、接着做什么】，
+/// 再继续执行，而不是从零重新开始或假装不知道现状。
+fn resume_protocol(workspace_root: &Mutex<Option<PathBuf>>) -> String {
+    let Some(root) = workspace_root_path(workspace_root) else {
+        return String::new();
+    };
+    let text = std::fs::read_to_string(root.join("plan.json")).unwrap_or_default();
+    if text.trim().is_empty() {
+        return String::new();
+    }
+    let nodes: Vec<PlanNodeLite> = serde_json::from_str(&text).unwrap_or_default();
+    let active: Vec<&PlanNodeLite> = nodes
+        .iter()
+        .filter(|n| n.status == "running" || n.status == "pending" || n.status == "blocked")
+        .collect();
+    if active.is_empty() {
+        return String::new();
+    }
+    let mut out = String::from("\n\n## 任务恢复协议（重要）\n");
+    out.push_str("检测到已有未完成的研究计划。先交代现状，再继续：\n");
+    out.push_str("- 上一轮已完成：列出 plan.json 中 completed 节点的结果摘要（若有）\n");
+    out.push_str("- 接下来要做：明确说出第一个未完成节点及其依赖\n");
+    out.push_str("- 然后直接继续执行，不要重新询问用户是否开始\n");
+    for n in active.iter().take(3) {
+        out.push_str(&format!("  - 未完成：{}（{}）\n", n.title, n.status));
     }
     out
 }
@@ -538,6 +577,7 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
     let max_turns = 12;
     let mut last_tool_name: Option<String> = None;
     let mut same_tool_streak: u32 = 0;
+    let mut con_error_streak: u32 = 0;
     let mut final_chance_used = false;
     let mut final_turn = false;
     let mut compacted = false;
@@ -575,6 +615,16 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
                 let folded = history.len() - KEEP_HEAD - KEEP_TAIL;
                 let head = history.drain(..KEEP_HEAD).collect::<Vec<_>>();
                 let middle = history.drain(..folded).collect::<Vec<_>>();
+                // 保留原始任务锚点（Cline 的做法：截断后仍保留最初任务，保持连续性）
+                let task_anchor = history.iter().find_map(|m| {
+                    if m.role != "user" { return None; }
+                    let text: String = m.content.iter().filter_map(|b| match b {
+                        InputContentBlock::Text { text } => Some(text.clone()),
+                        _ => None,
+                    }).collect();
+                    let trimmed = text.trim();
+                    if trimmed.is_empty() { None } else { Some(trimmed.to_string()) }
+                });
                 let tail = std::mem::take(&mut history);
                 // 智能压缩：把中间消息压成结构化摘要（失败则回退占位符）
                 let summary = summarize_middle(&client, &model_id, &middle)
@@ -586,7 +636,8 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
                         role: "user".to_string(),
                         content: vec![InputContentBlock::Text {
                             text: format!(
-                                "[上下文已折叠: {folded} 条较早的消息被移除，保留最近 {KEEP_TAIL} 条。关键结论见上方证据链。]"
+                                "[原始任务] {anchor}\n[上下文已折叠] {folded} 条较早的消息被移除，保留最近 {KEEP_TAIL} 条。关键结论见上方证据链。",
+                                anchor = task_anchor.as_deref().unwrap_or("（无）"),
                             ),
                         }],
                     });
@@ -594,7 +645,7 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
                     history.push(InputMessage {
                         role: "user".to_string(),
                         content: vec![InputContentBlock::Text {
-                            text: format!("[已折叠 {folded} 条较早消息，摘要：]\n{summary}"),
+                            text: format!("[原始任务] {anchor}\n[已折叠 {folded} 条较早消息，摘要：]\n{summary}", anchor = task_anchor.as_deref().unwrap_or("（无）")),
                         }],
                     });
                 }
@@ -777,12 +828,38 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
                 serde_json::from_str(&tool.input_json).unwrap_or(serde_json::Value::Null);
             let result = registry.execute_dynamic(&tool.name, input, &ctx).await;
             let is_error = result.is_err();
+            if is_error {
+                con_error_streak += 1;
+            } else {
+                con_error_streak = 0;
+            }
             let text = result.unwrap_or_else(|e| e);
 
             tool_results.push(InputContentBlock::ToolResult {
                 tool_use_id: tool.id.clone(),
                 content: vec![ToolResultContentBlock::Text { text }],
                 is_error,
+            });
+        }
+
+        // --- consecutive error escalation (Cline-style progressive directives) ---
+        if con_error_streak == 2 {
+            tool_results.push(InputContentBlock::ToolResult {
+                tool_use_id: "__hint_error_2__".to_string(),
+                content: vec![ToolResultContentBlock::Text {
+                    text: "[系统提示] 连续两次工具调用失败。请更换方法：检查参数、换一种工具，或缩小范围重试。不要重复同样的调用。"
+                        .to_string(),
+                }],
+                is_error: false,
+            });
+        } else if con_error_streak >= 3 {
+            tool_results.push(InputContentBlock::ToolResult {
+                tool_use_id: "__hint_error_3__".to_string(),
+                content: vec![ToolResultContentBlock::Text {
+                    text: "[系统提示] 连续三次及以上工具调用失败，继续重试同一路径只会浪费轮次。请立即改用完全不同的策略：                          换工具、换数据源，或基于已有信息给出当前可交付的结论并说明缺口。禁止再试同一参数组合。"
+                        .to_string(),
+                }],
+                is_error: false,
             });
         }
 
