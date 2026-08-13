@@ -535,10 +535,11 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
 
     // Multi-turn loop: keep going until model responds with text (no tool calls)
     let mut turn = 0;
-    let max_turns = 10;
+    let max_turns = 12;
     let mut last_tool_name: Option<String> = None;
     let mut same_tool_streak: u32 = 0;
     let mut final_chance_used = false;
+    let mut final_turn = false;
     let mut compacted = false;
     // token 感知压缩阈值：按模型输出上限估算输入窗口（1 token ≈ 3 字符），
     // 取窗口约 60% 触发压缩，避免 128K 窗口被 6K token 就误压缩。
@@ -555,8 +556,10 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
                 on_event(ChatEvent::Error("Reached max tool-call turns".into()));
                 break;
             }
-            // Smart termination: give one more turn with a hint to summarize
+            // Smart termination: the next (final) turn is stripped of tools,
+            // so the model can only produce the closing answer.
             final_chance_used = true;
+            final_turn = true;
         }
 
         // ── Auto-compaction: fold middle when context grows too large ──
@@ -601,15 +604,34 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
             }
         }
 
-        let tools = registry.all_definitions_for_mode(ctx.mode).await;
+        let tools = if final_turn {
+            // Force convergence: no tools available on the final turn.
+            Vec::new()
+        } else {
+            registry.all_definitions_for_mode(ctx.mode).await
+        };
+
+        // Inject a strong convergence instruction before the final request.
+        if final_turn {
+            history.push(InputMessage {
+                role: "user".to_string(),
+                content: vec![InputContentBlock::Text {
+                    text: "[系统收敛指令] 本轮已到达工具调用轮次上限，后续不再提供任何工具。\
+                          请基于以上已经获取到的全部信息，直接输出最终完整回答：\
+                          先给结论，再列关键证据/结果，最后说明未解决的问题与建议的下一步。\
+                          禁止再调用任何工具，也禁止重复之前的分析过程。"
+                        .to_string(),
+                }],
+            });
+        }
 
         let request = MessageRequest {
             model: model_id.clone(),
             messages: history.clone(),
-            max_tokens,
+            max_tokens: if final_turn { max_tokens.max(4096) } else { max_tokens },
             system: Some(system_prompt.clone()),
-            tools: Some(tools.clone()),
-            tool_choice: Some(ToolChoice::Auto),
+            tools: if tools.is_empty() { None } else { Some(tools.clone()) },
+            tool_choice: (!tools.is_empty()).then_some(ToolChoice::Auto),
             stream: true,
             reasoning_effort: reasoning_effort.clone(),
             thinking: thinking.clone(),
@@ -780,18 +802,6 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
                 is_error: false,
             });
             same_tool_streak = 0;
-        }
-
-        // --- smart termination hint ---
-        if final_chance_used {
-            tool_results.push(InputContentBlock::ToolResult {
-                tool_use_id: "__hint_final__".to_string(),
-                content: vec![ToolResultContentBlock::Text {
-                    text: "[系统提示] 已达到最大轮次限制。请基于已获取的所有信息，\
-                         给出当前最好的完整回答，不要再调用更多工具。".to_string(),
-                }],
-                is_error: false,
-            });
         }
 
         history.push(InputMessage {
