@@ -46,6 +46,27 @@ pub enum ChatEvent {
     WorkspaceFileContent { path: String, content: String },
 }
 
+/// 结构化工具调用轨迹，用于行为断言测试（第二层测试）。
+/// `run_chat` 每执行一次工具调用就追加一条；收敛轮次追加特殊记录。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ToolTrace {
+    pub turn: u32,
+    pub tool: String,
+    pub input: String,
+    pub output: String,
+    pub is_error: bool,
+}
+
+type TraceSink = std::sync::Arc<std::sync::Mutex<Vec<ToolTrace>>>;
+
+fn record_trace(sink: &Option<TraceSink>, turn: u32, tool: String, input: String, output: String, is_error: bool) {
+    if let Some(sink) = sink {
+        if let Ok(mut guard) = sink.lock() {
+            guard.push(ToolTrace { turn, tool, input, output, is_error });
+        }
+    }
+}
+
 pub struct ChatBackend {
     pub router: ModelRouter,
     pub medical: Arc<MedicalCore>,
@@ -498,6 +519,7 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
     medical: Arc<MedicalCore>,
     router: ModelRouter,
     workspace_root: Mutex<Option<PathBuf>>,
+    trace: Option<TraceSink>,
     on_event: F,
 ) -> Result<(), String> {
     let client = make_client(&model_alias, &router)
@@ -574,7 +596,7 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
 
     // Multi-turn loop: keep going until model responds with text (no tool calls)
     let mut turn = 0;
-    let max_turns = 12;
+    let max_turns = 28;
     let mut last_tool_name: Option<String> = None;
     let mut same_tool_streak: u32 = 0;
     let mut con_error_streak: u32 = 0;
@@ -664,6 +686,7 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
 
         // Inject a strong convergence instruction before the final request.
         if final_turn {
+            record_trace(&trace, turn, "__convergence__".into(), String::new(), "final turn: tools stripped".into(), false);
             history.push(InputMessage {
                 role: "user".to_string(),
                 content: vec![InputContentBlock::Text {
@@ -828,12 +851,17 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
                 serde_json::from_str(&tool.input_json).unwrap_or(serde_json::Value::Null);
             let result = registry.execute_dynamic(&tool.name, input, &ctx).await;
             let is_error = result.is_err();
+            let input_preview: String = tool.input_json.chars().take(300).collect();
             if is_error {
                 con_error_streak += 1;
             } else {
                 con_error_streak = 0;
             }
-            let text = result.unwrap_or_else(|e| e);
+            let (text, is_error) = match result {
+                Ok(ok) => (ok, false),
+                Err(e) => (e, true),
+            };
+            record_trace(&trace, turn, tool.name.clone(), input_preview, text.clone(), is_error);
 
             tool_results.push(InputContentBlock::ToolResult {
                 tool_use_id: tool.id.clone(),

@@ -218,7 +218,7 @@ pub async fn send_message(
         let input_messages = backend::parse_history_json(&history_json);
         let result = backend::run_chat(
             model_alias, model_id, message, input_messages, mode, persona, thinking_level,
-            medical, router, workspace_root,
+            medical, router, workspace_root, None,
             {
                 let suffix = suffix.clone();
                 move |event| {

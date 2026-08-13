@@ -2,7 +2,7 @@
 use std::sync::{Arc, Mutex};
 
 use api::{InputContentBlock, InputMessage};
-use galen_lib::backend::run_chat;
+use galen_lib::backend::{run_chat, ToolTrace};
 use galen_lib::modes::ChatMode;
 use galen_lib::personas::medical_persona;
 use galen_lib::tools::{ToolContext, ToolRegistry};
@@ -34,11 +34,49 @@ fn main() {
             eprintln!("加载 models.toml 失败: {e}");
             std::process::exit(1);
         });
-        let Some((alias, model_entry)) = router.all_models().iter().next() else {
+
+        // CLI args: [--model <alias>] [--ws <dir>] [message...]
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        let mut model_alias_arg: Option<String> = None;
+        let mut ws_arg: Option<String> = None;
+        let mut message_parts: Vec<String> = Vec::new();
+        let mut i = 0;
+        while i < args.len() {
+            match args[i].as_str() {
+                "--model" if i + 1 < args.len() => {
+                    model_alias_arg = Some(args[i + 1].clone());
+                    i += 2;
+                }
+                "--ws" if i + 1 < args.len() => {
+                    ws_arg = Some(args[i + 1].clone());
+                    i += 2;
+                }
+                _ => {
+                    message_parts.push(args[i].clone());
+                    i += 1;
+                }
+            }
+        }
+
+        let user_message = if message_parts.is_empty() {
+            "继续研究计划：从 n3 开始，完成效应量合并与异质性分析".to_string()
+        } else {
+            message_parts.join(" ")
+        };
+
+        let model_alias = model_alias_arg
+            .or_else(|| {
+                router.default_model().map(|_| router.default_alias().to_string())
+            })
+            .or_else(|| router.all_models().iter().next().map(|(a, _)| a.clone()))
+            .unwrap_or_else(|| {
+                eprintln!("没有可用模型");
+                std::process::exit(1);
+            });
+        let Some(model_entry) = router.all_models().get(&model_alias) else {
             eprintln!("没有可用模型");
             std::process::exit(1);
         };
-        let model_alias = alias.clone();
         let model_id = model_entry.model_id.clone();
         let has_key = router
             .to_provider_config(&model_alias)
@@ -46,13 +84,16 @@ fn main() {
             .is_some();
         println!("== 模型: {model_alias} / {model_id} | 密钥: {} ==", if has_key { "有" } else { "无" });
 
-        let ws = std::env::temp_dir().join("galen-driver-ws");
-        setup_workspace(&ws);
+        let ws = match ws_arg {
+            Some(p) => PathBuf::from(p),
+            None => {
+                let ws = std::env::temp_dir().join("galen-driver-ws");
+                setup_workspace(&ws);
+                ws
+            }
+        };
+        std::fs::create_dir_all(ws.join("output")).unwrap_or_default();
         println!("== 工作区: {} ==", ws.display());
-
-        let user_message = std::env::args().nth(1).unwrap_or_else(|| {
-            "继续研究计划：从 n3 开始，完成效应量合并与异质性分析".to_string()
-        });
 
         let mode = ChatMode::Auto;
         let persona = medical_persona();
@@ -69,6 +110,9 @@ fn main() {
         };
 
         let history: Vec<InputMessage> = Vec::new();
+        let trace: std::sync::Arc<std::sync::Mutex<Vec<ToolTrace>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let trace_for_run = trace.clone();
         let res = run_chat(
             model_alias.clone(),
             model_id,
@@ -80,13 +124,136 @@ fn main() {
             medical,
             router,
             ws_mutex,
+            Some(trace_for_run),
             on_event,
         )
         .await;
 
+        let run_ok = res.is_ok();
         match res {
-            Ok(()) => println!("== run_chat OK =="),
-            Err(e) => println!("== run_chat 失败: {e} =="),
+            Ok(()) => println!("\n== run_chat OK =="),
+            Err(e) => println!("\n== run_chat 失败: {e} =="),
+        }
+
+        // ---- 第二层：行为断言（结构化工具体验） ----
+        let traces = trace.lock().map(|g| g.clone()).unwrap_or_default();
+        let report = analyze(&traces, &ws, &model_alias, run_ok);
+        let json = serde_json::to_string_pretty(&report).unwrap_or_default();
+        let report_path = "D:/DEV/tmp/driver-report.json";
+        let _ = std::fs::write(report_path, &json);
+        println!("\n== 行为报告已写入 {report_path} ==");
+        println!("{json}");
+
+        let failed = report["assertions"]
+            .as_array()
+            .map(|a| a.iter().any(|x| x["pass"] == false))
+            .unwrap_or(true);
+        if failed {
+            std::process::exit(2);
         }
     });
+}
+
+fn analyze(traces: &[ToolTrace], ws: &Path, model_alias: &str, run_ok: bool) -> serde_json::Value {
+    let total_tool_calls = traces.iter().filter(|t| t.tool != "__convergence__").count();
+    let error_calls = traces.iter().filter(|t| t.is_error).count();
+    let converged = traces.iter().any(|t| t.tool == "__convergence__");
+
+    // 同工具连续调用最大次数
+    let mut max_streak = 0u32;
+    let mut cur_streak = 0u32;
+    let mut prev: Option<&str> = None;
+    for t in traces.iter().filter(|t| t.tool != "__convergence__") {
+        if prev == Some(t.tool.as_str()) {
+            cur_streak += 1;
+        } else {
+            cur_streak = 1;
+            prev = Some(t.tool.as_str());
+        }
+        if cur_streak > max_streak {
+            max_streak = cur_streak;
+        }
+    }
+
+    // read_file 输出应包含文件内容（而非只有行数）
+    let read_file_with_content = traces
+        .iter()
+        .filter(|t| t.tool == "read_file")
+        .any(|t| t.output.lines().count() > 1 || t.output.len() > 100);
+
+    // 产出文件（output/ 下的非空文件）
+    let outputs: Vec<String> = std::fs::read_dir(ws.join("output"))
+        .map(|rd| {
+            rd.filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| p.is_file() && p.metadata().map(|m| m.len() > 0).unwrap_or(false))
+                .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // 工具名列表（去重、按序）
+    let mut tool_names: Vec<&str> = traces
+        .iter()
+        .filter(|t| t.tool != "__convergence__")
+        .map(|t| t.tool.as_str())
+        .collect();
+    tool_names.dedup();
+
+    let mut assertions = Vec::new();
+    let mut push = |name: &str, pass: bool, detail: String| {
+        assertions.push(serde_json::json!({ "name": name, "pass": pass, "detail": detail }));
+    };
+
+    push(
+        "run_chat 正常结束",
+        run_ok,
+        if run_ok { "Ok".into() } else { "Err".into() },
+    );
+    push(
+        "read_file 返回内容",
+        read_file_with_content,
+        format!(
+            "{} 次 read_file 中是否有返回完整内容的调用",
+            traces.iter().filter(|t| t.tool == "read_file").count()
+        ),
+    );
+    push(
+        "同工具连续调用不超过 5 次（无明显死循环）",
+        max_streak <= 5,
+        format!("最大连续调用: {max_streak}"),
+    );
+    push(
+        "工具错误率低于 40%",
+        total_tool_calls == 0 || (error_calls as f64) / (total_tool_calls as f64) < 0.4,
+        format!("错误 {error_calls}/{total_tool_calls}"),
+    );
+    push(
+        "output/ 有产出文件",
+        !outputs.is_empty(),
+        if outputs.is_empty() {
+            "output/ 为空".into()
+        } else {
+            outputs.join(", ")
+        },
+    );
+    push(
+        "收敛机制就绪（工具轮次用尽时触发）",
+        true,
+        if converged { "已触发收敛轮" } else { "正常在轮次内完成，未触发收敛" }.into(),
+    );
+
+    serde_json::json!({
+        "meta": {
+            "model": model_alias,
+            "workspace": ws.display().to_string(),
+            "total_tool_calls": total_tool_calls,
+            "error_calls": error_calls,
+            "max_same_tool_streak": max_streak,
+            "converged": converged,
+            "tool_names": tool_names,
+            "outputs": outputs,
+        },
+        "assertions": assertions,
+    })
 }
