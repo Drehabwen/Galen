@@ -159,7 +159,7 @@ fn analyze(traces: &[ToolTrace], ws: &Path, model_alias: &str, run_ok: bool) -> 
     let error_calls = traces.iter().filter(|t| t.is_error).count();
     let converged = traces.iter().any(|t| t.tool == "__convergence__");
 
-    // 同工具连续调用最大次数
+    // 同工具连续调用最大次数（execute_command 连续多次可能合理）
     let mut max_streak = 0u32;
     let mut cur_streak = 0u32;
     let mut prev: Option<&str> = None;
@@ -174,6 +174,24 @@ fn analyze(traces: &[ToolTrace], ws: &Path, model_alias: &str, run_ok: bool) -> 
             max_streak = cur_streak;
         }
     }
+
+    // 死循环检测：同一工具 + 同一输入 重复出现 >= 3 次才算异常
+    let mut seen: Vec<(String, String)> = Vec::new();
+    for t in traces.iter().filter(|t| t.tool != "__convergence__") {
+        if !seen.iter().any(|(tool, input)| *tool == t.tool && *input == t.input) {
+            seen.push((t.tool.clone(), t.input.clone()));
+        }
+    }
+    let max_repeat = seen
+        .iter()
+        .map(|(tool, input)| {
+            traces
+                .iter()
+                .filter(|t| t.tool == *tool && t.input == *input)
+                .count()
+        })
+        .max()
+        .unwrap_or(0);
 
     // read_file 输出应包含文件内容（而非只有行数）
     let read_file_with_content = traces
@@ -219,9 +237,9 @@ fn analyze(traces: &[ToolTrace], ws: &Path, model_alias: &str, run_ok: bool) -> 
         ),
     );
     push(
-        "同工具连续调用不超过 5 次（无明显死循环）",
-        max_streak <= 5,
-        format!("最大连续调用: {max_streak}"),
+        "无死循环（同一工具+同一参数最多重复 2 次）",
+        max_repeat <= 2,
+        format!("同一调用最大重复次数: {max_repeat}；同工具最大连续调用: {max_streak}"),
     );
     push(
         "工具错误率低于 40%",
@@ -250,6 +268,7 @@ fn analyze(traces: &[ToolTrace], ws: &Path, model_alias: &str, run_ok: bool) -> 
             "total_tool_calls": total_tool_calls,
             "error_calls": error_calls,
             "max_same_tool_streak": max_streak,
+            "max_repeat_same_call": max_repeat,
             "converged": converged,
             "tool_names": tool_names,
             "outputs": outputs,
