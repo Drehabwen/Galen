@@ -530,7 +530,6 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
     ctx.mode = mode;
 
     // ── Auto-compaction knob ──
-    const COMPACT_CHAR_LIMIT: usize = 24_000; // ~6K tokens — compact when history exceeds this
     const KEEP_HEAD: usize = 2; // keep first N messages (context)
     const KEEP_TAIL: usize = 6; // keep last N messages (recent)
 
@@ -541,6 +540,14 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
     let mut same_tool_streak: u32 = 0;
     let mut final_chance_used = false;
     let mut compacted = false;
+    // token 感知压缩阈值：按模型输出上限估算输入窗口（1 token ≈ 3 字符），
+    // 取窗口约 60% 触发压缩，避免 128K 窗口被 6K token 就误压缩。
+    let max_tokens = router
+        .all_models()
+        .get(&model_alias)
+        .and_then(|entry| entry.max_tokens)
+        .unwrap_or(4096) as u32;
+    let compact_limit = (max_tokens as usize).saturating_mul(3).max(8_000);
     loop {
         turn += 1;
         if turn > max_turns {
@@ -561,19 +568,33 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
                     _ => 0,
                 }).sum::<usize>())
                 .sum();
-            if total_chars > COMPACT_CHAR_LIMIT && history.len() > KEEP_HEAD + KEEP_TAIL + 2 {
+            if total_chars > compact_limit && history.len() > KEEP_HEAD + KEEP_TAIL + 2 {
                 let folded = history.len() - KEEP_HEAD - KEEP_TAIL;
                 let head = history.drain(..KEEP_HEAD).collect::<Vec<_>>();
-                let _middle = history.drain(..folded).collect::<Vec<_>>(); // dropped
+                let middle = history.drain(..folded).collect::<Vec<_>>();
                 let tail = std::mem::take(&mut history);
-                // Rebuild: head + compact placeholder + tail
+                // 智能压缩：把中间消息压成结构化摘要（失败则回退占位符）
+                let summary = summarize_middle(&client, &model_id, &middle)
+                    .await
+                    .unwrap_or_default();
                 history = head;
-                history.push(InputMessage {
-                    role: "user".to_string(),
-                    content: vec![InputContentBlock::Text {
-                        text: format!("[上下文已折叠: {folded} 条较早的消息被移除，保留最近 {KEEP_TAIL} 条。如需之前的信息请询问用户。]"),
-                    }],
-                });
+                if summary.trim().is_empty() {
+                    history.push(InputMessage {
+                        role: "user".to_string(),
+                        content: vec![InputContentBlock::Text {
+                            text: format!(
+                                "[上下文已折叠: {folded} 条较早的消息被移除，保留最近 {KEEP_TAIL} 条。关键结论见上方证据链。]"
+                            ),
+                        }],
+                    });
+                } else {
+                    history.push(InputMessage {
+                        role: "user".to_string(),
+                        content: vec![InputContentBlock::Text {
+                            text: format!("[已折叠 {folded} 条较早消息，摘要：]\n{summary}"),
+                        }],
+                    });
+                }
                 history.extend(tail);
                 compacted = true;
                 on_event(ChatEvent::Delta("[上下文已自动压缩]\n".to_string()));
@@ -581,12 +602,6 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
         }
 
         let tools = registry.all_definitions_for_mode(ctx.mode).await;
-
-        let max_tokens = router
-            .all_models()
-            .get(&model_alias)
-            .and_then(|entry| entry.max_tokens)
-            .unwrap_or(4096) as u32;
 
         let request = MessageRequest {
             model: model_id.clone(),
@@ -786,6 +801,83 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
     }
 
     Ok(())
+}
+
+/// 把被折叠的中间消息压缩为结构化摘要（额外一次轻量 LLM 调用）。
+/// 只保留 user/assistant 的文本，跳过工具调用细节；失败时返回空串，
+/// 由调用方回退为普通占位符。
+async fn summarize_middle(
+    client: &ProviderClient,
+    model_id: &str,
+    middle: &[InputMessage],
+) -> Result<String, String> {
+    let mut text_messages: Vec<InputMessage> = middle
+        .iter()
+        .filter(|m| m.role == "user" || m.role == "assistant")
+        .map(|m| InputMessage {
+            role: m.role.clone(),
+            content: m
+                .content
+                .iter()
+                .filter_map(|b| match b {
+                    InputContentBlock::Text { text } => Some(InputContentBlock::Text {
+                        text: text.clone(),
+                    }),
+                    _ => None,
+                })
+                .collect(),
+        })
+        .filter(|m| !m.content.is_empty())
+        .collect();
+    if text_messages.is_empty() {
+        return Ok(String::new());
+    }
+
+    let mut messages = Vec::with_capacity(text_messages.len() + 1);
+    messages.push(InputMessage {
+        role: "user".to_string(),
+        content: vec![InputContentBlock::Text {
+            text: "请将以下对话压缩为结构化摘要，保留：研究目标、已完成的动作与结果、关键结论、未决问题。用简洁条目输出，不要复述过程。"
+                .to_string(),
+        }],
+    });
+    messages.append(&mut text_messages);
+
+    let request = MessageRequest {
+        model: model_id.to_string(),
+        max_tokens: 600,
+        messages,
+        system: None,
+        tools: None,
+        tool_choice: None,
+        stream: false,
+        temperature: Some(0.2),
+        top_p: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        stop: None,
+        reasoning_effort: None,
+        thinking: None,
+    };
+
+    let resp = tokio::time::timeout(
+        std::time::Duration::from_secs(60),
+        client.send_message(&request),
+    )
+    .await
+    .map_err(|_| "摘要生成超时".to_string())?
+    .map_err(|e| format!("摘要生成失败: {e}"))?;
+
+    let text = resp
+        .content
+        .iter()
+        .filter_map(|b| match b {
+            OutputContentBlock::Text { text } => Some(text.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    Ok(text)
 }
 
 // ---------------------------------------------------------------------------
