@@ -1,5 +1,6 @@
 pub mod backend;
 mod commands;
+pub mod evidence;
 pub mod mcp_client;
 pub mod modes;
 pub mod personas;
@@ -51,6 +52,8 @@ pub fn run() {
             commands::get_model_status,
             commands::save_api_key,
             commands::test_model_connection,
+            commands::append_evidence,
+            commands::get_evidence,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Galen");

@@ -478,6 +478,28 @@ pub fn append_memory(state: State<AppState>, entry: String) -> Result<(), String
     std::fs::write(&path, content).map_err(|e| format!("写入 GALEN.md 失败: {e}"))
 }
 
+/// Append one structured evidence record to `<workspace>/evidence.json`.
+#[tauri::command]
+pub fn append_evidence(
+    state: State<AppState>,
+    evidence: crate::evidence::Evidence,
+) -> Result<(), String> {
+    let backend = lock_mutex(&state.backend)?;
+    let root = backend.get_workspace_root().ok_or("请先选择工作区")?;
+    crate::evidence::append_evidence_file(&root, evidence)
+}
+
+/// Read the full evidence chain from `<workspace>/evidence.json`.
+#[tauri::command]
+pub fn get_evidence(state: State<AppState>) -> Result<Vec<crate::evidence::Evidence>, String> {
+    let backend = lock_mutex(&state.backend)?;
+    let root = match backend.get_workspace_root() {
+        Some(r) => r,
+        None => return Ok(Vec::new()),
+    };
+    Ok(crate::evidence::load_evidence(&root))
+}
+
 // ---------------------------------------------------------------------------
 // Model / API key status
 // ---------------------------------------------------------------------------

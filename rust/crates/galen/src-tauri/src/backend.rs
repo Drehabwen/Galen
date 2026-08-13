@@ -216,6 +216,9 @@ fn build_first_turn_tail(user_message: &str, workspace_root: &Mutex<Option<PathB
     // L2：项目画像
     let plan = plan_progress_summary(workspace_root);
     let memory = memory_index(workspace_root);
+    let evidence = workspace_root_path(workspace_root)
+        .map(|root| crate::evidence::evidence_chain_summary(&root, 8))
+        .unwrap_or_default();
     let plan_format = "\n\n## 科研计划格式\n\
         需要制定研究计划时用以下格式输出：\n\
         <!-- PLAN_START -->\n\
@@ -223,7 +226,7 @@ fn build_first_turn_tail(user_message: &str, workspace_root: &Mutex<Option<PathB
         01 | 课题定义 | 明确研究问题 | -\n\
         <!-- PLAN_END -->\n\
         规则：`|` 分隔四个字段，编号两位数字，依赖逗号分隔。确认前询问用户。";
-    format!("{skills}\n\n{plan}\n\n{memory}{plan_format}")
+    format!("{skills}\n\n{plan}\n\n{memory}{evidence}{plan_format}")
 }
 
 /// 读取工作区根目录；无工作区返回 None。

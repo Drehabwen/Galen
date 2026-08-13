@@ -284,6 +284,19 @@ export default function App() {
         .trim()
         .slice(0, 120)} | plan.json`,
     }).catch(console.error);
+    // Structured evidence: 证据链落盘，供上下文注入与最终成文引用
+    invoke("append_evidence", {
+      evidence: {
+        id: `${Date.now()}-${node.id}`,
+        node_id: node.id,
+        node_title: node.title,
+        source: node.type || "session",
+        claim: summary.trim().slice(0, 200),
+        detail: summary.trim().slice(0, 1200),
+        confidence: "medium",
+        created_at: new Date().toISOString().slice(0, 10),
+      },
+    }).catch(console.error);
     setEnteredSession(null);
     setSelectedNode(null);
     // Auto-advance: open the next ready node so the loop keeps moving
