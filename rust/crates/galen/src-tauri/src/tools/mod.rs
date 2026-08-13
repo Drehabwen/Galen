@@ -186,13 +186,34 @@ impl ToolRegistry {
     }
 
     pub async fn all_definitions(&self) -> Vec<ToolDefinition> {
+        self.all_definitions_for_mode(crate::modes::ChatMode::Auto)
+            .await
+    }
+
+    /// 按模式裁剪工具定义（L1 层）：
+    /// 讨论模式只暴露只读工具，不暴露 MCP；计划/自动模式全量。
+    pub async fn all_definitions_for_mode(
+        &self,
+        mode: crate::modes::ChatMode,
+    ) -> Vec<ToolDefinition> {
         let mut defs = self.definitions();
-        for tool in self.mcp.mcp_tool_definitions() {
-            defs.push(ToolDefinition {
-                name: format!("mcp__{}", tool.name),
-                description: tool.description,
-                input_schema: tool.input_schema.unwrap_or(serde_json::json!({"type":"object","properties":{}})),
+        if mode == crate::modes::ChatMode::Discuss {
+            defs.retain(|d| {
+                self.tools
+                    .get(&d.name)
+                    .map(|t| !t.is_write())
+                    .unwrap_or(false)
             });
+        } else {
+            for tool in self.mcp.mcp_tool_definitions() {
+                defs.push(ToolDefinition {
+                    name: format!("mcp__{}", tool.name),
+                    description: tool.description,
+                    input_schema: tool
+                        .input_schema
+                        .unwrap_or(serde_json::json!({"type":"object","properties":{}})),
+                });
+            }
         }
         defs
     }

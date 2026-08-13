@@ -191,56 +191,122 @@ fn build_system_prompt(
     let status = crate::runtime_manager::detect_all();
     let env_summary = crate::runtime_manager::status_summary(&status);
     let mode_prompt = crate::modes::mode_prompt(mode);
-    let skills = if persona.id == "medical" {
-        format!(
-            "{}\n\n{}",
-            crate::skills::RESEARCH_TASTE,
-            crate::skills::RESEARCH_SKILLS_V2
-        )
-    } else {
-        String::new()
-    };
     let ws = workspace_summary(workspace_root);
-    // Stable prefix — loaded once, never mutated mid-session
+    // L0 常驻核心：人格 + 科研品味 + 模式 + 工作区/环境 —— 稳定，不随任务变化
+    // （技能装配与项目画像属于动态内容，注入首轮消息，保持系统提示词缓存形状稳定）
+    let taste = if persona.id == "medical" {
+        crate::skills::RESEARCH_TASTE
+    } else {
+        ""
+    };
     format!(
-        "{}\n\n{}\n\n{}\n\n{}\n\n{}\n\n## 回复要求\n\
+        "{}\n\n{}\n\n{}\n\n{}\n\n{}\n\n{}\n\n## 回复要求\n\
          每次回复前先在思考中简洁列出关键步骤（≤3步），然后将最终回答完整输出。\
          思考链控制在总回复的40%以内，确保内容部分始终可见。",
-        persona.system_prompt, mode_prompt, ws, skills, env_summary,
+        persona.system_prompt, taste, mode_prompt, ws, env_summary, "",
     )
 }
 
-/// Build the dynamic first-turn tail: memory + plan instructions.
-/// Injected into the FIRST user message of a session to preserve cache shape.
-fn build_first_turn_tail(workspace_root: &Mutex<Option<PathBuf>>) -> String {
-    let memory = load_memory(workspace_root);
-    let memory_part = if memory.is_empty() {
-        "\n\n## 项目记忆\n\
-         工作区根目录下有 GALEN.md 文件。\
-         每次完成文献检索、数据分析或得出重要结论后，请用 write_file 追加更新。\
-         格式：日期 | 来源 | 关键发现 | 关联文件".to_string()
-    } else {
-        format!("\n\n## 项目记忆 (GALEN.md)\n{memory}\n如有新发现请用 write_file 追加。")
-    };
-    let plan_part = "\n\n## 科研计划\n\
+/// Build the dynamic first-turn tail: L1 技能装配 + L2 项目画像（计划进度 + 记忆索引）。
+/// Injected into the FIRST user message of a session to preserve system prompt cache shape.
+fn build_first_turn_tail(user_message: &str, workspace_root: &Mutex<Option<PathBuf>>) -> String {
+    // L1：按任务意图装配技能模块
+    let task_kind = model_router::TaskKind::from_intent(user_message);
+    let skills = crate::skills::assemble_skills(task_kind);
+    // L2：项目画像
+    let plan = plan_progress_summary(workspace_root);
+    let memory = memory_index(workspace_root);
+    let plan_format = "\n\n## 科研计划格式\n\
         需要制定研究计划时用以下格式输出：\n\
         <!-- PLAN_START -->\n\
         编号 | 标题 | 描述 | 依赖\n\
         01 | 课题定义 | 明确研究问题 | -\n\
         <!-- PLAN_END -->\n\
         规则：`|` 分隔四个字段，编号两位数字，依赖逗号分隔。确认前询问用户。";
-    format!("{memory_part}{plan_part}")
+    format!("{skills}\n\n{plan}\n\n{memory}{plan_format}")
 }
 
-/// Load the GALEN.md memory file from the workspace root.
-/// Returns empty string if no workspace is selected or the file doesn't exist.
-fn load_memory(workspace_root: &Mutex<Option<PathBuf>>) -> String {
-    let root = match workspace_root.lock().ok().and_then(|g| g.clone()) {
-        Some(r) => r,
-        None => return String::new(),
+/// 读取工作区根目录；无工作区返回 None。
+fn workspace_root_path(workspace_root: &Mutex<Option<PathBuf>>) -> Option<PathBuf> {
+    workspace_root.lock().ok().and_then(|g| g.clone())
+}
+
+/// 记忆索引：短记忆全文注入；长记忆只注入最近记录 + 总量（全文按需读取）。
+fn memory_index(workspace_root: &Mutex<Option<PathBuf>>) -> String {
+    let Some(root) = workspace_root_path(workspace_root) else {
+        return String::new();
     };
-    let path = root.join("GALEN.md");
-    std::fs::read_to_string(&path).unwrap_or_default()
+    let text = std::fs::read_to_string(root.join("GALEN.md")).unwrap_or_default();
+    if text.trim().is_empty() {
+        return "\n\n## 项目记忆\n\
+            工作区根目录下有 GALEN.md 文件。\
+            每次完成文献检索、数据分析或得出重要结论后，请用 write_file 追加更新。\
+            格式：日期 | 来源 | 关键发现 | 关联文件"
+            .to_string();
+    }
+    if text.len() <= 1600 {
+        return format!(
+            "\n\n## 项目记忆 (GALEN.md)\n{text}\n如有新发现请用 write_file 追加。"
+        );
+    }
+    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+    let total = lines.len();
+    let recent_lines: Vec<&str> = lines.iter().rev().take(5).copied().collect();
+    let recent_count = recent_lines.len();
+    let recent_text = recent_lines
+        .iter()
+        .rev()
+        .copied()
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        "\n\n## 项目记忆 (GALEN.md)\n共 {} 条记录，最近 {} 条：\n{recent_text}\n如需更早记录可要求读取 GALEN.md 全文。",
+        total,
+        recent_count
+    )
+}
+
+/// 计划进度摘要：从 plan.json 生成结构化进度（已完成 / 待执行 / 最近产出）。
+fn plan_progress_summary(workspace_root: &Mutex<Option<PathBuf>>) -> String {
+    let Some(root) = workspace_root_path(workspace_root) else {
+        return "\n\n## 科研计划进度\n未选择工作区，暂无计划。".to_string();
+    };
+    let text = std::fs::read_to_string(root.join("plan.json")).unwrap_or_default();
+    if text.trim().is_empty() {
+        return "\n\n## 科研计划进度\n暂无已确认的科研计划。".to_string();
+    }
+    let nodes: Vec<PlanNodeLite> = serde_json::from_str(&text).unwrap_or_default();
+    if nodes.is_empty() {
+        return "\n\n## 科研计划进度\n暂无已确认的科研计划。".to_string();
+    }
+    let total = nodes.len();
+    let done = nodes.iter().filter(|n| n.status == "completed").count();
+    let mut out = format!("\n\n## 科研计划进度（{done}/{total} 完成）");
+    for n in nodes
+        .iter()
+        .filter(|n| n.status == "running" || n.status == "pending")
+        .take(4)
+    {
+        out.push_str(&format!("\n- 待执行：{}（{}）", n.title, n.status));
+    }
+    for n in nodes.iter().filter(|n| n.status == "completed").rev().take(2) {
+        if let Some(r) = &n.result {
+            let snippet: String = r.chars().take(80).collect();
+            out.push_str(&format!("\n- 已产出：{} → {}", n.title, snippet));
+        }
+    }
+    out
+}
+
+/// plan.json 的轻量视图（只读所需字段）。
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PlanNodeLite {
+    title: String,
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    result: Option<String>,
 }
 
 /// Build a one-paragraph summary of the current workspace for the system prompt.
@@ -280,6 +346,75 @@ fn workspace_summary(workspace_root: &Mutex<Option<PathBuf>>) -> String {
     }
 
     lines.join("\n")
+}
+
+#[cfg(test)]
+mod context_tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn tmp_ws(tag: &str, files: &[(&str, &str)]) -> Mutex<Option<PathBuf>> {
+        let dir = std::env::temp_dir().join(format!(
+            "galen_ctx_test_{}_{}",
+            std::process::id(),
+            tag
+        ));
+        let _ = std::fs::create_dir_all(&dir);
+        for (name, content) in files {
+            std::fs::write(dir.join(name), content).unwrap();
+        }
+        Mutex::new(Some(dir))
+    }
+
+    #[test]
+    fn memory_short_is_injected_fully() {
+        let ws = tmp_ws("short", &[("GALEN.md", "2026-08-12 | 检索 | 发现 A | plan.json")]);
+        let idx = memory_index(&ws);
+        assert!(idx.contains("发现 A"));
+        assert!(!idx.contains("共 "));
+    }
+
+    #[test]
+    fn memory_long_is_indexed() {
+        let mut lines = String::new();
+        for i in 0..60 {
+            lines.push_str(&format!("2026-08-12 | 记录{i} | 关键发现{i} | plan.json\n"));
+        }
+        let ws = tmp_ws("long", &[("GALEN.md", &lines)]);
+        let idx = memory_index(&ws);
+        assert!(idx.contains("共 60 条记录，最近 5 条"));
+        assert!(idx.contains("关键发现59"));
+        assert!(!idx.contains("关键发现0"), "旧记录不应全量注入");
+    }
+
+    #[test]
+    fn plan_summary_reports_progress() {
+        let plan = r#"[
+            {"id":"s01","index":"01","title":"课题定义","status":"completed","result":"明确了 PICO"},
+            {"id":"s02","index":"02","title":"文献检索","status":"pending"}
+        ]"#;
+        let ws = tmp_ws("plan", &[("plan.json", plan)]);
+        let s = plan_progress_summary(&ws);
+        assert!(s.contains("1/2 完成"));
+        assert!(s.contains("待执行：文献检索"));
+        assert!(s.contains("已产出：课题定义"));
+    }
+
+    #[test]
+    fn plan_summary_empty_when_no_plan() {
+        let ws = tmp_ws("noplan", &[]);
+        let s = plan_progress_summary(&ws);
+        assert!(s.contains("暂无已确认的科研计划"));
+    }
+
+    #[test]
+    fn tail_assembles_skills_and_context() {
+        let ws = tmp_ws("tail", &[]);
+        let tail = build_first_turn_tail("请检索康复运动干预的 RCT 证据", &ws);
+        assert!(tail.contains("模块 B"));
+        assert!(tail.contains("科研计划进度"));
+        assert!(tail.contains("GALEN.md"));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -354,7 +489,7 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
     // Build cache-stable prefix
     let system_prompt = build_system_prompt(&persona, mode, &workspace_root);
     // Dynamic tail injected into first user message (memory + plan instructions)
-    let turn_tail = build_first_turn_tail(&workspace_root);
+    let turn_tail = build_first_turn_tail(&user_message, &workspace_root);
 
     let mut history = history; // mutable copy
     // First turn: inject memory + plan instructions as turn tail, not in system prompt
@@ -442,7 +577,7 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
             }
         }
 
-        let tools = registry.all_definitions().await;
+        let tools = registry.all_definitions_for_mode(ctx.mode).await;
 
         let max_tokens = router
             .all_models()
