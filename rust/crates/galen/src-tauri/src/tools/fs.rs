@@ -72,8 +72,12 @@ impl GalenTool for ReadFile {
         }).await.map_err(|e| format!("{e}"))?.map_err(|e| format!("{e}"))?;
         let content = result.file.content.clone();
         let num_lines = result.file.num_lines;
-        ctx.send_event(ChatEvent::WorkspaceFileContent { path: path_clone, content });
-        Ok(format!("Read {} lines from {}", num_lines, path))
+        ctx.send_event(ChatEvent::WorkspaceFileContent { path: path_clone, content: content.clone() });
+        // 关键：文件内容必须随工具结果返回给模型（之前只返回行数，
+        // 模型看不到内容会反复重试同一工具，导致行为失控）。
+        let mut out = format!("Read {num_lines} lines from {path}:\n");
+        out.push_str(&content);
+        Ok(out)
     }
 }
 
