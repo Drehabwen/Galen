@@ -128,7 +128,7 @@ fn intern(s: String) -> &'static str {
 // Standalone functions (ported from ChatBackend methods)
 // ---------------------------------------------------------------------------
 
-fn make_client(
+pub fn make_client(
     model_alias: &str,
     router: &ModelRouter,
 ) -> Result<ProviderClient, String> {

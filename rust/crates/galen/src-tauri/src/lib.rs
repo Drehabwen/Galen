@@ -50,6 +50,7 @@ pub fn run() {
             commands::append_memory,
             commands::get_model_status,
             commands::save_api_key,
+            commands::test_model_connection,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Galen");

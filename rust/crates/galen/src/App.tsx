@@ -316,19 +316,26 @@ export default function App() {
     localStorage.setItem("galen.thinkingLevel", level);
   };
 
-  const handlePickWorkspace = async () => {
+  const handlePickWorkspace = async (): Promise<string | null> => {
     const path = await open({
       directory: true,
       multiple: false,
       title: "选择工作区",
     });
-    if (!path) return;
+    if (!path) return null;
     try {
       await invoke("set_workspace", { path });
       setWsRoot(path);
+      return path;
     } catch (e) {
       alert(String(e));
+      return null;
     }
+  };
+
+  const handleTestConnection = async (): Promise<string> => {
+    const result = await invoke<string>("test_model_connection");
+    return result;
   };
 
   const handleSaveApiKey = async (apiKey: string) => {
@@ -587,6 +594,7 @@ export default function App() {
         <WelcomeWizard
           onApiKey={handleSaveApiKey}
           onPickWorkspace={handlePickWorkspace}
+          onTestConnection={handleTestConnection}
           onDone={() => setShowWelcome(false)}
           envStatus={env.status}
           mcpServers={env.mcpServers}

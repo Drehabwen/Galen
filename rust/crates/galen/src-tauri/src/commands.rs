@@ -2,6 +2,7 @@ use std::sync::Mutex;
 
 use tauri::{Emitter, State, Window};
 
+use api::{InputContentBlock, InputMessage, MessageRequest};
 use crate::backend::{self, ChatBackend, ChatEvent, FileEntry, ModelConfig};
 use crate::modes::ChatMode;
 use crate::runtime_manager::{self, McpServerStatus, RuntimeStatus};
@@ -478,4 +479,46 @@ pub fn get_model_status(state: State<AppState>) -> Result<Vec<ModelStatus>, Stri
         .collect();
     statuses.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(statuses)
+}
+
+/// Test the default model connection with a minimal "ping" request.
+/// Returns the responding model id on success, or a descriptive error.
+#[tauri::command]
+pub async fn test_model_connection(state: State<'_, AppState>) -> Result<String, String> {
+    let (_alias, model_id, client) = {
+        let backend = lock_mutex(&state.backend)?;
+        let alias = backend.router.default_alias().to_string();
+        let model_id = backend.router.resolve_model_id(&alias);
+        let router = backend.router.clone();
+        let client = backend::make_client(&alias, &router)?;
+        (alias, model_id, client)
+    };
+
+    let request = MessageRequest {
+        model: model_id.clone(),
+        max_tokens: 8,
+        messages: vec![InputMessage {
+            role: "user".to_string(),
+            content: vec![InputContentBlock::Text {
+                text: "ping".to_string(),
+            }],
+        }],
+        system: None,
+        tools: None,
+        tool_choice: None,
+        stream: false,
+        temperature: None,
+        top_p: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        stop: None,
+        reasoning_effort: None,
+        thinking: None,
+    };
+
+    match tokio::time::timeout(std::time::Duration::from_secs(30), client.send_message(&request)).await {
+        Ok(Ok(_)) => Ok(format!("连接成功：{model_id} 响应正常")),
+        Ok(Err(e)) => Err(format!("连接失败：{e}")),
+        Err(_) => Err("连接超时（30 秒），请检查网络或 API Key".to_string()),
+    }
 }
