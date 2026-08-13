@@ -2,7 +2,7 @@
 use std::sync::{Arc, Mutex};
 
 use api::{InputContentBlock, InputMessage};
-use galen_lib::backend::{run_chat, ToolTrace};
+use galen_lib::backend::{run_chat, ChatEvent, ToolTrace};
 use galen_lib::modes::ChatMode;
 use galen_lib::personas::medical_persona;
 use galen_lib::tools::{ToolContext, ToolRegistry};
@@ -25,6 +25,90 @@ fn setup_workspace(dir: &Path) {
     std::fs::write(dir.join("evidence.json"), evidence).unwrap();
     let memory = "2026-08-12 | 团队讨论 | 确定以脑卒中步行康复为主题，倾向系统综述路线\n";
     std::fs::write(dir.join("GALEN.md"), memory).unwrap();
+}
+
+async fn run_stage(
+    router: ModelRouter,
+    model_alias: String,
+    model_id: String,
+    user_message: String,
+    ws: PathBuf,
+    stage_label: &str,
+) -> (Result<(), String>, Vec<ToolTrace>) {
+    let mode = ChatMode::Auto;
+    let persona = medical_persona();
+    let medical = Arc::new(MedicalCore::new(None));
+    let ws_mutex: Mutex<Option<PathBuf>> = Mutex::new(Some(ws.clone()));
+
+    let on_event = |ev: ChatEvent| match ev {
+        ChatEvent::ThinkingDelta(t) => print!("[思考] {t}"),
+        ChatEvent::Delta(t) => print!("{t}"),
+        ChatEvent::ThinkingDone(_) => println!("\n--- 思考结束 ---"),
+        ChatEvent::Error(e) => println!("\n[错误] {e}"),
+        ChatEvent::Done(_) => println!("\n--- 完成 ---"),
+        _ => {}
+    };
+
+    let trace: std::sync::Arc<std::sync::Mutex<Vec<ToolTrace>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let trace_for_run = trace.clone();
+    let history: Vec<InputMessage> = Vec::new();
+    println!("\n===== 阶段：{stage_label} =====");
+    let res = run_chat(
+        model_alias,
+        model_id,
+        user_message,
+        history,
+        mode,
+        persona,
+        "medium".to_string(),
+        medical,
+        router,
+        ws_mutex,
+        Some(trace_for_run),
+        on_event,
+    )
+    .await;
+    let traces = trace.lock().map(|g| g.clone()).unwrap_or_default();
+    (res, traces)
+}
+
+/// 检测「编译缺口」：存在 .typ 源文件但 output/ 无 PDF，返回源文件名列表。
+fn compile_gap(ws: &Path) -> Option<Vec<String>> {
+    let mut typs: Vec<String> = Vec::new();
+    let mut scan = |dir: &Path| {
+        if let Ok(rd) = std::fs::read_dir(dir) {
+            for e in rd.flatten() {
+                let p = e.path();
+                if p.is_file()
+                    && p.extension().map(|x| x == "typ").unwrap_or(false)
+                    && !p.to_string_lossy().contains("\\output\\")
+                {
+                    typs.push(
+                        p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
+                    );
+                }
+            }
+        }
+    };
+    scan(ws);
+    let manuscript = ws.join("manuscript");
+    if manuscript.is_dir() {
+        scan(&manuscript);
+    }
+    typs.sort();
+    typs.dedup();
+    let has_pdf = std::fs::read_dir(ws.join("output"))
+        .map(|rd| {
+            rd.flatten()
+                .any(|e| e.path().extension().map(|x| x == "pdf").unwrap_or(false))
+        })
+        .unwrap_or(false);
+    if !typs.is_empty() && !has_pdf {
+        Some(typs)
+    } else {
+        None
+    }
 }
 
 fn main() {
@@ -95,48 +179,52 @@ fn main() {
         std::fs::create_dir_all(ws.join("output")).unwrap_or_default();
         println!("== 工作区: {} ==", ws.display());
 
-        let mode = ChatMode::Auto;
-        let persona = medical_persona();
-        let medical = Arc::new(MedicalCore::new(None));
-        let ws_mutex: Mutex<Option<PathBuf>> = Mutex::new(Some(ws.clone()));
-
-        let on_event = |ev: galen_lib::backend::ChatEvent| match ev {
-            galen_lib::backend::ChatEvent::ThinkingDelta(t) => print!("[思考] {t}"),
-            galen_lib::backend::ChatEvent::Delta(t) => print!("{t}"),
-            galen_lib::backend::ChatEvent::ThinkingDone(_) => println!("\n--- 思考结束 ---"),
-            galen_lib::backend::ChatEvent::Error(e) => println!("\n[错误] {e}"),
-            galen_lib::backend::ChatEvent::Done(_) => println!("\n--- 完成 ---"),
-            _ => {}
-        };
-
-        let history: Vec<InputMessage> = Vec::new();
-        let trace: std::sync::Arc<std::sync::Mutex<Vec<ToolTrace>>> =
-            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-        let trace_for_run = trace.clone();
-        let res = run_chat(
-            model_alias.clone(),
-            model_id,
-            user_message,
-            history,
-            mode,
-            persona,
-            "medium".to_string(),
-            medical,
+        // 第一阶段：执行用户任务
+        let (res1, mut traces) = run_stage(
             router,
-            ws_mutex,
-            Some(trace_for_run),
-            on_event,
+            model_alias.clone(),
+            model_id.clone(),
+            user_message,
+            ws.clone(),
+            "主任务",
         )
         .await;
+        let mut run_ok = res1.is_ok();
+        match res1 {
+            Ok(()) => println!("\n== 阶段1 run_chat OK =="),
+            Err(e) => println!("\n== 阶段1 run_chat 失败: {e} =="),
+        }
 
-        let run_ok = res.is_ok();
-        match res {
-            Ok(()) => println!("\n== run_chat OK =="),
-            Err(e) => println!("\n== run_chat 失败: {e} =="),
+        // 第二阶段（按需）：检测到 .typ 未编译 -> 自动补一轮编译交付
+        let stage2 = compile_gap(&ws);
+        if let Some(typs) = stage2 {
+            println!("\n== 检测到未编译的 Typst 源文件: {}，发起编译交付阶段 ==", typs.join(", "));
+            let msg = format!(
+                "工作区已有 Typst 源文件（{}）。请：1) 读取源文件检查语法；2) 用 execute_command 运行 typst compile 生成 PDF 到 output/；3) 验证 PDF 存在且非空（列出文件大小）；4) 简短汇报。若编译报错，修复源文件后重试，直到 PDF 生成成功。",
+                typs.join(", ")
+            );
+            let router2 = ModelRouter::load().unwrap_or_else(|e| {
+                eprintln!("加载 models.toml 失败: {e}");
+                std::process::exit(1);
+            });
+            let (res2, traces2) = run_stage(
+                router2,
+                model_alias.clone(),
+                model_id.clone(),
+                msg,
+                ws.clone(),
+                "编译交付",
+            )
+            .await;
+            run_ok = run_ok && res2.is_ok();
+            match res2 {
+                Ok(()) => println!("\n== 阶段2 run_chat OK =="),
+                Err(e) => println!("\n== 阶段2 run_chat 失败: {e} =="),
+            }
+            traces.extend(traces2);
         }
 
         // ---- 第二层：行为断言（结构化工具体验） ----
-        let traces = trace.lock().map(|g| g.clone()).unwrap_or_default();
         let report = analyze(&traces, &ws, &model_alias, run_ok);
         let json = serde_json::to_string_pretty(&report).unwrap_or_default();
         let report_path = "D:/DEV/tmp/driver-report.json";
