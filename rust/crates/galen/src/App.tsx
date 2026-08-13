@@ -32,6 +32,7 @@ export default function App() {
   const [model, setModel] = useState("");
   const [modelStatuses, setModelStatuses] = useState<ModelStatus[]>([]);
   const [showModelStatus, setShowModelStatus] = useState(false);
+  const [wizardInitialStep, setWizardInitialStep] = useState(0);
   const [thinkingLevel, setThinkingLevel] = useState<string>(
     () => localStorage.getItem("galen.thinkingLevel") || "medium",
   );
@@ -160,32 +161,30 @@ export default function App() {
   // ---- Init ----
   useEffect(() => {
     if (!chat.backendAvailable) return;
-    invoke<ModelConfig[]>("get_models")
-      .then(setModels)
+    let cancelled = false;
+    // 一次性判断是否需要向导：无模型，或所有模型都缺 Key。
+    // 只在首次数据就绪时判断，之后 models 变化不会自动关闭向导。
+    Promise.all([
+      invoke<ModelConfig[]>("get_models"),
+      invoke<ModelStatus[]>("get_model_status"),
+      invoke<string | null>("get_workspace_root"),
+    ])
+      .then(([ms, sts, ws]) => {
+        if (cancelled) return;
+        setModels(ms);
+        setModelStatuses(sts);
+        if (ws) setWsRoot(ws);
+        if (!model && ms.length > 0) setModel(ms[0].name);
+        const needsSetup =
+          ms.length === 0 ||
+          (sts.length > 0 && sts.every((s) => !s.api_key_present));
+        if (needsSetup) setShowWelcome(true);
+      })
       .catch(console.error);
-    invoke<ModelStatus[]>("get_model_status")
-      .then(setModelStatuses)
-      .catch(console.error);
-    invoke<string | null>("get_workspace_root")
-      .then(setWsRoot)
-      .catch(console.error);
+    return () => {
+      cancelled = true;
+    };
   }, [chat.backendAvailable]);
-
-  useEffect(() => {
-    if (!model && models.length > 0) setModel(models[0].name);
-    if (models.length === 0 && chat.backendAvailable && !env.loading) {
-      setShowWelcome(true);
-    }
-  }, [models, chat.backendAvailable, env.loading]);
-
-  // The key is configured once in ~/.galen/models.toml and auto-loaded on
-  // every start. If models are present, never keep the wizard open: the user
-  // must not be asked to re-enter the key on each launch.
-  useEffect(() => {
-    if (showWelcome && models.length > 0) {
-      setShowWelcome(false);
-    }
-  }, [showWelcome, models]);
 
   useEffect(() => {
     if (!chat.backendAvailable || !wsRoot) {
@@ -338,12 +337,18 @@ export default function App() {
     return result;
   };
 
-  const handleSaveApiKey = async (apiKey: string) => {
-    await invoke("save_api_key", { apiKey });
+  const handleSaveApiKey = async (apiKey: string, defaultModel?: string) => {
+    await invoke("save_api_key", { apiKey, defaultModel });
     invoke<ModelConfig[]>("get_models").then(setModels).catch(console.error);
     invoke<ModelStatus[]>("get_model_status")
       .then(setModelStatuses)
       .catch(console.error);
+  };
+
+  const openWizard = (step = 0) => {
+    setShowModelStatus(false);
+    setWizardInitialStep(step);
+    setShowWelcome(true);
   };
 
   const openModelStatus = () => {
@@ -592,10 +597,13 @@ export default function App() {
       {/* ════ Welcome Wizard ════ */}
       {showWelcome && (
         <WelcomeWizard
+          initialStep={wizardInitialStep}
           onApiKey={handleSaveApiKey}
           onPickWorkspace={handlePickWorkspace}
           onTestConnection={handleTestConnection}
           onDone={() => setShowWelcome(false)}
+          hasApiKey={modelStatuses.some((s) => s.api_key_present)}
+          memoryExists={memoryStatus?.exists ?? false}
           envStatus={env.status}
           mcpServers={env.mcpServers}
         />
@@ -604,6 +612,7 @@ export default function App() {
         <ModelStatusPanel
           statuses={modelStatuses}
           onClose={() => setShowModelStatus(false)}
+          onOpenWizard={() => openWizard(1)}
         />
       )}
     </div>

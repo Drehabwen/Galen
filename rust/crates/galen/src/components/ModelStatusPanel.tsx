@@ -3,9 +3,10 @@ import type { ModelStatus } from "../types";
 interface ModelStatusPanelProps {
   statuses: ModelStatus[];
   onClose: () => void;
+  onOpenWizard: () => void;
 }
 
-export function ModelStatusPanel({ statuses, onClose }: ModelStatusPanelProps) {
+export function ModelStatusPanel({ statuses, onClose, onOpenWizard }: ModelStatusPanelProps) {
   return (
     <div className="cmd-overlay" onClick={onClose}>
       <div className="model-status-panel" onClick={(e) => e.stopPropagation()}>
@@ -53,6 +54,11 @@ export function ModelStatusPanel({ statuses, onClose }: ModelStatusPanelProps) {
         )}
 
         <p className="model-status-hint">配置文件：~/.galen/models.toml</p>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+          <button className="btn btn-sm btn-ghost" onClick={onOpenWizard}>
+            打开设置向导
+          </button>
+        </div>
       </div>
     </div>
   );

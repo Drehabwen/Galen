@@ -32,3 +32,4 @@ model-router = { path = "../../model-router" }
 medical-core = { path = "../../medical-core" }
 which = "7"
 rusqlite = { version = "0.32", features = ["bundled"] }
+toml = "0.8"

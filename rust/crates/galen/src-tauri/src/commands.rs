@@ -302,7 +302,7 @@ max_tokens = 32768
 "#;
 
 #[tauri::command]
-pub fn save_api_key(api_key: String) -> Result<(), String> {
+pub fn save_api_key(api_key: String, default_model: Option<String>) -> Result<(), String> {
     let home = dirs::home_dir().ok_or("Cannot find home directory")?;
     let galen_dir = home.join(".galen");
     std::fs::create_dir_all(&galen_dir).map_err(|e| format!("{e}"))?;
@@ -312,28 +312,81 @@ pub fn save_api_key(api_key: String) -> Result<(), String> {
     let content = if models_path.exists() {
         let existing =
             std::fs::read_to_string(&models_path).map_err(|e| format!("读取配置失败: {e}"))?;
-        // Inject api_key into the DeepSeek template blocks that lack one
-        if existing.contains("[models.deepseek-v4-pro]") && !existing.contains("api_key =") {
-            existing
-                .replace(
-                    "[models.deepseek-v4-pro]",
-                    &format!("[models.deepseek-v4-pro]\napi_key = \"{api_key}\""),
-                )
-                .replace(
-                    "[models.deepseek-v4-flash]",
-                    &format!("[models.deepseek-v4-flash]\napi_key = \"{api_key}\""),
-                )
-        } else if existing.contains("[models.default]") && !existing.contains("api_key =") {
-            existing.replace("[models.default]", &format!("[models.default]\napi_key = \"{api_key}\""))
-        } else {
-            format!("{}\n\n[models.imported]\nprovider = \"openai_compat\"\napi_key = \"{api_key}\"\nmodel_id = \"deepseek-v4-pro\"\nbase_url = \"https://api.deepseek.com/v1\"\n", existing)
+        match existing.parse::<toml::Value>() {
+            Ok(mut value) => {
+                // 更新所有 DeepSeek 相关模型（pro/flash/default/imported）的 api_key
+                let mut updated_any = false;
+                if let Some(models) = value.get_mut("models").and_then(|m| m.as_table_mut()) {
+                    for (name, model) in models.iter_mut() {
+                        let is_deepseek =
+                            name.contains("deepseek") || name == "default" || name == "imported";
+                        if !is_deepseek {
+                            continue;
+                        }
+                        if let Some(table) = model.as_table_mut() {
+                            table.insert(
+                                "api_key".to_string(),
+                                toml::Value::String(api_key.clone()),
+                            );
+                            updated_any = true;
+                        }
+                    }
+                }
+                // 设置默认模型（Pro / Flash）
+                if let Some(default) = default_model.as_deref() {
+                    if let Some(router) = value.get_mut("router").and_then(|r| r.as_table_mut()) {
+                        router.insert(
+                            "default".to_string(),
+                            toml::Value::String(default.to_string()),
+                        );
+                    }
+                }
+                if updated_any {
+                    toml::to_string_pretty(&value).map_err(|e| format!("序列化配置失败: {e}"))?
+                } else {
+                    format!(
+                        "{existing}\n\n[models.imported]\nprovider = \"openai_compat\"\napi_key = \"{api_key}\"\nmodel_id = \"deepseek-v4-pro\"\nbase_url = \"https://api.deepseek.com/v1\"\n"
+                    )
+                }
+            }
+            Err(_) => template_with_default(&api_key, default_model.as_deref()),
         }
     } else {
-        DEFAULT_MODEL_TEMPLATE.replace("{api_key}", &api_key)
+        template_with_default(&api_key, default_model.as_deref())
     };
 
-    std::fs::write(&models_path, &content).map_err(|e| format!("写入失败: {e}"))?;
+    std::fs::write(&models_path, content).map_err(|e| format!("写入失败: {e}"))?;
     Ok(())
+}
+
+fn template_with_default(api_key: &str, default_model: Option<&str>) -> String {
+    let mut content = DEFAULT_MODEL_TEMPLATE.replace("{api_key}", api_key);
+    if let Some(default) = default_model {
+        content = content.replace(
+            "default = \"deepseek-v4-pro\"",
+            &format!("default = \"{default}\""),
+        );
+    }
+    content
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn template_injects_key_and_default() {
+        let t = template_with_default("sk-test-123", Some("deepseek-v4-flash"));
+        assert!(t.contains("default = \"deepseek-v4-flash\""));
+        assert!(t.contains("api_key = \"sk-test-123\""));
+        assert!(t.contains("[models.deepseek-v4-pro]"));
+    }
+
+    #[test]
+    fn template_defaults_to_pro() {
+        let t = template_with_default("sk-test", None);
+        assert!(t.contains("default = \"deepseek-v4-pro\""));
+    }
 }
 
 // ---------------------------------------------------------------------------
