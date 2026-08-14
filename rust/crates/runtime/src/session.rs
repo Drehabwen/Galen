@@ -91,6 +91,56 @@ pub struct SessionCompaction {
     pub archived_messages: Vec<ConversationMessage>,
 }
 
+/// Outcome of a completed turn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TurnStatus {
+    /// The turn finished normally (model stopped, no pending tools).
+    Completed,
+    /// The turn aborted with an error before finishing.
+    Failed,
+}
+
+impl TurnStatus {
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+/// One persisted turn event: a user input plus the model steps it drove.
+///
+/// A turn is the durable record of a task-level loop iteration (task = turn,
+/// node = step): when it ran, how many model requests (steps) and tool calls
+/// it made, its token cost, and whether it finished. It is appended to the
+/// JSONL session file, so task progress can be replayed from the event trail
+/// instead of being inferred from a plan file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TurnRecord {
+    /// 1-based turn counter within the session.
+    pub turn_index: u32,
+    /// Wall-clock time the turn started, in milliseconds.
+    pub started_at_ms: u64,
+    /// Wall-clock time the turn finished, in milliseconds.
+    pub completed_at_ms: u64,
+    /// Whether the turn completed or failed.
+    pub status: TurnStatus,
+    /// The user input that started the turn.
+    pub user_input: String,
+    /// Number of model requests (steps) the turn executed.
+    pub iterations: usize,
+    /// Number of tool executions the turn performed.
+    pub tool_call_count: usize,
+    /// Input tokens consumed by this turn (delta, not cumulative).
+    pub usage_input_tokens: u64,
+    /// Output tokens produced by this turn (delta, not cumulative).
+    pub usage_output_tokens: u64,
+    /// Failure reason when `status` is `Failed`.
+    pub error: Option<String>,
+}
+
 /// Provenance recorded when a session is forked from another session.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionFork {
@@ -128,6 +178,8 @@ pub struct Session {
     pub compaction: Option<SessionCompaction>,
     /// Every compaction event, oldest first, with archived original messages.
     pub compaction_history: Vec<SessionCompaction>,
+    /// Every completed or failed turn, oldest first (task-level loop record).
+    pub turn_history: Vec<TurnRecord>,
     pub fork: Option<SessionFork>,
     pub workspace_root: Option<PathBuf>,
     pub prompt_history: Vec<SessionPromptEntry>,
@@ -148,6 +200,7 @@ impl PartialEq for Session {
             && self.messages == other.messages
             && self.compaction == other.compaction
             && self.compaction_history == other.compaction_history
+            && self.turn_history == other.turn_history
             && self.fork == other.fork
             && self.workspace_root == other.workspace_root
             && self.prompt_history == other.prompt_history
@@ -201,6 +254,7 @@ impl Session {
             messages: Vec::new(),
             compaction: None,
             compaction_history: Vec::new(),
+            turn_history: Vec::new(),
             fork: None,
             workspace_root: None,
             prompt_history: Vec::new(),
@@ -328,6 +382,7 @@ impl Session {
             messages: self.messages.clone(),
             compaction: self.compaction.clone(),
             compaction_history: self.compaction_history.clone(),
+            turn_history: self.turn_history.clone(),
             fork: Some(SessionFork {
                 parent_session_id: self.session_id.clone(),
                 branch_name: normalize_optional_string(branch_name),
@@ -378,6 +433,14 @@ impl Session {
                         .iter()
                         .map(SessionCompaction::to_json)
                         .collect::<Result<Vec<_>, _>>()?,
+                ),
+            );
+        }
+        if !self.turn_history.is_empty() {
+            object.insert(
+                "turn_history".to_string(),
+                JsonValue::Array(
+                    self.turn_history.iter().map(TurnRecord::to_json).collect(),
                 ),
             );
         }
@@ -451,6 +514,17 @@ impl Session {
             })
             .transpose()?
             .unwrap_or_default();
+        let turn_history = object
+            .get("turn_history")
+            .and_then(JsonValue::as_array)
+            .map(|entries| {
+                entries
+                    .iter()
+                    .map(TurnRecord::from_json)
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
         let fork = object.get("fork").map(SessionFork::from_json).transpose()?;
         let workspace_root = object
             .get("workspace_root")
@@ -478,6 +552,7 @@ impl Session {
             messages,
             compaction,
             compaction_history,
+            turn_history,
             fork,
             workspace_root,
             prompt_history,
@@ -495,6 +570,7 @@ impl Session {
         let mut messages = Vec::new();
         let mut compaction = None;
         let mut compaction_history = Vec::new();
+        let mut turn_history = Vec::new();
         let mut fork = None;
         let mut workspace_root = None;
         let mut model = None;
@@ -556,6 +632,9 @@ impl Session {
                     compaction = Some(record.clone());
                     compaction_history.push(record);
                 }
+                "turn" => {
+                    turn_history.push(TurnRecord::from_json(&JsonValue::Object(object.clone()))?);
+                }
                 "prompt_history" => {
                     if let Some(entry) =
                         SessionPromptEntry::from_json_opt(&JsonValue::Object(object.clone()))
@@ -581,6 +660,7 @@ impl Session {
             messages,
             compaction,
             compaction_history,
+            turn_history,
             fork,
             workspace_root,
             prompt_history,
@@ -609,6 +689,9 @@ impl Session {
         let mut lines = vec![self.meta_record()?.render()];
         for compaction in &self.compaction_history {
             lines.push(compaction.to_jsonl_record()?.render());
+        }
+        for turn in &self.turn_history {
+            lines.push(turn.to_jsonl_record().render());
         }
         lines.extend(
             self.prompt_history
@@ -675,6 +758,40 @@ impl Session {
 
         let mut file = OpenOptions::new().append(true).open(path)?;
         writeln!(file, "{}", record.to_jsonl_record()?.render())?;
+        Ok(())
+    }
+
+    /// Record a completed or failed turn event and append it to the JSONL
+    /// session file when a persistence path is configured.
+    ///
+    /// On persistence failure the in-memory change is rolled back so the
+    /// in-memory session never diverges from what was actually written.
+    pub fn record_turn(&mut self, record: TurnRecord) -> Result<(), SessionError> {
+        self.touch();
+        self.turn_history.push(record);
+
+        if let Err(error) = self.append_persisted_turn() {
+            self.turn_history.pop();
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    fn append_persisted_turn(&self) -> Result<(), SessionError> {
+        let Some(path) = self.persistence_path() else {
+            return Ok(());
+        };
+        let Some(record) = self.turn_history.last() else {
+            return Ok(());
+        };
+
+        let needs_bootstrap = !path.exists() || fs::metadata(path)?.len() == 0;
+        if needs_bootstrap {
+            return self.save_to_path(path);
+        }
+
+        let mut file = OpenOptions::new().append(true).open(path)?;
+        writeln!(file, "{}", record.to_jsonl_record().render())?;
         Ok(())
     }
 
@@ -1047,6 +1164,173 @@ impl SessionCompaction {
     }
 }
 
+impl TurnRecord {
+    #[must_use]
+    pub fn to_json(&self) -> JsonValue {
+        let mut object = BTreeMap::new();
+        object.insert(
+            "turn_index".to_string(),
+            JsonValue::Number(i64::from(self.turn_index)),
+        );
+        object.insert(
+            "started_at_ms".to_string(),
+            JsonValue::Number(i64_from_u64(self.started_at_ms, "started_at_ms").unwrap_or(0)),
+        );
+        object.insert(
+            "completed_at_ms".to_string(),
+            JsonValue::Number(
+                i64_from_u64(self.completed_at_ms, "completed_at_ms").unwrap_or(0),
+            ),
+        );
+        object.insert(
+            "status".to_string(),
+            JsonValue::String(self.status.as_str().to_string()),
+        );
+        object.insert(
+            "user_input".to_string(),
+            JsonValue::String(self.user_input.clone()),
+        );
+        object.insert(
+            "iterations".to_string(),
+            JsonValue::Number(i64_from_usize(self.iterations, "iterations").unwrap_or(0)),
+        );
+        object.insert(
+            "tool_call_count".to_string(),
+            JsonValue::Number(
+                i64_from_usize(self.tool_call_count, "tool_call_count").unwrap_or(0),
+            ),
+        );
+        object.insert(
+            "usage_input_tokens".to_string(),
+            JsonValue::Number(
+                i64_from_u64(self.usage_input_tokens, "usage_input_tokens").unwrap_or(0),
+            ),
+        );
+        object.insert(
+            "usage_output_tokens".to_string(),
+            JsonValue::Number(
+                i64_from_u64(self.usage_output_tokens, "usage_output_tokens").unwrap_or(0),
+            ),
+        );
+        if let Some(error) = &self.error {
+            object.insert("error".to_string(), JsonValue::String(error.clone()));
+        }
+        JsonValue::Object(object)
+    }
+
+    #[must_use]
+    pub fn to_jsonl_record(&self) -> JsonValue {
+        let mut object = BTreeMap::new();
+        object.insert("type".to_string(), JsonValue::String("turn".to_string()));
+        object.insert(
+            "turn_index".to_string(),
+            JsonValue::Number(i64::from(self.turn_index)),
+        );
+        object.insert(
+            "started_at_ms".to_string(),
+            JsonValue::Number(i64_from_u64(self.started_at_ms, "started_at_ms").unwrap_or(0)),
+        );
+        object.insert(
+            "completed_at_ms".to_string(),
+            JsonValue::Number(
+                i64_from_u64(self.completed_at_ms, "completed_at_ms").unwrap_or(0),
+            ),
+        );
+        object.insert(
+            "status".to_string(),
+            JsonValue::String(self.status.as_str().to_string()),
+        );
+        object.insert(
+            "user_input".to_string(),
+            JsonValue::String(self.user_input.clone()),
+        );
+        object.insert(
+            "iterations".to_string(),
+            JsonValue::Number(i64_from_usize(self.iterations, "iterations").unwrap_or(0)),
+        );
+        object.insert(
+            "tool_call_count".to_string(),
+            JsonValue::Number(
+                i64_from_usize(self.tool_call_count, "tool_call_count").unwrap_or(0),
+            ),
+        );
+        object.insert(
+            "usage_input_tokens".to_string(),
+            JsonValue::Number(
+                i64_from_u64(self.usage_input_tokens, "usage_input_tokens").unwrap_or(0),
+            ),
+        );
+        object.insert(
+            "usage_output_tokens".to_string(),
+            JsonValue::Number(
+                i64_from_u64(self.usage_output_tokens, "usage_output_tokens").unwrap_or(0),
+            ),
+        );
+        if let Some(error) = &self.error {
+            object.insert("error".to_string(), JsonValue::String(error.clone()));
+        }
+        JsonValue::Object(object)
+    }
+
+    fn from_json(value: &JsonValue) -> Result<Self, SessionError> {
+        let object = value
+            .as_object()
+            .ok_or_else(|| SessionError::Format("turn must be an object".to_string()))?;
+        let status = match object
+            .get("status")
+            .and_then(JsonValue::as_str)
+            .unwrap_or("completed")
+        {
+            "completed" => TurnStatus::Completed,
+            "failed" => TurnStatus::Failed,
+            other => {
+                return Err(SessionError::Format(format!(
+                    "unsupported turn status: {other}"
+                )))
+            }
+        };
+        Ok(Self {
+            turn_index: required_u32(object, "turn_index")?,
+            started_at_ms: object
+                .get("started_at_ms")
+                .map(|value| required_u64_from_value(value, "started_at_ms"))
+                .transpose()?
+                .unwrap_or(0),
+            completed_at_ms: object
+                .get("completed_at_ms")
+                .map(|value| required_u64_from_value(value, "completed_at_ms"))
+                .transpose()?
+                .unwrap_or(0),
+            status,
+            user_input: required_string(object, "user_input")?,
+            iterations: object
+                .get("iterations")
+                .map(|value| required_usize_from_value(value, "iterations"))
+                .transpose()?
+                .unwrap_or(0),
+            tool_call_count: object
+                .get("tool_call_count")
+                .map(|value| required_usize_from_value(value, "tool_call_count"))
+                .transpose()?
+                .unwrap_or(0),
+            usage_input_tokens: object
+                .get("usage_input_tokens")
+                .map(|value| required_u64_from_value(value, "usage_input_tokens"))
+                .transpose()?
+                .unwrap_or(0),
+            usage_output_tokens: object
+                .get("usage_output_tokens")
+                .map(|value| required_u64_from_value(value, "usage_output_tokens"))
+                .transpose()?
+                .unwrap_or(0),
+            error: object
+                .get("error")
+                .and_then(JsonValue::as_str)
+                .map(ToOwned::to_owned),
+        })
+    }
+}
+
 impl SessionFork {
     #[must_use]
     pub fn to_json(&self) -> JsonValue {
@@ -1186,6 +1470,13 @@ fn required_usize(object: &BTreeMap<String, JsonValue>, key: &str) -> Result<usi
     usize::try_from(value).map_err(|_| SessionError::Format(format!("{key} out of range")))
 }
 
+fn required_usize_from_value(value: &JsonValue, key: &str) -> Result<usize, SessionError> {
+    let value = value
+        .as_i64()
+        .ok_or_else(|| SessionError::Format(format!("missing {key}")))?;
+    usize::try_from(value).map_err(|_| SessionError::Format(format!("{key} out of range")))
+}
+
 fn i64_from_u64(value: u64, key: &str) -> Result<i64, SessionError> {
     i64::try_from(value)
         .map_err(|_| SessionError::Format(format!("{key} out of range for JSON number")))
@@ -1216,7 +1507,7 @@ fn normalize_optional_string(value: Option<String>) -> Option<String> {
     })
 }
 
-fn current_time_millis() -> u64 {
+pub(crate) fn current_time_millis() -> u64 {
     let wall_clock = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| u64::try_from(duration.as_millis()).unwrap_or(u64::MAX))
@@ -1330,7 +1621,8 @@ fn cleanup_rotated_logs(path: &Path) -> Result<(), SessionError> {
 mod tests {
     use super::{
         cleanup_rotated_logs, current_time_millis, rotate_session_file_if_needed, CompactionTrigger,
-        ContentBlock, ConversationMessage, MessageRole, Session, SessionFork,
+        ContentBlock, ConversationMessage, MessageRole, Session, SessionFork, TurnRecord,
+        TurnStatus,
     };
     use crate::json::JsonValue;
     use crate::usage::TokenUsage;
@@ -1479,6 +1771,58 @@ mod tests {
         assert_eq!(compaction.archived_messages, removed);
         assert_eq!(restored.compaction_history.len(), 1);
         assert_eq!(restored.compaction_history[0].archived_messages, removed);
+    }
+
+    #[test]
+    fn persists_turn_events() {
+        let path = temp_session_path("turn");
+        let mut session = Session::new();
+        session
+            .record_turn(TurnRecord {
+                turn_index: 1,
+                started_at_ms: 1_000,
+                completed_at_ms: 2_000,
+                status: TurnStatus::Completed,
+                user_input: "analyze data".to_string(),
+                iterations: 3,
+                tool_call_count: 2,
+                usage_input_tokens: 1_500,
+                usage_output_tokens: 800,
+                error: None,
+            })
+            .expect("completed turn should record");
+        session
+            .record_turn(TurnRecord {
+                turn_index: 2,
+                started_at_ms: 3_000,
+                completed_at_ms: 3_500,
+                status: TurnStatus::Failed,
+                user_input: "run analysis".to_string(),
+                iterations: 0,
+                tool_call_count: 0,
+                usage_input_tokens: 0,
+                usage_output_tokens: 0,
+                error: Some("api timeout".to_string()),
+            })
+            .expect("failed turn should record");
+        session.save_to_path(&path).expect("session should save");
+
+        let restored = Session::load_from_path(&path).expect("session should load");
+        fs::remove_file(&path).expect("temp file should be removable");
+
+        assert_eq!(restored.turn_history.len(), 2);
+        assert_eq!(restored.turn_history[0].turn_index, 1);
+        assert_eq!(restored.turn_history[0].status, TurnStatus::Completed);
+        assert_eq!(restored.turn_history[0].user_input, "analyze data");
+        assert_eq!(restored.turn_history[0].iterations, 3);
+        assert_eq!(restored.turn_history[0].tool_call_count, 2);
+        assert_eq!(restored.turn_history[0].usage_input_tokens, 1_500);
+        assert_eq!(restored.turn_history[1].status, TurnStatus::Failed);
+        assert_eq!(
+            restored.turn_history[1].error.as_deref(),
+            Some("api timeout")
+        );
+        assert!(restored.turn_history[1].completed_at_ms >= restored.turn_history[1].started_at_ms);
     }
 
     #[test]

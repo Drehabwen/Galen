@@ -12,7 +12,9 @@ use crate::hooks::{HookAbortSignal, HookProgressReporter, HookRunResult, HookRun
 use crate::permissions::{
     PermissionContext, PermissionOutcome, PermissionPolicy, PermissionPrompter,
 };
-use crate::session::{ContentBlock, ConversationMessage, Session};
+use crate::session::{
+    current_time_millis, ContentBlock, ConversationMessage, Session, TurnRecord, TurnStatus,
+};
 use crate::usage::{TokenUsage, UsageTracker};
 
 const DEFAULT_AUTO_COMPACTION_INPUT_TOKENS_THRESHOLD: u32 = 100_000;
@@ -316,10 +318,72 @@ where
     pub fn run_turn(
         &mut self,
         user_input: impl Into<String>,
-        mut prompter: Option<&mut dyn PermissionPrompter>,
+        prompter: Option<&mut dyn PermissionPrompter>,
     ) -> Result<TurnSummary, RuntimeError> {
         let user_input = user_input.into();
+        let turn_started_at_ms = current_time_millis();
+        let usage_before = self.usage_tracker.cumulative_usage();
 
+        let result = self.run_turn_inner(user_input.clone(), prompter);
+        let turn_index = u32::try_from(self.session.turn_history.len())
+            .unwrap_or(u32::MAX)
+            .saturating_add(1);
+
+        match result {
+            Ok(summary) => {
+                let usage_after = self.usage_tracker.cumulative_usage();
+                let record = TurnRecord {
+                    turn_index,
+                    started_at_ms: turn_started_at_ms,
+                    completed_at_ms: current_time_millis(),
+                    status: TurnStatus::Completed,
+                    user_input,
+                    iterations: summary.iterations,
+                    tool_call_count: summary.tool_results.len(),
+                    usage_input_tokens: u64::from(
+                        usage_after.input_tokens.saturating_sub(usage_before.input_tokens),
+                    ),
+                    usage_output_tokens: u64::from(
+                        usage_after.output_tokens.saturating_sub(usage_before.output_tokens),
+                    ),
+                    error: None,
+                };
+                self.session
+                    .record_turn(record)
+                    .map_err(|error| RuntimeError::new(error.to_string()))?;
+                Ok(summary)
+            }
+            Err(error) => {
+                let record = TurnRecord {
+                    turn_index,
+                    started_at_ms: turn_started_at_ms,
+                    completed_at_ms: current_time_millis(),
+                    status: TurnStatus::Failed,
+                    user_input,
+                    iterations: 0,
+                    tool_call_count: 0,
+                    usage_input_tokens: 0,
+                    usage_output_tokens: 0,
+                    error: Some(error.to_string()),
+                };
+                self.session.record_turn(record).map_err(|record_error| {
+                    RuntimeError::new(format!("{record_error}; original error: {error}"))
+                })?;
+                Err(error)
+            }
+        }
+    }
+
+    /// Runs the turn body (health probe, model loop, tool execution) without
+    /// recording the durable turn event; the outer `run_turn` wraps this with
+    /// the `TurnRecord` so every completed or failed turn is persisted to the
+    /// session event trail.
+    #[allow(clippy::too_many_lines)]
+    fn run_turn_inner<'a>(
+        &mut self,
+        user_input: String,
+        mut prompter: Option<&'a mut dyn PermissionPrompter>,
+    ) -> Result<TurnSummary, RuntimeError> {
         // ROADMAP #38: Session-health canary - probe if context was compacted
         if self.session.compaction.is_some() {
             if let Err(error) = self.run_session_health_probe() {
@@ -837,7 +901,9 @@ mod tests {
         PermissionRequest,
     };
     use crate::prompt::{ProjectContext, SystemPromptBuilder};
-    use crate::session::{CompactionTrigger, ContentBlock, ConversationMessage, MessageRole, Session};
+    use crate::session::{
+        CompactionTrigger, ContentBlock, ConversationMessage, MessageRole, Session, TurnStatus,
+    };
     use crate::usage::TokenUsage;
     use crate::ToolError;
     use std::fs;
@@ -1800,6 +1866,97 @@ mod tests {
         assert!(error
             .to_string()
             .contains("conversation loop exceeded the maximum number of iterations"));
+    }
+
+    #[test]
+    fn records_turn_history_on_success() {
+        struct SimpleApi;
+        impl ApiClient for SimpleApi {
+            fn stream(
+                &mut self,
+                _request: ApiRequest,
+            ) -> Result<Vec<AssistantEvent>, RuntimeError> {
+                Ok(vec![
+                    AssistantEvent::TextDelta("done".to_string()),
+                    AssistantEvent::MessageStop,
+                ])
+            }
+        }
+
+        // given
+        let mut runtime = ConversationRuntime::new(
+            Session::new(),
+            SimpleApi,
+            StaticToolExecutor::new(),
+            PermissionPolicy::new(PermissionMode::DangerFullAccess),
+            vec!["system".to_string()],
+        );
+
+        // when
+        runtime
+            .run_turn("first task", None)
+            .expect("turn should succeed");
+        runtime
+            .run_turn("second task", None)
+            .expect("turn should succeed");
+
+        // then
+        let history = &runtime.session().turn_history;
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].turn_index, 1);
+        assert_eq!(history[0].status, TurnStatus::Completed);
+        assert_eq!(history[0].user_input, "first task");
+        assert_eq!(history[0].iterations, 1);
+        assert_eq!(history[0].tool_call_count, 0);
+        assert_eq!(history[1].turn_index, 2);
+        assert_eq!(history[1].user_input, "second task");
+        assert!(
+            history[0].completed_at_ms >= history[0].started_at_ms,
+            "turn must carry start/end timestamps"
+        );
+    }
+
+    #[test]
+    fn records_failed_turn_in_history() {
+        struct FailingApi;
+        impl ApiClient for FailingApi {
+            fn stream(
+                &mut self,
+                _request: ApiRequest,
+            ) -> Result<Vec<AssistantEvent>, RuntimeError> {
+                Err(RuntimeError::new("upstream failed"))
+            }
+        }
+
+        // given
+        let mut runtime = ConversationRuntime::new(
+            Session::new(),
+            FailingApi,
+            StaticToolExecutor::new(),
+            PermissionPolicy::new(PermissionMode::DangerFullAccess),
+            vec!["system".to_string()],
+        );
+
+        // when
+        let error = runtime
+            .run_turn("doomed", None)
+            .expect_err("api failure should abort the turn");
+        assert!(error.to_string().contains("upstream failed"));
+
+        // then the failed turn is still recorded in the event trail
+        let history = &runtime.session().turn_history;
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].turn_index, 1);
+        assert_eq!(history[0].status, TurnStatus::Failed);
+        assert_eq!(history[0].user_input, "doomed");
+        assert!(
+            history[0]
+                .error
+                .as_deref()
+                .unwrap_or_default()
+                .contains("upstream failed"),
+            "failed turn must carry the error reason"
+        );
     }
 
     #[test]
