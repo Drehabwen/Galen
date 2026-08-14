@@ -291,12 +291,30 @@ impl Session {
         self.persistence.as_ref().map(|value| value.path.as_path())
     }
 
+    /// Bootstrap-write the session to `path` as an append-only JSONL event log.
+    ///
+    /// This is only legal when the file does not exist, is empty, or holds a
+    /// legacy single-object JSON session (which gets migrated to JSONL). Once
+    /// the file is a JSONL log it must never be rewritten: the file is the
+    /// append-only event trail (the source of truth), and all subsequent state
+    /// changes go through the `append_persisted_*` paths. Refusing rewrites is
+    /// what guarantees the trail is complete and never truncated.
     pub fn save_to_path(&self, path: impl AsRef<Path>) -> Result<(), SessionError> {
         let path = path.as_ref();
+        if let Ok(metadata) = fs::metadata(path) {
+            if metadata.len() > 0 {
+                let contents = fs::read_to_string(path)?;
+                if looks_like_jsonl(&contents) {
+                    return Err(SessionError::Format(
+                        "session file already exists as an append-only JSONL log; \
+                         refusing to rewrite it. Append events through the Session API instead."
+                            .to_string(),
+                    ));
+                }
+            }
+        }
         let snapshot = self.render_jsonl_snapshot()?;
-        rotate_session_file_if_needed(path)?;
         write_atomic(path, &snapshot)?;
-        cleanup_rotated_logs(path)?;
         Ok(())
     }
 
@@ -713,7 +731,7 @@ impl Session {
             return Ok(());
         };
 
-        let needs_bootstrap = !path.exists() || fs::metadata(path)?.len() == 0;
+        let needs_bootstrap = needs_bootstrap_write(path)?;
         if needs_bootstrap {
             self.save_to_path(path)?;
             return Ok(());
@@ -732,7 +750,7 @@ impl Session {
             return Ok(());
         };
 
-        let needs_bootstrap = !path.exists() || fs::metadata(path)?.len() == 0;
+        let needs_bootstrap = needs_bootstrap_write(path)?;
         if needs_bootstrap {
             self.save_to_path(path)?;
             return Ok(());
@@ -751,7 +769,7 @@ impl Session {
             return Ok(());
         };
 
-        let needs_bootstrap = !path.exists() || fs::metadata(path)?.len() == 0;
+        let needs_bootstrap = needs_bootstrap_write(path)?;
         if needs_bootstrap {
             return self.save_to_path(path);
         }
@@ -785,7 +803,7 @@ impl Session {
             return Ok(());
         };
 
-        let needs_bootstrap = !path.exists() || fs::metadata(path)?.len() == 0;
+        let needs_bootstrap = needs_bootstrap_write(path)?;
         if needs_bootstrap {
             return self.save_to_path(path);
         }
@@ -1537,6 +1555,36 @@ fn generate_session_id() -> String {
     format!("session-{millis}-{counter}")
 }
 
+/// Returns `true` when the first non-empty line of `contents` is a JSONL
+/// record (an object carrying a `type` field). Used to distinguish an
+/// append-only JSONL event log from a legacy single-object JSON session.
+fn looks_like_jsonl(contents: &str) -> bool {
+    contents
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .is_some_and(|line| {
+            JsonValue::parse(line)
+                .ok()
+                .and_then(|value| value.as_object().cloned())
+                .is_some_and(|object| object.contains_key("type"))
+        })
+}
+
+/// Whether the session file needs a bootstrap write: missing, empty, or a
+/// legacy single-object JSON file that must be migrated to the JSONL format
+/// before more events can be appended.
+fn needs_bootstrap_write(path: &Path) -> Result<bool, SessionError> {
+    if !path.exists() {
+        return Ok(true);
+    }
+    if fs::metadata(path)?.len() == 0 {
+        return Ok(true);
+    }
+    let contents = fs::read_to_string(path)?;
+    Ok(!looks_like_jsonl(&contents))
+}
+
 fn write_atomic(path: &Path, contents: &str) -> Result<(), SessionError> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -1559,6 +1607,11 @@ fn temporary_path_for(path: &Path) -> PathBuf {
     ))
 }
 
+/// Rotation helpers retained for a future log-splitting feature. The current
+/// event-log design is single-file append-only (see `save_to_path`), so these
+/// are no longer called from the write path; they stay because the tests
+/// cover them and log splitting will need exactly this behavior.
+#[allow(dead_code)]
 fn rotate_session_file_if_needed(path: &Path) -> Result<(), SessionError> {
     let Ok(metadata) = fs::metadata(path) else {
         return Ok(());
@@ -1571,6 +1624,7 @@ fn rotate_session_file_if_needed(path: &Path) -> Result<(), SessionError> {
     Ok(())
 }
 
+#[allow(dead_code)]
 fn rotated_log_path(path: &Path) -> PathBuf {
     let stem = path
         .file_stem()
@@ -1579,6 +1633,7 @@ fn rotated_log_path(path: &Path) -> PathBuf {
     path.with_file_name(format!("{stem}.rot-{}.jsonl", current_time_millis()))
 }
 
+#[allow(dead_code)]
 fn cleanup_rotated_logs(path: &Path) -> Result<(), SessionError> {
     let Some(parent) = path.parent() else {
         return Ok(());
@@ -1620,9 +1675,9 @@ fn cleanup_rotated_logs(path: &Path) -> Result<(), SessionError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        cleanup_rotated_logs, current_time_millis, rotate_session_file_if_needed, CompactionTrigger,
-        ContentBlock, ConversationMessage, MessageRole, Session, SessionFork, TurnRecord,
-        TurnStatus,
+        cleanup_rotated_logs, current_time_millis, looks_like_jsonl, rotate_session_file_if_needed,
+        CompactionTrigger, ContentBlock, ConversationMessage, MessageRole, Session, SessionFork,
+        TurnRecord, TurnStatus,
     };
     use crate::json::JsonValue;
     use crate::usage::TokenUsage;
@@ -1823,6 +1878,53 @@ mod tests {
             Some("api timeout")
         );
         assert!(restored.turn_history[1].completed_at_ms >= restored.turn_history[1].started_at_ms);
+    }
+
+    #[test]
+    fn refuses_to_rewrite_existing_jsonl_session() {
+        // given a session already persisted as an append-only JSONL log
+        let path = temp_session_path("no-rewrite");
+        let mut session = Session::new().with_persistence_path(&path);
+        session
+            .push_user_text("one")
+            .expect("bootstrap write should succeed");
+
+        // when trying to save the whole session again
+        let error = session
+            .save_to_path(&path)
+            .expect_err("rewriting a JSONL event log must be rejected");
+
+        // then the event trail is protected from truncation
+        assert!(error.to_string().contains("refusing to rewrite"));
+        let restored = Session::load_from_path(&path).expect("log should still load");
+        assert_eq!(restored.messages.len(), 1);
+        fs::remove_file(&path).expect("temp file should be removable");
+    }
+
+    #[test]
+    fn migrates_legacy_json_session_on_first_write() {
+        // given a legacy single-object JSON session file on disk
+        let path = temp_session_path("legacy-migrate");
+        let legacy = r#"{"version":1,"session_id":"legacy-1","created_at_ms":1,"updated_at_ms":1,"messages":[{"role":"user","blocks":[{"type":"text","text":"old"}]}]}"#;
+        fs::write(&path, legacy).expect("legacy file should write");
+        let mut session = Session::load_from_path(&path).expect("legacy session should load");
+
+        // when a new event is appended
+        session
+            .push_user_text("new")
+            .expect("append should migrate the file to JSONL first");
+
+        // then the file is now a JSONL log and nothing was lost
+        let contents = fs::read_to_string(&path).expect("file should be readable");
+        assert!(
+            looks_like_jsonl(&contents),
+            "file must be migrated to the JSONL format"
+        );
+        let restored = Session::load_from_path(&path).expect("migrated session should load");
+        assert_eq!(restored.messages.len(), 2);
+        assert_eq!(restored.messages[0], ConversationMessage::user_text("old"));
+        assert_eq!(restored.messages[1], ConversationMessage::user_text("new"));
+        fs::remove_file(&path).expect("temp file should be removable");
     }
 
     #[test]
