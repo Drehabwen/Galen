@@ -2944,7 +2944,10 @@ fn run_resume_command(
             let removed = result.removed_message_count;
             let kept = result.compacted_session.messages.len();
             let skipped = removed == 0;
-            result.compacted_session.save_to_path(session_path)?;
+            // The compaction event (with archived messages) was already
+            // appended to the JSONL log inside compact_session; the file must
+            // not be rewritten.
+            result.compacted_session.ensure_persisted()?;
             Ok(ResumeCommandOutcome {
                 session: result.compacted_session,
                 message: Some(format_compact_report(removed, kept, skipped)),
@@ -2971,6 +2974,12 @@ fn run_resume_command(
                 });
             }
             let backup_path = write_session_clear_backup(session, session_path)?;
+            // The old event-log file is replaced entirely: terminate the old
+            // event stream (already backed up) so the fresh session can
+            // bootstrap a new log at the same path.
+            if session_path.exists() {
+                std::fs::remove_file(session_path)?;
+            }
             let previous_session_id = session.session_id.clone();
             let cleared = new_cli_session()?;
             let new_session_id = cleared.session_id.clone();
@@ -4126,7 +4135,7 @@ impl LiveCli {
                 "message": final_assistant_text(&summary),
                 "model": self.model,
                 "iterations": summary.iterations,
-                "auto_compaction": summary.auto_compaction.map(|event| json!({
+                "auto_compaction": summary.auto_compaction.as_ref().map(|event| json!({
                     "removed_messages": event.removed_message_count,
                     "notice": format_auto_compaction_notice(event.removed_message_count),
                 })),
@@ -4324,7 +4333,9 @@ impl LiveCli {
     }
 
     fn persist_session(&self) -> Result<(), Box<dyn std::error::Error>> {
-        self.runtime.session().save_to_path(&self.session.path)?;
+        // Append-only model: every state change is already persisted as it
+        // happens, so persistence is idempotent (no-op once the log exists).
+        self.runtime.session().ensure_persisted()?;
         Ok(())
     }
 

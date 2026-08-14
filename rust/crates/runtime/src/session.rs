@@ -318,6 +318,24 @@ impl Session {
         Ok(())
     }
 
+    /// Idempotently ensure the session file exists as an append-only JSONL
+    /// event log.
+    ///
+    /// Writes the bootstrap snapshot only when the file is missing, empty, or
+    /// a legacy JSON session; once the log is in place it is a no-op, because
+    /// every state change is already appended as it happens. This is the
+    /// correct "persist" for the append-only model: callers that used to
+    /// full-snapshot on every turn should call this instead.
+    pub fn ensure_persisted(&self) -> Result<(), SessionError> {
+        let Some(path) = self.persistence_path() else {
+            return Ok(());
+        };
+        if needs_bootstrap_write(path)? {
+            self.save_to_path(path)?;
+        }
+        Ok(())
+    }
+
     pub fn load_from_path(path: impl AsRef<Path>) -> Result<Self, SessionError> {
         let path = path.as_ref();
         let contents = fs::read_to_string(path)?;
