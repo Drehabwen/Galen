@@ -56,7 +56,7 @@ Galen 是面向**康复科研**的闭环工作台：一线场景的多模态数�
 ### 从源码构建
 
 ```bash
-git clone -b galen-research-workbench https://github.com/Drehabwen/Galen.git
+git clone https://github.com/Drehabwen/Galen.git
 cd Galen/rust
 cargo build --release -p galen
 # 桌面应用入口在 rust/crates/galen/
