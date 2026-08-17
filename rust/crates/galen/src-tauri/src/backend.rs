@@ -223,7 +223,7 @@ fn build_system_prompt(
     format!(
         "{}\n\n{}\n\n{}\n\n{}\n\n{}\n\n{}\n\n## 回复要求\n\
          每次回复前先在思考中简洁列出关键步骤（≤3步），然后将最终回答完整输出。\
-         思考链控制在总回复的40%以内，确保内容部分始终可见。",
+         思考保持精炼，以推理要点为主，确保最终回答完整可见。",
         persona.system_prompt, taste, mode_prompt, ws, env_summary, "",
     )
 }
@@ -599,6 +599,7 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
     // ── Auto-compaction knob ──
     const KEEP_HEAD: usize = 2; // keep first N messages (context)
     const KEEP_TAIL: usize = 6; // keep last N messages (recent)
+    const MAX_COMPACTIONS: u32 = 3; // 长会话可多次压缩，旧摘要自动并入新摘要
 
     // Multi-turn loop: keep going until model responds with text (no tool calls)
     let mut turn = 0;
@@ -608,7 +609,7 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
     let mut con_error_streak: u32 = 0;
     let mut final_chance_used = false;
     let mut final_turn = false;
-    let mut compacted = false;
+    let mut compaction_count: u32 = 0;
     // token 感知压缩阈值：按模型输出上限估算输入窗口（1 token ≈ 3 字符），
     // 取窗口约 60% 触发压缩，避免 128K 窗口被 6K token 就误压缩。
     let max_tokens = router
@@ -631,7 +632,7 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
         }
 
         // ── Auto-compaction: fold middle when context grows too large ──
-        if !compacted {
+        if compaction_count < MAX_COMPACTIONS {
             let total_chars: usize = history.iter()
                 .map(|m| m.content.iter().map(|b| match b {
                     InputContentBlock::Text { text } => text.len(),
@@ -658,13 +659,16 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
                 let summary = summarize_middle(&client, &model_id, &middle)
                     .await
                     .unwrap_or_default();
+                // 摘要落盘：完整存档可追溯，模型需要细节时可 read_file 取回
+                archive_compaction(&ctx.workspace_root, &summary);
                 history = head;
+                let archive_hint = "完整过程存档于 .galen/context-archive.md，需要历史细节时用 read_file 取回。";
                 if summary.trim().is_empty() {
                     history.push(InputMessage {
                         role: "user".to_string(),
                         content: vec![InputContentBlock::Text {
                             text: format!(
-                                "[原始任务] {anchor}\n[上下文已折叠] {folded} 条较早的消息被移除，保留最近 {KEEP_TAIL} 条。关键结论见上方证据链。",
+                                "[原始任务] {anchor}\n[上下文已折叠] {folded} 条较早的消息被移除，保留最近 {KEEP_TAIL} 条。{archive_hint}",
                                 anchor = task_anchor.as_deref().unwrap_or("（无）"),
                             ),
                         }],
@@ -673,12 +677,12 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
                     history.push(InputMessage {
                         role: "user".to_string(),
                         content: vec![InputContentBlock::Text {
-                            text: format!("[原始任务] {anchor}\n[已折叠 {folded} 条较早消息，摘要：]\n{summary}", anchor = task_anchor.as_deref().unwrap_or("（无）")),
+                            text: format!("[原始任务] {anchor}\n【已压缩摘要】\n{summary}\n{archive_hint}", anchor = task_anchor.as_deref().unwrap_or("（无）")),
                         }],
                     });
                 }
                 history.extend(tail);
-                compacted = true;
+                compaction_count += 1;
                 on_event(ChatEvent::Delta("[上下文已自动压缩]\n".to_string()));
             }
         }
@@ -958,7 +962,7 @@ async fn summarize_middle(
     messages.push(InputMessage {
         role: "user".to_string(),
         content: vec![InputContentBlock::Text {
-            text: "请将以下对话压缩为结构化摘要，保留：研究目标、已完成的动作与结果、关键结论、未决问题。用简洁条目输出，不要复述过程。"
+            text: "请将以下对话压缩为结构化摘要：\n1. 对话中若包含以【已压缩摘要】开头的文本，必须完整保留其全部条目（那是更早轮次的摘要，一旦丢失将无法恢复）。\n2. 保留：研究目标、已完成的动作与结果、关键结论、未决问题。\n3. 出现过的文件路径、PMID、明确要求保留的数据条目逐项保留。\n用简洁条目输出，新增内容不要复述过程。"
                 .to_string(),
         }],
     });
@@ -1001,6 +1005,33 @@ async fn summarize_middle(
     Ok(text)
 }
 
+/// 把折叠摘要追加到工作区 `.galen/context-archive.md`，让被折叠的历史可追溯。
+/// 写盘失败静默（压缩本身不因存档失败而失败）。
+fn archive_compaction(workspace_root: &Mutex<Option<PathBuf>>, summary: &str) {
+    if summary.trim().is_empty() {
+        return;
+    }
+    let root = match workspace_root.lock().ok().and_then(|g| g.clone()) {
+        Some(r) => r,
+        None => return,
+    };
+    let dir = root.join(".galen");
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    use std::io::Write;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let entry = format!("## 上下文压缩存档 (unix {now})\n{summary}\n\n");
+    let _ = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("context-archive.md"))
+        .and_then(|mut f| f.write_all(entry.as_bytes()));
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -1036,5 +1067,28 @@ mod tests {
         // Current behavior: silently returns empty on malformed input
         let messages = parse_history_json("not valid json");
         assert!(messages.is_empty());
+    }
+
+    #[test]
+    fn archive_compaction_writes_appends_and_skips_empty() {
+        let root = std::env::temp_dir().join("galen-archive-test");
+        let _ = std::fs::remove_dir_all(&root);
+        let ws: Mutex<Option<PathBuf>> = Mutex::new(Some(root.clone()));
+
+        archive_compaction(&ws, "第一条摘要");
+        archive_compaction(&ws, "第二条摘要");
+        archive_compaction(&ws, "   "); // 空摘要不写
+
+        let path = root.join(".galen").join("context-archive.md");
+        let content = std::fs::read_to_string(&path).expect("archive file should exist");
+        assert!(content.contains("第一条摘要"), "first entry present");
+        assert!(content.contains("第二条摘要"), "second entry present");
+        assert_eq!(content.matches("## 上下文压缩存档").count(), 2, "no entry for empty summary");
+
+        // 无工作区时不崩溃
+        let no_ws: Mutex<Option<PathBuf>> = Mutex::new(None);
+        archive_compaction(&no_ws, "无工作区摘要"); // must not panic
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
