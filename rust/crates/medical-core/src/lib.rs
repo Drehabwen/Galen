@@ -2,6 +2,7 @@ pub mod citations;
 pub mod clinical;
 pub mod prompts;
 pub mod pubmed;
+pub mod rehab;
 pub mod types;
 
 use pubmed::PubMedClient;

@@ -154,6 +154,7 @@ impl ToolRegistry {
         self.register(medical::FormatCitation);
         self.register(clinical::AnalyzeClinicalCase);
         self.register(rehab::RehabData);
+        self.register(medical::SearchRehabLiterature);
 
         // File operations
         self.register(fs::CreateDirectory);
@@ -325,10 +326,10 @@ mod tests {
     fn registry_has_all_builtin_definitions() {
         let registry = ToolRegistry::default();
         let defs = registry.definitions();
-        assert_eq!(defs.len(), 15);
+        assert_eq!(defs.len(), 16);
         let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
         for expected in &["search_pubmed", "fetch_article", "format_citation",
-            "analyze_clinical_case", "rehab_data", "write_file", "read_file", "delete_file",
+            "analyze_clinical_case", "rehab_data", "search_rehab_literature", "write_file", "read_file", "delete_file",
             "execute_command", "search_files"] {
             assert!(names.contains(expected), "missing: {expected}");
         }

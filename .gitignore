@@ -4,10 +4,10 @@ archive/
 .clawd-agents/
 # Claude Code local artifacts
 .claude/settings.local.json
-.claude/sessions/
+**/.claude/sessions/
 # Claw Code local artifacts
 .claw/settings.local.json
-.claw/sessions/
+**/.claw/sessions/
 .clawhip/
 status-help.txt
 # Rust build artifacts
@@ -24,9 +24,8 @@ progress.txt
 .claude/launch.json
 .claude/skills/
 .claw.json
-.claude/sessions/
-rust/.claude/sessions/
-rust/.claw/sessions/
+**/.claude/sessions/
+**/.claw/sessions/
 rust/.clawd-todos.json
 rust/.omc/
 rust/.sandbox-home/
