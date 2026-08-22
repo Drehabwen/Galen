@@ -1,9 +1,11 @@
 pub mod backend;
+pub mod chat_session;
 mod commands;
 pub mod evidence;
 pub mod mcp_client;
 pub mod modes;
 pub mod personas;
+pub mod research_task;
 pub mod runtime_manager;
 pub mod skills;
 pub mod tools;
@@ -17,6 +19,14 @@ use commands::AppState;
 pub fn run() {
     let backend = backend::ChatBackend::new();
     let ws_config = workspace::WorkspaceConfig::load();
+    if let Some(path) = ws_config
+        .workspace_root
+        .as_ref()
+        .map(std::path::PathBuf::from)
+        .filter(|path| path.is_dir())
+    {
+        backend.set_workspace_root(Some(path));
+    }
 
     // Write default MCP config if it doesn't exist yet
     crate::mcp_client::McpConfig::write_default();
@@ -43,17 +53,20 @@ pub fn run() {
             commands::read_workspace_file,
             commands::analyze_clinical_case,
             commands::send_message,
+            commands::get_chat_session,
+            commands::clear_chat_session,
             commands::get_runtime_status,
             commands::get_mcp_status,
             commands::get_memory_status,
-            commands::save_plan,
-            commands::load_plan,
             commands::append_memory,
             commands::get_model_status,
             commands::save_api_key,
             commands::test_model_connection,
             commands::append_evidence,
             commands::get_evidence,
+            commands::create_research_task,
+            commands::get_active_research_task,
+            commands::save_research_task_nodes,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Galen");

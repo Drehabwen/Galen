@@ -341,10 +341,14 @@ where
                     iterations: summary.iterations,
                     tool_call_count: summary.tool_results.len(),
                     usage_input_tokens: u64::from(
-                        usage_after.input_tokens.saturating_sub(usage_before.input_tokens),
+                        usage_after
+                            .input_tokens
+                            .saturating_sub(usage_before.input_tokens),
                     ),
                     usage_output_tokens: u64::from(
-                        usage_after.output_tokens.saturating_sub(usage_before.output_tokens),
+                        usage_after
+                            .output_tokens
+                            .saturating_sub(usage_before.output_tokens),
                     ),
                     error: None,
                 };

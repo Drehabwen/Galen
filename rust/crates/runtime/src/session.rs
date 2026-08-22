@@ -475,9 +475,7 @@ impl Session {
         if !self.turn_history.is_empty() {
             object.insert(
                 "turn_history".to_string(),
-                JsonValue::Array(
-                    self.turn_history.iter().map(TurnRecord::to_json).collect(),
-                ),
+                JsonValue::Array(self.turn_history.iter().map(TurnRecord::to_json).collect()),
             );
         }
         if let Some(fork) = &self.fork {
@@ -1214,9 +1212,7 @@ impl TurnRecord {
         );
         object.insert(
             "completed_at_ms".to_string(),
-            JsonValue::Number(
-                i64_from_u64(self.completed_at_ms, "completed_at_ms").unwrap_or(0),
-            ),
+            JsonValue::Number(i64_from_u64(self.completed_at_ms, "completed_at_ms").unwrap_or(0)),
         );
         object.insert(
             "status".to_string(),
@@ -1232,9 +1228,7 @@ impl TurnRecord {
         );
         object.insert(
             "tool_call_count".to_string(),
-            JsonValue::Number(
-                i64_from_usize(self.tool_call_count, "tool_call_count").unwrap_or(0),
-            ),
+            JsonValue::Number(i64_from_usize(self.tool_call_count, "tool_call_count").unwrap_or(0)),
         );
         object.insert(
             "usage_input_tokens".to_string(),
@@ -1268,9 +1262,7 @@ impl TurnRecord {
         );
         object.insert(
             "completed_at_ms".to_string(),
-            JsonValue::Number(
-                i64_from_u64(self.completed_at_ms, "completed_at_ms").unwrap_or(0),
-            ),
+            JsonValue::Number(i64_from_u64(self.completed_at_ms, "completed_at_ms").unwrap_or(0)),
         );
         object.insert(
             "status".to_string(),
@@ -1286,9 +1278,7 @@ impl TurnRecord {
         );
         object.insert(
             "tool_call_count".to_string(),
-            JsonValue::Number(
-                i64_from_usize(self.tool_call_count, "tool_call_count").unwrap_or(0),
-            ),
+            JsonValue::Number(i64_from_usize(self.tool_call_count, "tool_call_count").unwrap_or(0)),
         );
         object.insert(
             "usage_input_tokens".to_string(),

@@ -4,7 +4,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { ChatMessage, Paper, FileEntry } from "../types";
 import { isTauriRuntime } from "../tauriRuntime";
 
-export function useChat() {
+export function useChat(workspaceRoot: string | null) {
   const backendAvailable = isTauriRuntime();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streaming, setStreaming] = useState("");
@@ -21,6 +21,26 @@ export function useChat() {
   const currentModel = useRef<string>("");
   const sendingRef = useRef(false);
   const doneHandledRef = useRef(false); // prevent duplicate done handling
+
+  // Restore the workspace-scoped durable main session. The backend remains
+  // authoritative; React state is only the current rendering projection.
+  useEffect(() => {
+    if (!backendAvailable || !workspaceRoot) {
+      setMessages([]);
+      return;
+    }
+    let cancelled = false;
+    invoke<ChatMessage[]>("get_chat_session", { tag: null })
+      .then((restored) => {
+        if (!cancelled && !sendingRef.current) setMessages(restored);
+      })
+      .catch((cause) => {
+        if (!cancelled) setError(`恢复主会话失败: ${String(cause)}`);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [backendAvailable, workspaceRoot]);
 
   // Register event listeners once on mount, clean up on unmount
   useEffect(() => {
@@ -153,7 +173,12 @@ export function useChat() {
     setThinkingHistory({});
     setError(null);
     setSearchResults([]);
-  }, []);
+    if (backendAvailable && workspaceRoot) {
+      invoke("clear_chat_session", { tag: null }).catch((cause) => {
+        setError(`归档主会话失败: ${String(cause)}`);
+      });
+    }
+  }, [backendAvailable, workspaceRoot]);
 
   return {
     messages,

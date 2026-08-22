@@ -16,15 +16,18 @@ import { useMode } from "./hooks/useMode";
 import type { ChatMode } from "./hooks/useMode";
 import type { ModelConfig, ModelStatus } from "./types";
 import { ModelStatusPanel } from "./components/ModelStatusPanel";
+import { WorkbenchRail } from "./components/WorkbenchRail";
 import { StatusDot } from "./components/ui/primitives";
 import type { SessionNode } from "./domain/sessionTypes";
 import { extractPlan, hasPlan, planConfirmationPrompt } from "./domain/planParser";
+import { useResearchTask } from "./hooks/useResearchTask";
 
 // ---------------------------------------------------------------------------
 // App
 // ---------------------------------------------------------------------------
 export default function App() {
-  const chat = useChat();
+  const [wsRoot, setWsRoot] = useState<string | null>(null);
+  const chat = useChat(wsRoot);
   const env = useEnvironment();
   const modeState = useMode();
   const [input, setInput] = useState("");
@@ -36,11 +39,13 @@ export default function App() {
   const [thinkingLevel, setThinkingLevel] = useState<string>(
     () => localStorage.getItem("galen.thinkingLevel") || "medium",
   );
-  const [wsRoot, setWsRoot] = useState<string | null>(null);
+  const research = useResearchTask(chat.backendAvailable, wsRoot);
+  const researchTask = research.task;
+  const planNodes = research.nodes;
+  const setPlanNodes = research.setNodes;
+  const planConfirmed = research.confirmed;
 
   // Plan canvas — derived from AI responses
-  const [planConfirmed, setPlanConfirmed] = useState(false);
-  const [planNodes, setPlanNodes] = useState<SessionNode[]>([]);
   const [pendingPlan, setPendingPlan] = useState<SessionNode[] | null>(null);
   const [selectedNode, setSelectedNode] = useState<SessionNode | null>(null);
 
@@ -51,11 +56,12 @@ export default function App() {
   // Session enter state
   const [enteredSession, setEnteredSession] = useState<SessionNode | null>(null);
   const completionNotifiedRef = useRef(false);
+  const observedTaskIdRef = useRef<string | null>(null);
+  const [artifactPreview, setArtifactPreview] = useState<{ path: string; content: string; nodeTitle?: string } | null>(null);
+  const [artifactLoading, setArtifactLoading] = useState(false);
+  const [artifactError, setArtifactError] = useState<string | null>(null);
 
-  // Patch a plan node by id (loop state transition helper)
-  const patchNode = useCallback((id: string, patch: Partial<SessionNode>) => {
-    setPlanNodes((prev) => prev.map((n) => (n.id === id ? { ...n, ...patch } : n)));
-  }, []);
+  const patchNode = research.patchNode;
 
   // Extract key evidence points from a session summary (bullet lines)
   const extractEvidence = (summary: string): string[] => {
@@ -93,46 +99,44 @@ export default function App() {
     }
   }, [chat.messages, planConfirmed]);
 
-  // Restore a persisted plan on startup (loop state survives restarts)
+  // Initialize task-level completion notification exactly once per restored or
+  // newly created task. Subsequent node writes must not reset it.
   useEffect(() => {
-    if (!chat.backendAvailable) return;
-    invoke<string | null>("load_plan")
-      .then((planJson) => {
-        if (!planJson) return;
-        try {
-          const nodes = JSON.parse(planJson) as SessionNode[];
-          if (Array.isArray(nodes) && nodes.length > 0) {
-            setPlanNodes(nodes);
-            setPlanConfirmed(true);
-            // Don't re-trigger the completion signal for an already-finished plan
-            completionNotifiedRef.current = nodes.every(
-              (n) => n.status === "completed",
-            );
-          }
-        } catch {
-          // Corrupt plan.json: ignore and let the user start fresh
-        }
-      })
-      .catch(console.error);
-  }, [chat.backendAvailable]);
+    if (!researchTask) {
+      observedTaskIdRef.current = null;
+      return;
+    }
+    if (observedTaskIdRef.current !== researchTask.taskId) {
+      observedTaskIdRef.current = researchTask.taskId;
+      completionNotifiedRef.current = planNodes.every((node) => node.status === "completed");
+    }
+  }, [planNodes, researchTask]);
 
-  // Persist plan state whenever it changes (loop output -> plan.json)
-  useEffect(() => {
-    if (!planConfirmed || planNodes.length === 0) return;
-    invoke("save_plan", { planJson: JSON.stringify(planNodes) }).catch(
-      console.error,
-    );
-  }, [planConfirmed, planNodes]);
-
-  const handleConfirmPlan = () => {
+  const handleConfirmPlan = async () => {
     if (pendingPlan) {
       if (!model) {
         setShowWelcome(true);
         return;
       }
-      setPlanNodes(pendingPlan);
+      const autonomousPlan = pendingPlan.map((node) => ({
+        ...node,
+        approvalRequired: false,
+        status: node.status === "pending_approval" ? "pending" as const : node.status,
+      }));
+      const latestRequest = [...chat.messages]
+        .reverse()
+        .find((message) => message.role === "user")?.content.trim();
+      const goal = latestRequest || "完成当前康复科研任务";
+      const title = goal.replace(/\s+/g, " ").slice(0, 48);
+      try {
+        await research.createTask(title, goal, autonomousPlan);
+      } catch (error) {
+        console.error(error);
+        alert(`无法创建研究任务：${String(error)}`);
+        return;
+      }
       setPendingPlan(null);
-      setPlanConfirmed(true);
+      completionNotifiedRef.current = false;
       // Send confirmation as a user message
       chat.send(
         "计划已确认。请开始执行第一个节点。",
@@ -157,6 +161,7 @@ export default function App() {
   const packageName = wsRoot
     ? wsRoot.split(/[/\\]/).pop() ?? "未命名"
     : "未选择项目";
+  const completedNodes = planNodes.filter((node) => node.status === "completed").length;
 
   // ---- Init ----
   useEffect(() => {
@@ -282,21 +287,20 @@ export default function App() {
     invoke("append_memory", {
       entry: `${new Date().toISOString().slice(0, 10)} | Session ${node.index} ${node.title} | ${summary
         .trim()
-        .slice(0, 120)} | plan.json`,
+        .slice(0, 120)} | .galen/tasks/${researchTask?.taskId || "active"}/task.json`,
     }).catch(console.error);
     // Structured evidence: 证据链落盘，供上下文注入与最终成文引用
-    invoke("append_evidence", {
-      evidence: {
-        id: `${Date.now()}-${node.id}`,
-        node_id: node.id,
-        node_title: node.title,
-        source: node.type || "session",
-        claim: summary.trim().slice(0, 200),
-        detail: summary.trim().slice(0, 1200),
-        confidence: "medium",
-        created_at: new Date().toISOString().slice(0, 10),
-      },
-    }).catch(console.error);
+    const evidence = {
+      id: `${Date.now()}-${node.id}`,
+      node_id: node.id,
+      node_title: node.title,
+      source: node.type || "session",
+      claim: summary.trim().slice(0, 200),
+      detail: summary.trim().slice(0, 1200),
+      confidence: "medium",
+      created_at: new Date().toISOString().slice(0, 10),
+    };
+    research.appendEvidence(evidence).catch(console.error);
     setEnteredSession(null);
     setSelectedNode(null);
     // Auto-advance: open the next ready node so the loop keeps moving
@@ -304,9 +308,8 @@ export default function App() {
     if (nextReady) enterSession(nextReady);
   };
 
-  // Task-level loop closure: when every node has flowed back, the main
-  // thread receives a completion signal so it can synthesize the final
-  // artifact (report / paper) from the accumulated evidence chain.
+  // Task-level loop closure: synthesize the final artifact automatically
+  // after every node has returned its evidence.
   useEffect(() => {
     if (!planConfirmed || planNodes.length === 0) return;
     const allCompleted = planNodes.every((n) => n.status === "completed");
@@ -314,7 +317,7 @@ export default function App() {
       completionNotifiedRef.current = true;
       chat.send(
         `[计划完成] 全部 ${planNodes.length} 个节点已执行完毕。` +
-          "请基于各 Session 回流的证据链，整合生成最终成果（研究报告/论文/报告），并列出仍需人工签核的内容。",
+          "请基于各 Session 回流的证据链自动整合最终成果，将报告保存到工作区，并在回复中明确给出产物路径以便 Galen 内预览。",
         model || "",
         modeState.mode,
         "medical",
@@ -322,6 +325,21 @@ export default function App() {
       );
     }
   }, [planConfirmed, planNodes, chat, model, modeState.mode, thinkingLevel]);
+
+  const handlePreviewArtifact = useCallback(async (path: string, node: SessionNode) => {
+    setArtifactLoading(true);
+    setArtifactError(null);
+    setCanvasTab("doc");
+    try {
+      const content = await invoke<string>("read_workspace_file", { path });
+      setArtifactPreview({ path, content, nodeTitle: node.title });
+    } catch (error) {
+      setArtifactPreview(null);
+      setArtifactError(String(error));
+    } finally {
+      setArtifactLoading(false);
+    }
+  }, []);
 
   const handleThinkingLevelChange = (level: string) => {
     setThinkingLevel(level);
@@ -336,6 +354,8 @@ export default function App() {
     });
     if (!path) return null;
     try {
+      // Finish writes for the previous workspace before switching the host root.
+      await research.flushWrites();
       await invoke("set_workspace", { path });
       setWsRoot(path);
       return path;
@@ -352,10 +372,20 @@ export default function App() {
 
   const handleSaveApiKey = async (apiKey: string, defaultModel?: string) => {
     await invoke("save_api_key", { apiKey, defaultModel });
-    invoke<ModelConfig[]>("get_models").then(setModels).catch(console.error);
-    invoke<ModelStatus[]>("get_model_status")
-      .then(setModelStatuses)
-      .catch(console.error);
+    const [nextModels, nextStatuses] = await Promise.all([
+      invoke<ModelConfig[]>("get_models"),
+      invoke<ModelStatus[]>("get_model_status"),
+    ]);
+    setModels(nextModels);
+    setModelStatuses(nextStatuses);
+    setModel((current) => {
+      if (current && nextModels.some((item) => item.name === current)) return current;
+      return (
+        nextModels.find((item) => item.name === defaultModel)?.name ??
+        nextModels[0]?.name ??
+        ""
+      );
+    });
   };
 
   const openWizard = (step = 0) => {
@@ -376,27 +406,19 @@ export default function App() {
     <div className="galen-shell">
       {/* ════ Top Bar ════ */}
       <div className="galen-topbar">
-        <span className="galen-topbar-brand">Galen</span>
-
-        {/* View toggle */}
-        <div className="galen-topbar-view-toggle">
-          <button
-            className={`galen-view-btn ${activeView === "execution-thread" ? "active" : ""}`}
-            onClick={() => setActiveView("execution-thread")}
-          >
-            执行线程
-          </button>
-          <button
-            className={`galen-view-btn ${activeView === "daily-workbench" ? "active" : ""}`}
-            onClick={() => setActiveView("daily-workbench")}
-          >
-            日常工作台
-          </button>
+        <div className="galen-topbar-identity">
+          <span className="galen-topbar-brand">Galen</span>
+          <span className="galen-topbar-discipline">康复科研工作台</span>
         </div>
 
-        <span className="galen-topbar-project">
-          {planConfirmed ? "科研计划已确认" : packageName}
-        </span>
+        <div className="galen-topbar-study">
+          <span className="galen-topbar-study-label">当前研究</span>
+          <span className="galen-topbar-project">
+            {planConfirmed
+              ? `${researchTask?.title || "研究任务"} · ${completedNodes}/${planNodes.length}`
+              : packageName}
+          </span>
+        </div>
 
         <div className="galen-topbar-spacer" />
 
@@ -469,6 +491,14 @@ export default function App() {
 
       {/* ════ Body ════ */}
       <div className="galen-body">
+        <WorkbenchRail
+          activeView={activeView}
+          onViewChange={setActiveView}
+          canvasTab={canvasTab}
+          onCanvasTabChange={setCanvasTab}
+          completedNodes={completedNodes}
+          totalNodes={planNodes.length}
+        />
         {activeView === "execution-thread" ? (
           <>
             {/* ── Left: Main Thread (Chat) ── */}
@@ -543,13 +573,13 @@ export default function App() {
                       className={`canvas-tab ${canvasTab === "plan" ? "active" : ""}`}
                       onClick={() => setCanvasTab("plan")}
                     >
-                      科研计划画布
+                      证据脉络
                     </button>
                     <button
                       className={`canvas-tab ${canvasTab === "doc" ? "active" : ""}`}
                       onClick={() => setCanvasTab("doc")}
                     >
-                      文档画布
+                      成果预览
                     </button>
                   </div>
                   {canvasTab === "plan" ? (
@@ -559,19 +589,15 @@ export default function App() {
                       pendingPlan={pendingPlan}
                       onConfirmPlan={handleConfirmPlan}
                       onSelectNode={setSelectedNode}
+                      onPreviewArtifact={handlePreviewArtifact}
                       selectedNodeId={null}
                     />
                   ) : (
                     <ResearchDocumentCanvas
-                      onRevisionRequest={(actionId, selectedText) => {
-                        setActiveView("execution-thread");
-                        chat.send(
-                          `[选区修订: ${actionId}]\n选中文本: ${selectedText}`,
-                          model || "",
-                          modeState.mode,
-                          "medical",
-                        );
-                      }}
+                      artifact={artifactPreview}
+                      loading={artifactLoading}
+                      error={artifactError}
+                      onBackToPlan={() => setCanvasTab("plan")}
                     />
                   )}
                 </>

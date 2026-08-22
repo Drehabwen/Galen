@@ -9,7 +9,10 @@ pub struct WorkspaceConfig {
 
 impl Default for WorkspaceConfig {
     fn default() -> Self {
-        Self { workspace_root: None, recent_workspaces: Vec::new() }
+        Self {
+            workspace_root: None,
+            recent_workspaces: Vec::new(),
+        }
     }
 }
 

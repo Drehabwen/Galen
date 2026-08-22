@@ -366,7 +366,11 @@ mod tests {
         for mode in [ChatMode::Discuss, ChatMode::Plan, ChatMode::Auto] {
             let prompt = mode_prompt(mode);
             assert!(!prompt.is_empty());
-            assert!(prompt.len() > 100, "Mode {mode:?} prompt too short: {}", prompt.len());
+            assert!(
+                prompt.len() > 100,
+                "Mode {mode:?} prompt too short: {}",
+                prompt.len()
+            );
         }
     }
 

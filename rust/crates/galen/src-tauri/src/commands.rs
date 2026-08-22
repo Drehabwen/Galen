@@ -1,12 +1,14 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use tauri::{Emitter, State, Window};
 
-use api::{InputContentBlock, InputMessage, MessageRequest};
 use crate::backend::{self, ChatBackend, ChatEvent, FileEntry, ModelConfig};
 use crate::modes::ChatMode;
+use crate::research_task::{ResearchNode, ResearchTask};
 use crate::runtime_manager::{self, McpServerStatus, RuntimeStatus};
 use crate::workspace::WorkspaceConfig;
+use api::{InputContentBlock, InputMessage, MessageRequest};
 use medical_core::clinical::ClinicalCaseInput;
 
 pub struct AppState {
@@ -98,11 +100,10 @@ pub fn list_workspace_files(
     let root = backend
         .get_workspace_root()
         .ok_or("No workspace selected")?;
-    let target = if let Some(ref sub) = path {
-        root.join(sub)
-    } else {
-        root.clone()
-    };
+    let target = crate::tools::workspace_path::resolve_workspace_path_from_root(
+        &root,
+        path.as_deref().unwrap_or(""),
+    )?;
 
     let mut entries = Vec::new();
     let dir_iter =
@@ -136,7 +137,7 @@ pub fn read_workspace_file(state: State<AppState>, path: String) -> Result<Strin
     let root = backend
         .get_workspace_root()
         .ok_or("No workspace selected")?;
-    let target = root.join(&path);
+    let target = crate::tools::workspace_path::resolve_workspace_path_from_root(&root, &path)?;
     std::fs::read_to_string(&target).map_err(|e| format!("Failed to read file: {e}"))
 }
 
@@ -189,7 +190,7 @@ pub async fn send_message(
 ) -> Result<(), String> {
     let thinking_level = thinking_level.unwrap_or_else(|| "medium".to_string());
     // Phase 1: extract all needed data from locked state (before any .await)
-    let (model_alias, model_id, medical, router, workspace_root, persona) = {
+    let (model_alias, model_id, medical, router, workspace_path, persona) = {
         let backend = lock_mutex(&state.backend)?;
         // The UI may send an empty/unknown alias before a model is selected;
         // normalize to the configured default so we never fall back to a
@@ -202,9 +203,20 @@ pub async fn send_message(
         let model_id = backend.resolve_model(&model_alias);
         let medical = backend.medical.clone();
         let router = backend.router.clone();
-        let ws = Mutex::new(backend.workspace_root.lock().map_err(|e| format!("{e}"))?.clone());
+        let workspace_path = backend
+            .workspace_root
+            .lock()
+            .map_err(|e| format!("{e}"))?
+            .clone();
         let persona = crate::personas::find_persona(&persona_id);
-        (model_alias, model_id, medical, router, ws, persona)
+        (
+            model_alias,
+            model_id,
+            medical,
+            router,
+            workspace_path,
+            persona,
+        )
     };
 
     // Build tagged event names for session isolation
@@ -213,12 +225,47 @@ pub async fn send_message(
     // Phase 2: spawn chat in background, emitting events to the window
     let window_clone = window.clone();
     let err_tag = suffix.clone();
+    let session_tag = tag.clone();
     tokio::spawn(async move {
-        // Parse history from frontend (simple {role, content}[] format)
-        let input_messages = backend::parse_history_json(&history_json);
+        // The durable runtime session is authoritative. Frontend history is
+        // imported only when creating a session for the first time.
+        let fallback = backend::parse_history_json(&history_json);
+        let input_messages = match workspace_path.as_deref() {
+            Some(root) => match crate::chat_session::prepare_model_history(
+                root,
+                session_tag.as_deref(),
+                &model_id,
+                fallback,
+            ) {
+                Ok(history) => history,
+                Err(error) => {
+                    let ename = format!("chat-error{err_tag}");
+                    let _ = window_clone.emit(&ename, &error);
+                    return;
+                }
+            },
+            None => fallback,
+        };
+        let final_text = Arc::new(Mutex::new(None::<String>));
+        let captured_final = final_text.clone();
+        let persisted_model = model_alias.clone();
+        let persisted_user = message.clone();
+        let started_at_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_millis() as u64)
+            .unwrap_or_default();
         let result = backend::run_chat(
-            model_alias, model_id, message, input_messages, mode, persona, thinking_level,
-            medical, router, workspace_root, None,
+            model_alias,
+            model_id,
+            message,
+            input_messages,
+            mode,
+            persona,
+            thinking_level,
+            medical,
+            router,
+            Mutex::new(workspace_path.clone()),
+            None,
             {
                 let suffix = suffix.clone();
                 move |event| {
@@ -240,20 +287,70 @@ pub async fn send_message(
                         ChatEvent::WorkspaceRoot(path) => emit!("workspace-root", path.as_str()),
                         ChatEvent::WorkspaceFileList(files) => emit!("workspace-file-list", files),
                         ChatEvent::WorkspaceFileContent { path, content } => {
-                            emit!("workspace-file-content", serde_json::json!({ "path": path, "content": content }))
+                            emit!(
+                                "workspace-file-content",
+                                serde_json::json!({ "path": path, "content": content })
+                            )
+                        }
+                    }
+                    if let ChatEvent::Done(text) = &event {
+                        if let Ok(mut captured) = captured_final.lock() {
+                            *captured = Some(text.clone());
                         }
                     }
                 }
             },
-        ).await;
+        )
+        .await;
 
-        if let Err(e) = result {
-            let ename = format!("chat-error{err_tag}");
-            let _ = window_clone.emit(&ename, &e);
+        let metrics = match result {
+            Ok(metrics) => metrics,
+            Err(error) => {
+                let ename = format!("chat-error{err_tag}");
+                let _ = window_clone.emit(&ename, &error);
+                return;
+            }
+        };
+
+        let completed = final_text.lock().ok().and_then(|value| value.clone());
+        if let (Some(root), Some(assistant_text)) = (workspace_path.as_deref(), completed) {
+            if let Err(error) = crate::chat_session::append_exchange(
+                root,
+                session_tag.as_deref(),
+                &persisted_model,
+                &persisted_user,
+                &assistant_text,
+                started_at_ms,
+                &metrics,
+            ) {
+                let ename = format!("chat-error{err_tag}");
+                let _ = window_clone.emit(&ename, &error);
+            }
         }
     });
 
     Ok(())
+}
+
+#[tauri::command]
+pub fn get_chat_session(
+    state: State<AppState>,
+    tag: Option<String>,
+) -> Result<Vec<crate::chat_session::ChatSessionMessage>, String> {
+    let backend = lock_mutex(&state.backend)?;
+    let Some(root) = backend.get_workspace_root() else {
+        return Ok(Vec::new());
+    };
+    crate::chat_session::load_messages(&root, tag.as_deref())
+}
+
+#[tauri::command]
+pub fn clear_chat_session(state: State<AppState>, tag: Option<String>) -> Result<(), String> {
+    let backend = lock_mutex(&state.backend)?;
+    let Some(root) = backend.get_workspace_root() else {
+        return Ok(());
+    };
+    crate::chat_session::archive_session(&root, tag.as_deref())
 }
 
 // ---------------------------------------------------------------------------
@@ -303,13 +400,30 @@ max_tokens = 32768
 "#;
 
 #[tauri::command]
-pub fn save_api_key(api_key: String, default_model: Option<String>) -> Result<(), String> {
+pub fn save_api_key(
+    state: State<AppState>,
+    api_key: String,
+    default_model: Option<String>,
+) -> Result<(), String> {
     let home = dirs::home_dir().ok_or("Cannot find home directory")?;
     let galen_dir = home.join(".galen");
     std::fs::create_dir_all(&galen_dir).map_err(|e| format!("{e}"))?;
 
     let models_path = galen_dir.join("models.toml");
+    let router = persist_models_config(&models_path, &api_key, default_model.as_deref())?;
 
+    // The backend is created before onboarding starts. Refresh its in-memory
+    // router immediately so status checks, connection tests and chat can use
+    // the newly saved model without requiring an application restart.
+    lock_mutex(&state.backend)?.router = router;
+    Ok(())
+}
+
+fn persist_models_config(
+    models_path: &std::path::Path,
+    api_key: &str,
+    default_model: Option<&str>,
+) -> Result<model_router::ModelRouter, String> {
     let content = if models_path.exists() {
         let existing =
             std::fs::read_to_string(&models_path).map_err(|e| format!("读取配置失败: {e}"))?;
@@ -327,14 +441,14 @@ pub fn save_api_key(api_key: String, default_model: Option<String>) -> Result<()
                         if let Some(table) = model.as_table_mut() {
                             table.insert(
                                 "api_key".to_string(),
-                                toml::Value::String(api_key.clone()),
+                                toml::Value::String(api_key.to_string()),
                             );
                             updated_any = true;
                         }
                     }
                 }
                 // 设置默认模型（Pro / Flash）
-                if let Some(default) = default_model.as_deref() {
+                if let Some(default) = default_model {
                     if let Some(router) = value.get_mut("router").and_then(|r| r.as_table_mut()) {
                         router.insert(
                             "default".to_string(),
@@ -350,14 +464,23 @@ pub fn save_api_key(api_key: String, default_model: Option<String>) -> Result<()
                     )
                 }
             }
-            Err(_) => template_with_default(&api_key, default_model.as_deref()),
+            Err(_) => template_with_default(api_key, default_model),
         }
     } else {
-        template_with_default(&api_key, default_model.as_deref())
+        template_with_default(api_key, default_model)
     };
 
-    std::fs::write(&models_path, content).map_err(|e| format!("写入失败: {e}"))?;
-    Ok(())
+    // Validate the exact content before replacing the active configuration.
+    // This also gives us the router instance that will be installed in memory.
+    let validation_path = models_path.with_extension("toml.pending");
+    std::fs::write(&validation_path, &content).map_err(|e| format!("写入临时配置失败: {e}"))?;
+    let router = model_router::ModelRouter::load_from(&validation_path)
+        .map_err(|e| format!("模型配置无效: {e}"));
+    let _ = std::fs::remove_file(&validation_path);
+    let router = router?;
+
+    std::fs::write(models_path, content).map_err(|e| format!("写入失败: {e}"))?;
+    Ok(router)
 }
 
 fn template_with_default(api_key: &str, default_model: Option<&str>) -> String {
@@ -388,6 +511,31 @@ mod tests {
         let t = template_with_default("sk-test", None);
         assert!(t.contains("default = \"deepseek-v4-pro\""));
     }
+
+    #[test]
+    fn persisted_config_is_immediately_loadable() {
+        let dir = std::env::temp_dir().join(format!(
+            "galen-model-config-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("models.toml");
+
+        let router = persist_models_config(&path, "sk-probe", Some("deepseek-v4-flash")).unwrap();
+
+        assert_eq!(router.default_alias(), "deepseek-v4-flash");
+        assert_eq!(router.all_models().len(), 2);
+        assert!(router
+            .to_provider_config("deepseek-v4-pro")
+            .and_then(|config| config.api_key().map(str::to_owned))
+            .is_some());
+
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -406,11 +554,13 @@ pub fn get_memory_status(state: State<AppState>) -> Result<MemoryStatus, String>
     let backend = lock_mutex(&state.backend)?;
     let root = match backend.get_workspace_root() {
         Some(r) => r,
-        None => return Ok(MemoryStatus {
-            exists: false,
-            size: 0,
-            preview: String::new(),
-        }),
+        None => {
+            return Ok(MemoryStatus {
+                exists: false,
+                size: 0,
+                preview: String::new(),
+            })
+        }
     };
     let path = root.join("GALEN.md");
     match std::fs::metadata(&path) {
@@ -432,33 +582,53 @@ pub fn get_memory_status(state: State<AppState>) -> Result<MemoryStatus, String>
 }
 
 // ---------------------------------------------------------------------------
-// Plan persistence (task-level loop state)
+// Durable research task state
 // ---------------------------------------------------------------------------
 
-/// Persist the research plan (nodes + evidence) to `<workspace>/plan.json`.
-/// The loop's output is stored so it survives restarts and feeds the next
-/// task's context.
+/// Create a new host-authoritative research task in
+/// `<workspace>/.galen/tasks/<task-id>/task.json` and make it active.
 #[tauri::command]
-pub fn save_plan(state: State<AppState>, plan_json: String) -> Result<(), String> {
+pub fn create_research_task(
+    state: State<AppState>,
+    title: String,
+    goal: String,
+    nodes: Vec<ResearchNode>,
+) -> Result<ResearchTask, String> {
     let backend = lock_mutex(&state.backend)?;
     let root = backend.get_workspace_root().ok_or("请先选择工作区")?;
-    let path = root.join("plan.json");
-    std::fs::write(&path, plan_json).map_err(|e| format!("写入 plan.json 失败: {e}"))
+    crate::research_task::create_task(&root, title, goal, nodes)
 }
 
-/// Load a previously persisted plan, if any.
+/// Restore the active research task. If this workspace only has the old
+/// frontend-owned `plan.json`, migrate it once without deleting the source.
 #[tauri::command]
-pub fn load_plan(state: State<AppState>) -> Result<Option<String>, String> {
+pub fn get_active_research_task(state: State<AppState>) -> Result<Option<ResearchTask>, String> {
     let backend = lock_mutex(&state.backend)?;
     let root = match backend.get_workspace_root() {
-        Some(r) => r,
+        Some(root) => root,
         None => return Ok(None),
     };
-    let path = root.join("plan.json");
-    match std::fs::read_to_string(&path) {
-        Ok(content) => Ok(Some(content)),
-        Err(_) => Ok(None),
-    }
+    let Some(_) = crate::research_task::load_or_migrate_active_task(&root)? else {
+        return Ok(None);
+    };
+    // Complete legacy evidence migration before returning the revision that
+    // the frontend will use for its first CAS write.
+    crate::evidence::load_evidence(&root)?;
+    crate::research_task::load_active_task(&root)
+}
+
+/// Replace the node snapshot for a task. The host derives the task-level
+/// status instead of accepting it from the webview.
+#[tauri::command]
+pub fn save_research_task_nodes(
+    state: State<AppState>,
+    task_id: String,
+    expected_revision: u64,
+    nodes: Vec<ResearchNode>,
+) -> Result<ResearchTask, String> {
+    let backend = lock_mutex(&state.backend)?;
+    let root = backend.get_workspace_root().ok_or("请先选择工作区")?;
+    crate::research_task::replace_nodes(&root, &task_id, expected_revision, nodes)
 }
 
 /// Append one line to `<workspace>/GALEN.md` (loop output becomes memory).
@@ -479,18 +649,18 @@ pub fn append_memory(state: State<AppState>, entry: String) -> Result<(), String
     std::fs::write(&path, content).map_err(|e| format!("写入 GALEN.md 失败: {e}"))
 }
 
-/// Append one structured evidence record to `<workspace>/evidence.json`.
+/// Append one structured evidence record to the active task's evidence ledger.
 #[tauri::command]
 pub fn append_evidence(
     state: State<AppState>,
     evidence: crate::evidence::Evidence,
-) -> Result<(), String> {
+) -> Result<ResearchTask, String> {
     let backend = lock_mutex(&state.backend)?;
     let root = backend.get_workspace_root().ok_or("请先选择工作区")?;
     crate::evidence::append_evidence_file(&root, evidence)
 }
 
-/// Read the full evidence chain from `<workspace>/evidence.json`.
+/// Read the active task's full evidence chain.
 #[tauri::command]
 pub fn get_evidence(state: State<AppState>) -> Result<Vec<crate::evidence::Evidence>, String> {
     let backend = lock_mutex(&state.backend)?;
@@ -498,7 +668,7 @@ pub fn get_evidence(state: State<AppState>) -> Result<Vec<crate::evidence::Evide
         Some(r) => r,
         None => return Ok(Vec::new()),
     };
-    Ok(crate::evidence::load_evidence(&root))
+    crate::evidence::load_evidence(&root)
 }
 
 // ---------------------------------------------------------------------------
@@ -592,7 +762,12 @@ pub async fn test_model_connection(state: State<'_, AppState>) -> Result<String,
         thinking: None,
     };
 
-    match tokio::time::timeout(std::time::Duration::from_secs(30), client.send_message(&request)).await {
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        client.send_message(&request),
+    )
+    .await
+    {
         Ok(Ok(_)) => Ok(format!("连接成功：{model_id} 响应正常")),
         Ok(Err(e)) => Err(format!("连接失败：{e}")),
         Err(_) => Err("连接超时（30 秒），请检查网络或 API Key".to_string()),

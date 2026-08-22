@@ -40,6 +40,7 @@ export function SessionChat({
   const [streaming, setStreaming] = useState("");
   const [thinking, setThinking] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [restoring, setRestoring] = useState(true);
   const sendingRef = useRef(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const doneHandledRef = useRef(false);
@@ -53,6 +54,28 @@ export function SessionChat({
 
   // Register tagged event listeners for this session (isolated from main chat)
   const tag = node.id;
+  useEffect(() => {
+    if (!backendAvailable) {
+      setRestoring(false);
+      return;
+    }
+    let cancelled = false;
+    setRestoring(true);
+    invoke<ChatMessage[]>("get_chat_session", { tag })
+      .then((restored) => {
+        if (!cancelled) setMessages(restored);
+      })
+      .catch((cause) => {
+        if (!cancelled) setError(`恢复节点会话失败: ${String(cause)}`);
+      })
+      .finally(() => {
+        if (!cancelled) setRestoring(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [backendAvailable, tag]);
+
   useEffect(() => {
     if (!backendAvailable) return;
     const unlisteners: UnlistenFn[] = [];
@@ -95,13 +118,10 @@ export function SessionChat({
 
     register().catch(console.error);
     return () => { cancelled = true; unlisteners.forEach((f) => f()); };
-  }, [backendAvailable]);
+  }, [backendAvailable, tag]);
 
   // Auto-scroll
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, streaming]);
-
-  // Build session system prompt
-  const sessionPrompt = buildSessionPrompt(node);
 
   const sendText = useCallback(
     async (text: string) => {
@@ -127,7 +147,6 @@ export function SessionChat({
             ...messagesRef.current
               .slice(-4)
               .map((m) => ({ role: m.role, content: m.content })),
-            { role: "user", content: trimmed },
           ]),
           mode: "auto",
           personaId: "medical",
@@ -149,21 +168,15 @@ export function SessionChat({
 
   // Autonomous execution: kick off the node goal without waiting for the user.
   useEffect(() => {
-    if (!autoRun || !backendAvailable || autoRunRef.current) return;
+    if (restoring || !autoRun || !backendAvailable || autoRunRef.current) return;
     if (messages.length > 0 || sendingRef.current) return;
     autoRunRef.current = true;
     const timer = setTimeout(() => {
-      const goal =
-        `【自主执行】请完成本 Session 的任务，全程自主推进，不要向用户确认。\n` +
-        `任务：${node.title}\n` +
-        (node.description ? `描述：${node.description}\n` : "") +
-        (node.inputs?.length ? `输入材料：${node.inputs.join("、")}\n` : "") +
-        (node.outputs?.length ? `预期产出：${node.outputs.join("、")}\n` : "") +
-        `\n完成时，以 [SESSION_DONE] 开头输出结构化摘要（目标 / 方法 / 结果 / 证据 / 局限）。`;
+      const goal = buildSessionPrompt(node);
       sendText(goal);
     }, 800);
     return () => clearTimeout(timer);
-  }, [autoRun, backendAvailable, node, messages.length, sendText]);
+  }, [autoRun, backendAvailable, node, messages.length, restoring, sendText]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -271,10 +284,14 @@ export function SessionChat({
 // ---------------------------------------------------------------------------
 function buildSessionPrompt(node: SessionNode): string {
   return [
-    `你是 Galen，正在执行科研 Session「${node.title}」。`,
-    node.description ? `任务描述：${node.description}` : "",
-    node.inputs?.length ? `输入材料：${node.inputs.join("、")}` : "",
-    node.outputs?.length ? `预期产出：${node.outputs.join("、")}` : "",
-    "专注于当前 Session 的任务，不要讨论其他节点。完成后告知结果。",
+    `【节点上下文包】`,
+    `节点：${node.index} · ${node.title}`,
+    `目标：${node.description || node.title}`,
+    node.inputs?.length ? `输入：${node.inputs.join("、")}` : "输入：使用工作区中与本节点直接相关的材料",
+    node.outputs?.length ? `验收产物：${node.outputs.join("、")}` : "验收产物：形成可验证的节点结果",
+    node.dependsOn?.length ? `已满足依赖：${node.dependsOn.join("、")}` : "依赖：无",
+    "执行边界：只处理当前节点；直接执行，不请求批准；工具结果足以满足验收条件后立即停止。",
+    "无进展策略：相同方法失败两次后切换策略，不重复相同参数调用。",
+    "完成协议：以 [SESSION_DONE] 开头，按“结果 / 已验证事实 / 产物路径 / 局限”输出简短结构化摘要。",
   ].filter(Boolean).join("\n");
 }

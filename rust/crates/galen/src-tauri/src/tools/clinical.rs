@@ -13,7 +13,8 @@ impl GalenTool for AnalyzeClinicalCase {
             name: "analyze_clinical_case".into(),
             description: Some(
                 "Analyze a clinical case description and generate a structured reasoning report \
-                 covering differential diagnosis, risk factors, and recommended next steps.".into(),
+                 covering differential diagnosis, risk factors, and recommended next steps."
+                    .into(),
             ),
             input_schema: json!({
                 "type": "object",
@@ -37,7 +38,12 @@ impl GalenTool for AnalyzeClinicalCase {
         let sex = input["sex"].as_str().map(|s| s.to_string());
         let context = input["context"].as_str().map(|s| s.to_string());
         medical_core::clinical::run(
-            medical_core::clinical::ClinicalCaseInput { case_text: case_text.into(), age, sex, context },
+            medical_core::clinical::ClinicalCaseInput {
+                case_text: case_text.into(),
+                age,
+                sex,
+                context,
+            },
             "markdown",
         )
     }

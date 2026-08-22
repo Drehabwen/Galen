@@ -2,7 +2,7 @@
 
 版本：v0.1  
 状态：实现规划稿  
-关联文档：[Galen PRD v0.2](./galen-prd-v0.2.md)
+关联文档：[Galen 现行 PRD](./galen-prd.md)
 
 ## 1. 核心判断
 

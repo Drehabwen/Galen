@@ -1,11 +1,10 @@
-﻿use std::path::{Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use api::{InputContentBlock, InputMessage};
-use galen_lib::backend::{run_chat, ChatEvent, ToolTrace};
+use api::InputMessage;
+use galen_lib::backend::{run_chat, ChatEvent, ChatRunSummary, ToolTrace};
 use galen_lib::modes::ChatMode;
 use galen_lib::personas::medical_persona;
-use galen_lib::tools::{ToolContext, ToolRegistry};
 use medical_core::MedicalCore;
 use model_router::ModelRouter;
 
@@ -34,7 +33,7 @@ async fn run_stage(
     user_message: String,
     ws: PathBuf,
     stage_label: &str,
-) -> (Result<(), String>, Vec<ToolTrace>) {
+) -> (Result<ChatRunSummary, String>, Vec<ToolTrace>) {
     let mode = ChatMode::Auto;
     let persona = medical_persona();
     let medical = Arc::new(MedicalCore::new(None));
@@ -85,7 +84,9 @@ fn compile_gap(ws: &Path) -> Option<Vec<String>> {
                     && !p.to_string_lossy().contains("\\output\\")
                 {
                     typs.push(
-                        p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
+                        p.file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_default(),
                     );
                 }
             }
@@ -191,7 +192,7 @@ fn main() {
         .await;
         let mut run_ok = res1.is_ok();
         match res1 {
-            Ok(()) => println!("\n== 阶段1 run_chat OK =="),
+            Ok(_) => println!("\n== 阶段1 run_chat OK =="),
             Err(e) => println!("\n== 阶段1 run_chat 失败: {e} =="),
         }
 
@@ -218,7 +219,7 @@ fn main() {
             .await;
             run_ok = run_ok && res2.is_ok();
             match res2 {
-                Ok(()) => println!("\n== 阶段2 run_chat OK =="),
+                Ok(_) => println!("\n== 阶段2 run_chat OK =="),
                 Err(e) => println!("\n== 阶段2 run_chat 失败: {e} =="),
             }
             traces.extend(traces2);
@@ -243,7 +244,10 @@ fn main() {
 }
 
 fn analyze(traces: &[ToolTrace], ws: &Path, model_alias: &str, run_ok: bool) -> serde_json::Value {
-    let total_tool_calls = traces.iter().filter(|t| t.tool != "__convergence__").count();
+    let total_tool_calls = traces
+        .iter()
+        .filter(|t| t.tool != "__convergence__")
+        .count();
     let error_calls = traces.iter().filter(|t| t.is_error).count();
     let converged = traces.iter().any(|t| t.tool == "__convergence__");
 
@@ -266,7 +270,10 @@ fn analyze(traces: &[ToolTrace], ws: &Path, model_alias: &str, run_ok: bool) -> 
     // 死循环检测：同一工具 + 同一输入 重复出现 >= 3 次才算异常
     let mut seen: Vec<(String, String)> = Vec::new();
     for t in traces.iter().filter(|t| t.tool != "__convergence__") {
-        if !seen.iter().any(|(tool, input)| *tool == t.tool && *input == t.input) {
+        if !seen
+            .iter()
+            .any(|(tool, input)| *tool == t.tool && *input == t.input)
+        {
             seen.push((t.tool.clone(), t.input.clone()));
         }
     }
@@ -346,7 +353,12 @@ fn analyze(traces: &[ToolTrace], ws: &Path, model_alias: &str, run_ok: bool) -> 
     push(
         "收敛机制就绪（工具轮次用尽时触发）",
         true,
-        if converged { "已触发收敛轮" } else { "正常在轮次内完成，未触发收敛" }.into(),
+        if converged {
+            "已触发收敛轮"
+        } else {
+            "正常在轮次内完成，未触发收敛"
+        }
+        .into(),
     );
 
     serde_json::json!({

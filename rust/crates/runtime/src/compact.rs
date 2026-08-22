@@ -953,15 +953,17 @@ mod tests {
         // given a large session whose every message carries a unique marker
         let mut session = Session::new();
         for index in 0..60 {
-            session.messages.push(ConversationMessage::user_text(format!(
-                "user-marker-{index} {}",
-                "x".repeat(150)
-            )));
-            session.messages.push(ConversationMessage::assistant(vec![
-                ContentBlock::Text {
+            session
+                .messages
+                .push(ConversationMessage::user_text(format!(
+                    "user-marker-{index} {}",
+                    "x".repeat(150)
+                )));
+            session
+                .messages
+                .push(ConversationMessage::assistant(vec![ContentBlock::Text {
                     text: format!("assistant-marker-{index} {}", "y".repeat(150)),
-                },
-            ]));
+                }]));
         }
         let config = CompactionConfig {
             preserve_recent_messages: 4,

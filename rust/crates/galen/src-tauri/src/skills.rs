@@ -83,6 +83,22 @@ pub fn assemble_skills(kind: TaskKind) -> String {
     format!("{}\n{}", ASSEMBLY_HEADER, modules.join("\n"))
 }
 
+/// Refine broad router intent with cheap deterministic signals so a local
+/// data task does not receive literature-review modules it never needs.
+pub fn assemble_skills_for_intent(kind: TaskKind, text: &str) -> String {
+    let lower = text.to_lowercase();
+    let data_task = ["数据", "肌电", "emg", "csv", "统计", "回归", "脚本"]
+        .iter()
+        .any(|needle| lower.contains(needle));
+    let literature_task = ["文献", "pubmed", "综述", "证据", "检索"]
+        .iter()
+        .any(|needle| lower.contains(needle));
+    if data_task && !literature_task {
+        return format!("{}\n{}\n{}", ASSEMBLY_HEADER, SKILL_D, SKILL_F);
+    }
+    assemble_skills(kind)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -115,5 +131,13 @@ mod tests {
         let chat = assemble_skills(TaskKind::Chat);
         // 全量六模块约 1900 字符；装配后应明显更小
         assert!(chat.len() < 1100, "assembled too large: {}", chat.len());
+    }
+
+    #[test]
+    fn data_intent_omits_literature_modules() {
+        let data = assemble_skills_for_intent(TaskKind::DeepAnalysis, "分析这批肌电数据");
+        assert!(data.contains("模块 D"));
+        assert!(!data.contains("模块 B"));
+        assert!(!data.contains("模块 C"));
     }
 }

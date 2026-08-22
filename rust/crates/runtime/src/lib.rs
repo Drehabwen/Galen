@@ -150,7 +150,7 @@ pub use sandbox::{
 };
 pub use session::{
     ContentBlock, ConversationMessage, MessageRole, Session, SessionCompaction, SessionError,
-    SessionFork, SessionPromptEntry,
+    SessionFork, SessionPromptEntry, TurnRecord, TurnStatus,
 };
 pub use sse::{IncrementalSseParser, SseEvent};
 pub use stale_base::{

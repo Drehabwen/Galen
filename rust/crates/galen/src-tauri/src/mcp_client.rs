@@ -164,9 +164,16 @@ pub struct McpServer {
 
 impl Drop for McpServer {
     fn drop(&mut self) {
-        if let Some(mut child) = self._child.take() {
+        let Some(mut child) = self._child.take() else {
+            return;
+        };
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                let _ = child.kill().await;
+            });
+        } else {
             let _ = child.start_kill();
-            let _ = child.wait();
+            let _ = child.try_wait();
         }
     }
 }
@@ -178,7 +185,8 @@ impl McpServer {
         cmd.args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null());
+            .stderr(Stdio::null())
+            .kill_on_drop(true);
         // Hide console windows on Windows (CREATE_NO_WINDOW)
         #[cfg(windows)]
         {
@@ -215,18 +223,25 @@ impl McpServer {
 
         // Initialize handshake
         let _init: InitializeResult = server
-            .call("initialize", Some(serde_json::json!({
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": { "name": "galen", "version": "0.1.0" }
-            })))
+            .call(
+                "initialize",
+                Some(serde_json::json!({
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": { "name": "galen", "version": "0.1.0" }
+                })),
+            )
             .await?;
 
-        server.send_notification("notifications/initialized", None).await?;
+        server
+            .send_notification("notifications/initialized", None)
+            .await?;
 
         // Discover tools
-        let tools_result: ListToolsResult =
-            server.call("tools/list", None).await.unwrap_or(ListToolsResult { tools: vec![] });
+        let tools_result: ListToolsResult = server
+            .call("tools/list", None)
+            .await
+            .unwrap_or(ListToolsResult { tools: vec![] });
 
         server.tools = tools_result.tools;
         server.status = McpConnectionStatus::Connected;
@@ -284,12 +299,15 @@ impl McpServer {
         .map_err(|_| McpError::Timeout(format!("{name}: request timed out")))??;
 
         // Parse
-        let response: JsonRpcResponse =
-            serde_json::from_str(&response_json).map_err(|e| McpError::Deserialize(format!("{name}: {e}")))?;
+        let response: JsonRpcResponse = serde_json::from_str(&response_json)
+            .map_err(|e| McpError::Deserialize(format!("{name}: {e}")))?;
 
         if let Some(error) = response.error {
             self.status = McpConnectionStatus::Error;
-            return Err(McpError::Protocol(error.code, format!("{}: {}", self.name, error.message)));
+            return Err(McpError::Protocol(
+                error.code,
+                format!("{}: {}", self.name, error.message),
+            ));
         }
 
         let result = response
@@ -300,13 +318,18 @@ impl McpServer {
     }
 
     /// Send a JSON-RPC notification (no response expected).
-    async fn send_notification(&mut self, method: &str, params: Option<Value>) -> Result<(), McpError> {
+    async fn send_notification(
+        &mut self,
+        method: &str,
+        params: Option<Value>,
+    ) -> Result<(), McpError> {
         let notification = serde_json::json!({
             "jsonrpc": "2.0",
             "method": method,
             "params": params,
         });
-        let text = serde_json::to_string(&notification).map_err(|e| McpError::Io(format!("serialize: {e}")))?;
+        let text = serde_json::to_string(&notification)
+            .map_err(|e| McpError::Io(format!("serialize: {e}")))?;
         let mut stdin = self.stdin.lock().await;
         stdin
             .write_all(text.as_bytes())
@@ -320,12 +343,19 @@ impl McpServer {
     }
 
     /// Call a tool by name and return the text result.
-    pub async fn call_tool(&mut self, tool_name: &str, arguments: Value) -> Result<String, McpError> {
+    pub async fn call_tool(
+        &mut self,
+        tool_name: &str,
+        arguments: Value,
+    ) -> Result<String, McpError> {
         let result: CallToolResult = self
-            .call("tools/call", Some(serde_json::json!({
-                "name": tool_name,
-                "arguments": arguments,
-            })))
+            .call(
+                "tools/call",
+                Some(serde_json::json!({
+                    "name": tool_name,
+                    "arguments": arguments,
+                })),
+            )
             .await?;
 
         let text = result
@@ -359,12 +389,17 @@ pub struct McpServerRegistry {
 
 impl McpServerRegistry {
     pub fn new() -> Self {
-        Self { servers: Vec::new() }
+        Self {
+            servers: Vec::new(),
+        }
     }
 
     pub fn from_servers(servers: Vec<McpServer>) -> Self {
         Self {
-            servers: servers.into_iter().map(|s| Arc::new(Mutex::new(s))).collect(),
+            servers: servers
+                .into_iter()
+                .map(|s| Arc::new(Mutex::new(s)))
+                .collect(),
         }
     }
 
@@ -413,7 +448,10 @@ impl McpServerRegistry {
                 if s.status != McpConnectionStatus::Connected {
                     return Err(McpError::Protocol(
                         -1,
-                        format!("server '{server_name}' is not connected (status: {})", s.status),
+                        format!(
+                            "server '{server_name}' is not connected (status: {})",
+                            s.status
+                        ),
                     ));
                 }
                 if !s.tools.iter().any(|t| t.name == tool_name) {
@@ -426,18 +464,16 @@ impl McpServerRegistry {
                 return s.call_tool(tool_name, arguments).await;
             }
         }
-        Err(McpError::NotFound(format!("server '{server_name}' not found")))
+        Err(McpError::NotFound(format!(
+            "server '{server_name}' not found"
+        )))
     }
 
     /// Get all tool definitions from all connected MCP servers.
     pub fn mcp_tool_definitions(&self) -> Vec<McpTool> {
         self.servers
             .iter()
-            .flat_map(|s| {
-                s.try_lock()
-                    .map(|guard| guard.tools())
-                    .unwrap_or_default()
-            })
+            .flat_map(|s| s.try_lock().map(|guard| guard.tools()).unwrap_or_default())
             .collect()
     }
 }
@@ -507,36 +543,59 @@ impl McpConfig {
                 .unwrap_or_else(|| "uvx".to_string())
         }
         fn deno_run(pkg: &str) -> Vec<String> {
-            vec!["run".to_string(), "--allow-all".to_string(), pkg.to_string()]
+            vec![
+                "run".to_string(),
+                "--allow-all".to_string(),
+                pkg.to_string(),
+            ]
         }
 
         let config = Self {
             mcp_servers: HashMap::from([
-                ("fetch".to_string(), McpServerConfig {
-                    command: uvx_cmd(),
-                    args: vec!["mcp-server-fetch".to_string()],
-                    enabled: false,
-                }),
-                ("memory".to_string(), McpServerConfig {
-                    command: deno_cmd(),
-                    args: deno_run("npm:@modelcontextprotocol/server-memory"),
-                    enabled: false,
-                }),
-                ("sequential-thinking".to_string(), McpServerConfig {
-                    command: deno_cmd(),
-                    args: deno_run("npm:@modelcontextprotocol/server-sequential-thinking"),
-                    enabled: false,
-                }),
-                ("filesystem".to_string(), McpServerConfig {
-                    command: deno_cmd(),
-                    args: deno_run("npm:@modelcontextprotocol/server-filesystem"),
-                    enabled: false,
-                }),
-                ("git".to_string(), McpServerConfig {
-                    command: uvx_cmd(),
-                    args: vec!["mcp-server-git".to_string(), "--repository".to_string(), ".".to_string()],
-                    enabled: false,
-                }),
+                (
+                    "fetch".to_string(),
+                    McpServerConfig {
+                        command: uvx_cmd(),
+                        args: vec!["mcp-server-fetch".to_string()],
+                        enabled: false,
+                    },
+                ),
+                (
+                    "memory".to_string(),
+                    McpServerConfig {
+                        command: deno_cmd(),
+                        args: deno_run("npm:@modelcontextprotocol/server-memory"),
+                        enabled: false,
+                    },
+                ),
+                (
+                    "sequential-thinking".to_string(),
+                    McpServerConfig {
+                        command: deno_cmd(),
+                        args: deno_run("npm:@modelcontextprotocol/server-sequential-thinking"),
+                        enabled: false,
+                    },
+                ),
+                (
+                    "filesystem".to_string(),
+                    McpServerConfig {
+                        command: deno_cmd(),
+                        args: deno_run("npm:@modelcontextprotocol/server-filesystem"),
+                        enabled: false,
+                    },
+                ),
+                (
+                    "git".to_string(),
+                    McpServerConfig {
+                        command: uvx_cmd(),
+                        args: vec![
+                            "mcp-server-git".to_string(),
+                            "--repository".to_string(),
+                            ".".to_string(),
+                        ],
+                        enabled: false,
+                    },
+                ),
             ]),
         };
         let text = serde_json::to_string_pretty(&config).ok()?;
@@ -582,7 +641,9 @@ mod tests {
         assert!(e.to_string().contains("MCP error [42]: bad request"));
 
         let e = McpError::NotFound("server 'x' not found".into());
-        assert!(e.to_string().contains("MCP not found: server 'x' not found"));
+        assert!(e
+            .to_string()
+            .contains("MCP not found: server 'x' not found"));
     }
 
     #[test]

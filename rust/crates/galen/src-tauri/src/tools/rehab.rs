@@ -88,15 +88,10 @@ fn run_select(conn: &Connection, sql: &str, limit: usize) -> Result<Vec<String>,
     let col_names: Vec<String> = (0..stmt.column_count())
         .map(|i| stmt.column_name(i).unwrap_or("?").to_string())
         .collect();
-    let mut rows = stmt
-        .query([])
-        .map_err(|e| format!("查询失败: {e}"))?;
+    let mut rows = stmt.query([]).map_err(|e| format!("查询失败: {e}"))?;
     let mut out = Vec::new();
     let mut count = 0;
-    while let Some(row) = rows
-        .next()
-        .map_err(|e| format!("读取行失败: {e}"))?
-    {
+    while let Some(row) = rows.next().map_err(|e| format!("读取行失败: {e}"))? {
         out.push(row_to_line(&col_names, row).map_err(|e| format!("格式化失败: {e}"))?);
         count += 1;
         if count >= limit {
@@ -121,13 +116,12 @@ fn list_tables(conn: &Connection) -> Result<Vec<String>, String> {
 
 fn list_athletes(conn: &Connection, keyword: &str, limit: usize) -> Result<Vec<String>, String> {
     let sql = if keyword.trim().is_empty() {
-        "SELECT subject_id, name, class, coach, gender, intervention FROM athletes ORDER BY name".to_string()
+        "SELECT subject_id, name, class, coach, gender, intervention FROM athletes ORDER BY name"
+            .to_string()
     } else {
         "SELECT subject_id, name, class, coach, gender, intervention FROM athletes WHERE name LIKE ?1 OR subject_id LIKE ?1 ORDER BY name".to_string()
     };
-    let mut stmt = conn
-        .prepare(&sql)
-        .map_err(|e| format!("SQL 错误: {e}"))?;
+    let mut stmt = conn.prepare(&sql).map_err(|e| format!("SQL 错误: {e}"))?;
     let col_names: Vec<String> = (0..stmt.column_count())
         .map(|i| stmt.column_name(i).unwrap_or("?").to_string())
         .collect();
@@ -232,10 +226,16 @@ fn athlete_card(conn: &Connection, keyword: &str) -> Result<Vec<String>, String>
     Ok(out)
 }
 
-fn blood_panel(conn: &Connection, analyte: &str, athlete: &str, limit: usize) -> Result<Vec<String>, String> {
+fn blood_panel(
+    conn: &Connection,
+    analyte: &str,
+    athlete: &str,
+    limit: usize,
+) -> Result<Vec<String>, String> {
     let sql = if athlete.trim().is_empty() {
         "SELECT athlete, subject_id, timepoint, analyte, result_value, qualifier, unit \
-         FROM blood_markers WHERE analyte LIKE ?1 ORDER BY timepoint DESC".to_string()
+         FROM blood_markers WHERE analyte LIKE ?1 ORDER BY timepoint DESC"
+            .to_string()
     } else {
         "SELECT athlete, subject_id, timepoint, analyte, result_value, qualifier, unit \
          FROM blood_markers WHERE analyte LIKE ?1 AND (athlete LIKE ?2 OR subject_id LIKE ?2) ORDER BY timepoint DESC".to_string()
@@ -247,9 +247,11 @@ fn blood_panel(conn: &Connection, analyte: &str, athlete: &str, limit: usize) ->
     let a = format!("%{}%", analyte.trim());
     let b = format!("%{}%", athlete.trim());
     let mut rows = if athlete.trim().is_empty() {
-        stmt.query(params_from_iter([a])).map_err(|e| format!("查询失败: {e}"))?
+        stmt.query(params_from_iter([a]))
+            .map_err(|e| format!("查询失败: {e}"))?
     } else {
-        stmt.query(params_from_iter([a, b])).map_err(|e| format!("查询失败: {e}"))?
+        stmt.query(params_from_iter([a, b]))
+            .map_err(|e| format!("查询失败: {e}"))?
     };
     let mut out = Vec::new();
     let mut count = 0;

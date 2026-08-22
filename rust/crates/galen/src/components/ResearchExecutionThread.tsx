@@ -400,9 +400,12 @@ export function ResearchExecutionThread({
     <div className="execution-thread">
       {/* ── Thread header ── */}
       <div className="thread-header">
-        <h2>科研执行线程</h2>
+        <div>
+          <span className="thread-header-kicker">RESEARCH BRIEF</span>
+          <h2>研究委托</h2>
+        </div>
         <StatusDot tone={sending ? "active" : "idle"}>
-          {sending ? "AI 运行中" : backendAvailable ? "就绪" : "离线"}
+          {sending ? "正在推进任务" : backendAvailable ? "等待研究问题" : "离线"}
         </StatusDot>
       </div>
 
@@ -410,11 +413,16 @@ export function ResearchExecutionThread({
       <div className="thread-messages">
         {messages.length === 0 && !thinking && (
           <div className="thread-empty">
-            <p className="thread-empty-title">科研执行线程</p>
+            <span className="thread-empty-index">01</span>
+            <p className="thread-empty-title">今天要推进哪项研究？</p>
             <p className="thread-empty-desc">
-              在此提出研究目标，Galen 将生成执行计划、调用工具、
-              提出修订建议并在关键节点请求研究者确认。
+              给出研究问题、现有资料和希望得到的成果。Galen 会建立任务契约，沿证据脉络持续执行，并在成果可验证后交付。
             </p>
+            <div className="thread-starter-list">
+              <button type="button" onClick={() => onInputChange("基于当前工作区的数据，提出一个可验证的康复科研问题，并生成研究方案。")}>从工作区数据开始</button>
+              <button type="button" onClick={() => onInputChange("围绕一个康复临床问题检索证据，形成带引用的证据摘要。")}>从临床问题开始</button>
+              <button type="button" onClick={() => onInputChange("检查现有研究产物的证据、方法和交付完整性，并列出需要修复的问题。")}>检查现有研究</button>
+            </div>
           </div>
         )}
 
@@ -482,7 +490,7 @@ export function ResearchExecutionThread({
         <div className="thread-composer">
           <textarea
             className="thread-input"
-            placeholder="输入研究请求…"
+            placeholder="描述研究问题、已有资料和期望成果…"
             value={input}
             onChange={(e) => onInputChange(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -508,7 +516,7 @@ export function ResearchExecutionThread({
               onClick={onSend}
               disabled={!backendAvailable || sending || !input.trim()}
             >
-              发送
+              开始推进
             </button>
           </div>
         </div>

@@ -4,9 +4,10 @@ Tests: simple QA + complex research prompt. Checks separation + coverage.
 """
 import requests
 import json
+import os
 import sys
 
-API_KEY = "sk-73887e71bb7841efa4865bfa1f4e6a3b"
+API_KEY = os.environ.get("DEEPSEEK_API_KEY")
 BASE_URL = "https://api.deepseek.com/v1"
 MODEL = "deepseek-v4-pro"
 
@@ -77,6 +78,10 @@ def run_test(label, messages, max_tokens):
 
 
 all_pass = True
+if not API_KEY:
+    print("DEEPSEEK_API_KEY is required", file=sys.stderr)
+    sys.exit(2)
+
 for tc in TEST_CASES:
     print(f"\n{'=' * 60}")
     print(f"TEST: {tc['label']} (max_tokens={tc['max_tokens']})")

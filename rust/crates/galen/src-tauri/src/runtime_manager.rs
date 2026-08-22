@@ -80,9 +80,7 @@ fn detect_python() -> RuntimeInfo {
             return RuntimeInfo::found(path, version);
         }
     }
-    RuntimeInfo::missing(
-        "Python 已随 Galen 打包，如缺失请重新安装 Galen。"
-    )
+    RuntimeInfo::missing("Python 已随 Galen 打包，如缺失请重新安装 Galen。")
 }
 
 fn detect_r() -> RuntimeInfo {
@@ -102,20 +100,18 @@ fn detect_r() -> RuntimeInfo {
         return RuntimeInfo::found(path, version);
     }
     RuntimeInfo::missing(
-        "R 可随 Galen 打包 (binaries/R/)，也可从 https://cran.r-project.org 自行安装。"
+        "R 可随 Galen 打包 (binaries/R/)，也可从 https://cran.r-project.org 自行安装。",
     )
 }
 
 fn detect_typst() -> RuntimeInfo {
     if let Ok(path) = crate::tools::resolve_typst() {
-        let version = get_version(
-            &path.to_string_lossy()
-        );
+        let version = get_version(&path.to_string_lossy());
         return RuntimeInfo::found(path, version);
     }
     RuntimeInfo::missing(
         "请运行 `cargo install typst-cli` 安装 Typst，\n\
-         或从 https://github.com/typst/typst/releases 下载后放在 Galen 同目录下。"
+         或从 https://github.com/typst/typst/releases 下载后放在 Galen 同目录下。",
     )
 }
 
@@ -145,20 +141,11 @@ fn detect_runtime(binary: &str, _label: &str, guide: &'static str) -> RuntimeInf
 /// Prettify the runtime status into a human-readable summary (for the system prompt / status bar).
 pub fn status_summary(status: &RuntimeStatus) -> String {
     let mut lines = vec!["## 科研环境状态".to_string()];
-    
-    lines.push(format!(
-        "- Python: {}",
-        status_line(&status.python)
-    ));
-    lines.push(format!(
-        "- R:      {}",
-        status_line(&status.r)
-    ));
-    lines.push(format!(
-        "- Typst:  {}",
-        status_line(&status.typst)
-    ));
-    
+
+    lines.push(format!("- Python: {}", status_line(&status.python)));
+    lines.push(format!("- R:      {}", status_line(&status.r)));
+    lines.push(format!("- Typst:  {}", status_line(&status.typst)));
+
     lines.join("\n")
 }
 
@@ -188,12 +175,19 @@ mod tests {
         // Just ensure detection doesn't panic
         let status = detect_all();
         // At minimum, we get a status struct back
-        assert!(!status.python.installed || status.python.version.is_some() || status.python.path.is_some());
+        assert!(
+            !status.python.installed
+                || status.python.version.is_some()
+                || status.python.path.is_some()
+        );
     }
 
     #[test]
     fn test_status_line() {
-        let info = RuntimeInfo::found(PathBuf::from("/usr/bin/python3"), Some("Python 3.12.0".into()));
+        let info = RuntimeInfo::found(
+            PathBuf::from("/usr/bin/python3"),
+            Some("Python 3.12.0".into()),
+        );
         let line = status_line(&info);
         assert!(line.contains("✅"));
         assert!(line.contains("3.12.0"));

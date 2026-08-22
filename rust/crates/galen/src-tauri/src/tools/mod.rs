@@ -48,7 +48,9 @@ pub trait GalenTool: Send + Sync {
     async fn execute(&self, input: Value, ctx: &ToolContext) -> Result<String, String>;
 
     /// Whether this tool modifies state (blocked in Discuss mode).
-    fn is_write(&self) -> bool { false }
+    fn is_write(&self) -> bool {
+        false
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -109,8 +111,17 @@ pub struct ToolContext {
 }
 
 impl ToolContext {
-    pub fn new(medical: Arc<medical_core::MedicalCore>, workspace_root: Mutex<Option<PathBuf>>) -> Self {
-        Self { medical, workspace_root, bin_dirs: Vec::new(), mode: crate::modes::ChatMode::default(), event_sender: None }
+    pub fn new(
+        medical: Arc<medical_core::MedicalCore>,
+        workspace_root: Mutex<Option<PathBuf>>,
+    ) -> Self {
+        Self {
+            medical,
+            workspace_root,
+            bin_dirs: Vec::new(),
+            mode: crate::modes::ChatMode::default(),
+            event_sender: None,
+        }
     }
 
     pub fn with_event_sender(
@@ -118,11 +129,19 @@ impl ToolContext {
         workspace_root: Mutex<Option<PathBuf>>,
         event_sender: Arc<dyn Fn(ChatEvent) + Send + Sync>,
     ) -> Self {
-        Self { medical, workspace_root, bin_dirs: Vec::new(), mode: crate::modes::ChatMode::default(), event_sender: Some(event_sender) }
+        Self {
+            medical,
+            workspace_root,
+            bin_dirs: Vec::new(),
+            mode: crate::modes::ChatMode::default(),
+            event_sender: Some(event_sender),
+        }
     }
 
     pub fn send_event(&self, event: ChatEvent) {
-        if let Some(ref sender) = self.event_sender { sender(event); }
+        if let Some(ref sender) = self.event_sender {
+            sender(event);
+        }
     }
 }
 
@@ -137,7 +156,10 @@ pub struct ToolRegistry {
 
 impl ToolRegistry {
     pub fn new() -> Self {
-        Self { tools: HashMap::new(), mcp: crate::mcp_client::McpServerRegistry::new() }
+        Self {
+            tools: HashMap::new(),
+            mcp: crate::mcp_client::McpServerRegistry::new(),
+        }
     }
 
     /// Register a tool instance.
@@ -182,7 +204,10 @@ impl ToolRegistry {
         self.mcp = crate::mcp_client::connect_configured_servers().await;
     }
 
-    pub fn load_mcp_from_cache(&mut self, servers: Vec<Arc<tokio::sync::Mutex<crate::mcp_client::McpServer>>>) {
+    pub fn load_mcp_from_cache(
+        &mut self,
+        servers: Vec<Arc<tokio::sync::Mutex<crate::mcp_client::McpServer>>>,
+    ) {
         self.mcp = crate::mcp_client::McpServerRegistry::from_cached(servers);
     }
 
@@ -221,7 +246,12 @@ impl ToolRegistry {
 
     // ── Dispatch ──
 
-    pub async fn execute_dynamic(&self, name: &str, input: Value, ctx: &ToolContext) -> Result<String, String> {
+    pub async fn execute_dynamic(
+        &self,
+        name: &str,
+        input: Value,
+        ctx: &ToolContext,
+    ) -> Result<String, String> {
         // Mode-gate: Discuss blocks write tools
         if ctx.mode == crate::modes::ChatMode::Discuss {
             if let Some(tool) = self.tools.get(name) {
@@ -253,7 +283,11 @@ impl ToolRegistry {
                 if s.tools().iter().any(|t| t.name == tool_name) {
                     let server_name = s.name.clone();
                     drop(s);
-                    return self.mcp.call_tool(&server_name, tool_name, input).await.map_err(|e| e.to_string());
+                    return self
+                        .mcp
+                        .call_tool(&server_name, tool_name, input)
+                        .await
+                        .map_err(|e| e.to_string());
                 }
             }
         }
@@ -280,7 +314,10 @@ mod tests {
     use crate::modes::ChatMode;
 
     fn test_ctx(mode: ChatMode) -> ToolContext {
-        let mut ctx = ToolContext::new(Arc::new(medical_core::MedicalCore::new(None)), Mutex::new(None));
+        let mut ctx = ToolContext::new(
+            Arc::new(medical_core::MedicalCore::new(None)),
+            Mutex::new(None),
+        );
         ctx.mode = mode;
         ctx
     }
@@ -293,7 +330,9 @@ mod tests {
         let ctx = test_ctx(ChatMode::Discuss);
         let write_tools = ["write_file", "create_directory", "execute_command"];
         for name in write_tools {
-            let result = registry.execute_dynamic(name, serde_json::json!({}), &ctx).await;
+            let result = registry
+                .execute_dynamic(name, serde_json::json!({}), &ctx)
+                .await;
             assert!(result.is_err(), "Discuss should block: {name}");
         }
     }
@@ -302,7 +341,9 @@ mod tests {
     async fn discuss_mode_allows_read_tools() {
         let registry = ToolRegistry::default();
         let ctx = test_ctx(ChatMode::Discuss);
-        let result = registry.execute_dynamic("read_file", serde_json::json!({"path":"test.txt"}), &ctx).await;
+        let result = registry
+            .execute_dynamic("read_file", serde_json::json!({"path":"test.txt"}), &ctx)
+            .await;
         // Will fail because no workspace, but NOT because of mode gate
         assert!(!result.unwrap_err().contains("讨论"));
     }
@@ -312,7 +353,9 @@ mod tests {
         let registry = ToolRegistry::default();
         let ctx = test_ctx(ChatMode::Auto);
         for name in ["write_file", "create_directory", "execute_command"] {
-            let result = registry.execute_dynamic(name, serde_json::json!({}), &ctx).await;
+            let result = registry
+                .execute_dynamic(name, serde_json::json!({}), &ctx)
+                .await;
             match result {
                 Err(e) => assert!(!e.contains("讨论"), "Auto should NOT block {name}: {e}"),
                 Ok(_) => {}
@@ -328,9 +371,19 @@ mod tests {
         let defs = registry.definitions();
         assert_eq!(defs.len(), 16);
         let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
-        for expected in &["search_pubmed", "fetch_article", "format_citation",
-            "analyze_clinical_case", "rehab_data", "search_rehab_literature", "write_file", "read_file", "delete_file",
-            "execute_command", "search_files"] {
+        for expected in &[
+            "search_pubmed",
+            "fetch_article",
+            "format_citation",
+            "analyze_clinical_case",
+            "rehab_data",
+            "search_rehab_literature",
+            "write_file",
+            "read_file",
+            "delete_file",
+            "execute_command",
+            "search_files",
+        ] {
             assert!(names.contains(expected), "missing: {expected}");
         }
     }
@@ -340,7 +393,13 @@ mod tests {
         let mut r = ToolRegistry::new();
         r.register(fs::WriteFile);
         r.register(fs::WriteFile); // register twice
-        assert_eq!(r.definitions().iter().filter(|d| d.name == "write_file").count(), 1);
+        assert_eq!(
+            r.definitions()
+                .iter()
+                .filter(|d| d.name == "write_file")
+                .count(),
+            1
+        );
     }
 
     #[test]
@@ -357,7 +416,13 @@ mod tests {
     #[tokio::test]
     async fn unknown_tool_returns_clear_error() {
         let registry = ToolRegistry::default();
-        let result = registry.execute_dynamic("nonexistent_tool", serde_json::json!({}), &test_ctx(ChatMode::Auto)).await;
+        let result = registry
+            .execute_dynamic(
+                "nonexistent_tool",
+                serde_json::json!({}),
+                &test_ctx(ChatMode::Auto),
+            )
+            .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Unknown tool"));
     }

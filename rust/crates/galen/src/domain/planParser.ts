@@ -26,7 +26,7 @@ export function extractPlan(markdown: string): SessionNode[] | null {
       nodes.push({
         id: `s${num}`, index: num, title,
         type: "planning",
-        status: num === "01" ? "pending_approval" : "pending",
+        status: "pending",
         description: desc || undefined,
       });
       continue;
@@ -44,7 +44,7 @@ export function extractPlan(markdown: string): SessionNode[] | null {
     nodes.push({
       id: `s${index}`, index, title,
       type: "planning",
-      status: index === "01" ? "pending_approval" : "pending",
+      status: "pending",
       description: description || undefined,
       dependsOn,
     });
@@ -64,5 +64,5 @@ export function planConfirmationPrompt(nodes: SessionNode[]): string {
   const lines = nodes.map(
     (n) => `${n.index}. **${n.title}** — ${n.description ?? ""}${n.dependsOn?.length ? ` (依赖: ${n.dependsOn.join(", ")})` : ""}`
   );
-  return `已解析到 ${nodes.length} 个 Session 节点：\n\n${lines.join("\n")}\n\n确认计划后，画布将生成这些节点。要确认吗？`;
+  return `已解析到 ${nodes.length} 个研究节点：\n\n${lines.join("\n")}\n\n锁定任务契约后，Galen 将自动执行这些节点。`;
 }
