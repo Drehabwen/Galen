@@ -463,6 +463,16 @@
 .global-resource-content {
   border-top: 1px solid var(--border-muted);
 }
+.artifact-ledger { padding: var(--space-3) var(--space-4); }
+.artifact-ledger-heading { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); color: var(--text-secondary); font-size: var(--text-xs); letter-spacing: var(--tracking-wide); text-transform: uppercase; }
+.artifact-ledger-heading strong { color: var(--accent); }
+.artifact-ledger-list { display: grid; gap: var(--space-1); }
+.artifact-ledger-row { display: grid; grid-template-columns: 6rem minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); width: 100%; padding: var(--space-2) var(--space-3); border: 1px solid var(--border-muted); border-radius: var(--radius-sm); background: var(--bg-panel-subtle); color: var(--text-primary); text-align: left; cursor: pointer; transition: border-color var(--transition-fast), background var(--transition-fast); }
+.artifact-ledger-row:hover { border-color: var(--border-accent); background: var(--bg-hover); }
+.artifact-ledger-row:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; }
+.artifact-ledger-kind { color: var(--accent-text); font-size: var(--text-xs); letter-spacing: var(--tracking-wide); text-transform: uppercase; }
+.artifact-ledger-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: var(--text-sm); }
+.artifact-ledger-size { color: var(--text-tertiary); font-size: var(--text-xs); }
 
 /* ── Session Chat ── */
 .session-chat {

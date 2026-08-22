@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { ChatMessage, Paper, FileEntry } from "../types";
+import type { ArtifactRecord } from "../domain/artifact";
+import type { ResearchTask } from "../domain/researchTask";
 import { isTauriRuntime } from "../tauriRuntime";
 
 export function useChat(workspaceRoot: string | null) {
@@ -18,6 +20,8 @@ export function useChat(workspaceRoot: string | null) {
     path: string;
     content: string;
   } | null>(null);
+  const [latestArtifact, setLatestArtifact] = useState<ArtifactRecord | null>(null);
+  const [researchTaskUpdate, setResearchTaskUpdate] = useState<ResearchTask | null>(null);
   const currentModel = useRef<string>("");
   const sendingRef = useRef(false);
   const doneHandledRef = useRef(false); // prevent duplicate done handling
@@ -27,6 +31,8 @@ export function useChat(workspaceRoot: string | null) {
   useEffect(() => {
     if (!backendAvailable || !workspaceRoot) {
       setMessages([]);
+      setLatestArtifact(null);
+      setResearchTaskUpdate(null);
       return;
     }
     let cancelled = false;
@@ -102,7 +108,13 @@ export function useChat(workspaceRoot: string | null) {
           setThinking("");
         }
       });
-      unlisteners.push(ul1, ul2, ul3, ul4, ul5, ul6, ul7, ul8);
+      const ul9 = await listen<ArtifactRecord>("artifact-created", (e) => {
+        if (!cancelled) setLatestArtifact(e.payload);
+      });
+      const ul10 = await listen<ResearchTask>("research-task-updated", (e) => {
+        if (!cancelled) setResearchTaskUpdate(e.payload);
+      });
+      unlisteners.push(ul1, ul2, ul3, ul4, ul5, ul6, ul7, ul8, ul9, ul10);
     };
 
     register().catch((e) => {
@@ -191,6 +203,8 @@ export function useChat(workspaceRoot: string | null) {
     searchResults,
     wsFileList,
     wsFileContent,
+    latestArtifact,
+    researchTaskUpdate,
     send,
     clear,
   };

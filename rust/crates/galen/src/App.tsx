@@ -21,6 +21,12 @@ import { StatusDot } from "./components/ui/primitives";
 import type { SessionNode } from "./domain/sessionTypes";
 import { extractPlan, hasPlan, planConfirmationPrompt } from "./domain/planParser";
 import { useResearchTask } from "./hooks/useResearchTask";
+import type { ArtifactRecord } from "./domain/artifact";
+import {
+  mergeDeliveredArtifact,
+  resolveArtifactNodeTitle,
+  shouldSynthesizeCompletion,
+} from "./domain/deliveryLoop";
 
 // ---------------------------------------------------------------------------
 // App
@@ -60,6 +66,7 @@ export default function App() {
   const [artifactPreview, setArtifactPreview] = useState<{ path: string; content: string; nodeTitle?: string } | null>(null);
   const [artifactLoading, setArtifactLoading] = useState(false);
   const [artifactError, setArtifactError] = useState<string | null>(null);
+  const [artifacts, setArtifacts] = useState<ArtifactRecord[]>([]);
 
   const patchNode = research.patchNode;
 
@@ -203,6 +210,16 @@ export default function App() {
       .catch(() => setMemoryStatus(null));
   }, [chat.backendAvailable, wsRoot]);
 
+  useEffect(() => {
+    if (!chat.backendAvailable || !wsRoot) {
+      setArtifacts([]);
+      return;
+    }
+    invoke<ArtifactRecord[]>("get_artifacts")
+      .then(setArtifacts)
+      .catch(() => setArtifacts([]));
+  }, [chat.backendAvailable, wsRoot]);
+
   // ---- Keyboard shortcuts ----
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -311,9 +328,12 @@ export default function App() {
   // Task-level loop closure: synthesize the final artifact automatically
   // after every node has returned its evidence.
   useEffect(() => {
-    if (!planConfirmed || planNodes.length === 0) return;
-    const allCompleted = planNodes.every((n) => n.status === "completed");
-    if (allCompleted && !completionNotifiedRef.current) {
+    // A host-delivered artifact already is the final synthesis. Sending a
+    // second completion prompt here would start an accidental delivery loop.
+    if (
+      shouldSynthesizeCompletion(planConfirmed, planNodes, researchTask?.status) &&
+      !completionNotifiedRef.current
+    ) {
       completionNotifiedRef.current = true;
       chat.send(
         `[计划完成] 全部 ${planNodes.length} 个节点已执行完毕。` +
@@ -324,7 +344,7 @@ export default function App() {
         thinkingLevel,
       );
     }
-  }, [planConfirmed, planNodes, chat, model, modeState.mode, thinkingLevel]);
+  }, [planConfirmed, planNodes, researchTask?.status, chat, model, modeState.mode, thinkingLevel]);
 
   const handlePreviewArtifact = useCallback(async (path: string, node: SessionNode) => {
     setArtifactLoading(true);
@@ -340,6 +360,59 @@ export default function App() {
       setArtifactLoading(false);
     }
   }, []);
+
+  // Host-authoritative task/artifact events close the delivery loop. A file
+  // written by the agent becomes visible on the canvas and opens in Galen
+  // without requiring the user to find or click it manually.
+  useEffect(() => {
+    if (!chat.researchTaskUpdate) return;
+    research.acceptSnapshot(chat.researchTaskUpdate);
+  }, [chat.researchTaskUpdate, research.acceptSnapshot]);
+
+  useEffect(() => {
+    const artifact = chat.latestArtifact;
+    if (!artifact) return;
+    setArtifacts((current) => mergeDeliveredArtifact(current, artifact));
+    let cancelled = false;
+    setArtifactLoading(true);
+    setArtifactError(null);
+    invoke<string>("read_workspace_file", { path: artifact.path })
+      .then((content) => {
+        if (cancelled) return;
+        const nodeTitle = resolveArtifactNodeTitle(artifact, chat.researchTaskUpdate);
+        setArtifactPreview({ path: artifact.path, content, nodeTitle });
+        setCanvasTab("doc");
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setArtifactPreview(null);
+          setArtifactError(String(error));
+          setCanvasTab("doc");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setArtifactLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [chat.latestArtifact, chat.researchTaskUpdate]);
+
+  const handleOpenRegisteredArtifact = useCallback(async (artifact: ArtifactRecord) => {
+    setArtifactLoading(true);
+    setArtifactError(null);
+    setCanvasTab("doc");
+    try {
+      const content = await invoke<string>("read_workspace_file", { path: artifact.path });
+      const nodeTitle = research.nodes.find((node) => node.id === artifact.nodeId)?.title;
+      setArtifactPreview({ path: artifact.path, content, nodeTitle });
+    } catch (error) {
+      setArtifactPreview(null);
+      setArtifactError(String(error));
+    } finally {
+      setArtifactLoading(false);
+    }
+  }, [research.nodes]);
 
   const handleThinkingLevelChange = (level: string) => {
     setThinkingLevel(level);
@@ -631,7 +704,7 @@ export default function App() {
           compacted={chat.messages.length > 20}
         />
       )}
-      <GlobalResourceBar />
+      <GlobalResourceBar artifacts={artifacts} onOpenArtifact={handleOpenRegisteredArtifact} />
 
       {/* ════ Welcome Wizard ════ */}
       {showWelcome && (

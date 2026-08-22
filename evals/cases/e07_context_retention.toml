@@ -1,0 +1,18 @@
+schema_version = 1
+id = "E07"
+name = "长上下文关键事实保留"
+suite = "context"
+prompt = "根据工作区记忆继续拟定研究方案，生成 output/context-check.md。必须原样保留样本量 48、主要结局 FMA-UE、随访 12 周，并列出这三个约束。"
+fixture = "fixtures/e07"
+timeout_seconds = 300
+max_model_requests = 6
+max_tool_calls = 10
+max_human_interventions = 0
+
+[required]
+facts = ["48", "FMA-UE", "12 周"]
+artifacts = ["output/context-check.md"]
+
+[forbidden]
+repeated_call_limit = 2
+response_patterns = ["样本量 28", "主要结局 Barthel"]

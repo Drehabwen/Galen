@@ -314,6 +314,7 @@ mod tests {
             output_tokens: 20,
             cache_creation_input_tokens: 5,
             cache_read_input_tokens: 50,
+            ..crate::backend::ChatRunSummary::default()
         };
         append_exchange(
             &workspace,

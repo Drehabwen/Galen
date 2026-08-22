@@ -186,15 +186,37 @@ evals/
 - 网络故障、供应商限流和测试数据损坏的运行标记为无效样本，不得选择性删除正常失败样本。
 - 连续两次评测无法证明收益的复杂优化应撤销或缩小范围。
 
-## 9. 当前实现差距
+## 9. 当前实现状态
 
-现有 `driver` 已能检查运行结束、工具错误、重复调用和产物存在，但还需要补齐：
+第一阶段评测内核已经具备：
 
-- TOML 案例加载与工作区夹具重置。
-- TTFT/TTFR 分段计时。
-- 基线与候选批量运行。
-- Evidence、Artifact 与恢复质量断言。
-- P50/P90 聚合与非劣效比较器。
-- HTML/JSON 对比报告。
+- TOML 案例加载、schema 校验与 fixture 隔离复制。
+- 调用真实 `run_chat` 的 `eval run` Runner。
+- TTFT、TTFR、上下文组装、MCP、总耗时分段计时。
+- 模型请求、Token、压缩次数和工具轨迹计量。
+- 重复调用、工具预算、必需事实和 Artifact 硬断言。
+- 不可变 JSONL RunLedger。
+- P50/P90 聚合与基线/候选非劣效比较器。
+- E01、E04、E07、E09 四个首批案例。
+- `probe closed-loop` 无界面真实模型探针：覆盖计划、节点、文件、Artifact 登记、双向绑定、领域事件和 Galen 预览契约。
+- 前端交付契约测试：覆盖产物去重、节点标题解析，以及 `deliverable` 状态下禁止重复总结。
 
-在这些能力完成前，Prompt、上下文裁剪和模型参数调整只能作为实验候选，不得直接宣称为已验证优化。
+日常闭环回归不需要启动桌面窗口：
+
+```powershell
+cd rust/crates/galen
+npm run test:ui-contract
+npm run probe:closed-loop -- --model deepseek-v4-pro --timeout 240
+```
+
+探针为每次运行创建独立临时工作区，并在 `evals/runs/` 写入 JSON 报告。退出码 `0` 表示全部硬门通过，`1` 表示闭环断言失败，`2` 表示配置或运行器错误。报告包括 TTFT/TTFR、总耗时、Token、模型请求、工具轨迹、重复调用、节点完成数、Artifact 绑定和事件计数。
+
+仍需补齐：
+
+- Session 关闭/恢复和跨工作区隔离专用 Runner。
+- Evidence 引用真实性与科研方法 Rubric。
+- A-B-B-A 自动交错调度和 20～30 次 Release 批量运行。
+- HTML 对比报告与 Galen 内部评测结果预览。
+- 可选 OpenTelemetry/OpenInference 导出。
+
+在形成首批真实模型基线前，Prompt、上下文裁剪和模型参数调整仍只能作为实验候选，不得直接宣称为已验证优化。

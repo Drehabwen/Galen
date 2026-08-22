@@ -1,0 +1,16 @@
+schema_version = 1
+id = "E09"
+name = "可预览科研交付物"
+suite = "artifact"
+prompt = "创建 output/delivery.md，内容包含研究问题、PICO、主要结局、风险和下一步。完成后检查文件存在且非空。"
+timeout_seconds = 240
+max_model_requests = 6
+max_tool_calls = 8
+max_human_interventions = 0
+
+[required]
+artifacts = ["output/delivery.md"]
+tools = ["write_file"]
+
+[forbidden]
+repeated_call_limit = 2

@@ -9,7 +9,7 @@ use medical_core::types::Paper;
 use medical_core::MedicalCore;
 use model_router::ModelRouter;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::tools::{ToolContext, ToolRegistry};
@@ -49,11 +49,13 @@ pub enum ChatEvent {
         path: String,
         content: String,
     },
+    ArtifactCreated(crate::artifact::ArtifactRecord),
+    ResearchTaskUpdated(crate::research_task::ResearchTask),
 }
 
 /// 结构化工具调用轨迹，用于行为断言测试（第二层测试）。
 /// `run_chat` 每执行一次工具调用就追加一条；收敛轮次追加特殊记录。
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ToolTrace {
     pub turn: u32,
     pub tool: String,
@@ -67,10 +69,17 @@ pub struct ToolTrace {
 pub struct ChatRunSummary {
     pub iterations: u32,
     pub tool_call_count: usize,
+    pub model_request_count: u32,
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub cache_creation_input_tokens: u64,
     pub cache_read_input_tokens: u64,
+    pub context_assembly_ms: u64,
+    pub mcp_setup_ms: u64,
+    pub ttft_ms: Option<u64>,
+    pub ttfr_ms: Option<u64>,
+    pub total_ms: u64,
+    pub compaction_count: u32,
 }
 
 impl ChatRunSummary {
@@ -194,7 +203,7 @@ impl ChatBackend {
 // String interning — avoid per-call Box::leak by caching strings globally
 // ---------------------------------------------------------------------------
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex as StdMutex;
 static INTERN_CACHE: StdMutex<Option<HashMap<String, &'static str>>> = StdMutex::new(None);
 
@@ -297,6 +306,22 @@ fn build_system_prompt(persona: &crate::personas::Persona, mode: crate::modes::C
     )
 }
 
+fn build_system_prompt_for_contract(
+    persona: &crate::personas::Persona,
+    mode: crate::modes::ChatMode,
+    contract: &TaskContract,
+) -> String {
+    if contract.class == TaskClass::DirectAnswer {
+        return format!(
+            "你是 Galen，当前角色是{}。请用中文提供准确、克制的医学科研解释。\n\n\
+             ## 快速回答要求\n直接回答用户问题；不调用工具，不展开检索或执行计划，不复述题目。\
+             保留用户指定的术语、字数和结论方向；信息不足时使用简短限定语。",
+            persona.label,
+        );
+    }
+    build_system_prompt(persona, mode)
+}
+
 /// Assemble the dynamic context for the current turn.
 ///
 /// L1 skills follow the current intent. L2 workspace/task/evidence state is
@@ -311,6 +336,10 @@ fn build_turn_context(
 ) -> String {
     // L1：按任务意图装配技能模块
     let task_kind = model_router::TaskKind::from_intent(user_message);
+    let contract = compile_task_contract(task_kind, user_message);
+    if contract.class == TaskClass::DirectAnswer {
+        return contract.execution_policy.to_string();
+    }
     let skills = crate::skills::assemble_skills_for_intent(task_kind, user_message);
     // L2：项目画像
     let plan = plan_progress_summary(workspace_root);
@@ -348,6 +377,7 @@ fn build_turn_context(
     } else {
         String::new()
     };
+    let execution_policy = task_execution_policy(user_message);
     let opening = if !first_turn {
         String::new()
     } else if matches!(mode, crate::modes::ChatMode::Auto) {
@@ -371,36 +401,269 @@ fn build_turn_context(
          写完 .typ 后立即用 typst compile 验证，报错则修复重试。")
     };
     format!(
-        "{opening}{skills}\n\n## 当前工作区\n{workspace}\n\n## 当前科研环境\n{env_summary}\n\n{plan}\n\n{memory}{evidence}{resume}{plan_format}"
+        "{opening}{skills}{execution_policy}\n\n## 当前工作区\n{workspace}\n\n## 当前科研环境\n{env_summary}\n\n{plan}\n\n{memory}{evidence}{resume}{plan_format}"
     )
+}
+
+const DATA_TOOLS: &[&str] = &[
+    "list_files",
+    "read_file",
+    "search_files",
+    "create_directory",
+    "write_file",
+    "execute_command",
+];
+const LITERATURE_TOOLS: &[&str] = &[
+    "search_pubmed",
+    "fetch_article",
+    "format_citation",
+    "list_files",
+    "read_file",
+    "search_files",
+    "save_paper",
+    "write_file",
+];
+const FOCUSED_ARTIFACT_TOOLS: &[&str] = &[
+    "create_research_plan",
+    "list_files",
+    "read_file",
+    "write_file",
+];
+const WORKSPACE_TOOLS: &[&str] = &[
+    "list_files",
+    "read_file",
+    "search_files",
+    "create_directory",
+    "write_file",
+];
+const LOOKUP_TOOLS: &[&str] = &[
+    "search_pubmed",
+    "fetch_article",
+    "format_citation",
+    "list_files",
+    "read_file",
+    "search_files",
+];
+const REHAB_QUERY_TOOLS: &[&str] = &["rehab_data", "list_files", "read_file", "write_file"];
+const NO_TOOLS: &[&str] = &[];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TaskClass {
+    OpenEnded,
+    DirectAnswer,
+    QuickLookup,
+    Literature,
+    LocalData,
+    Workspace,
+    FocusedPlanArtifact,
+    ArtifactCreation,
+    RehabQuery,
+}
+
+#[derive(Debug, Clone)]
+struct TaskContract {
+    class: TaskClass,
+    allowed_tools: Option<&'static [&'static str]>,
+    max_tool_turns: u32,
+    execution_policy: &'static str,
+    artifact_paths: Vec<String>,
+    disable_deep_reasoning: bool,
+    response_token_cap: Option<u32>,
+}
+
+#[derive(Debug, Default)]
+struct WorkingMemory {
+    observed_resources: HashSet<String>,
+    delivered_artifacts: HashSet<String>,
+    consecutive_no_gain_turns: u32,
+}
+
+impl WorkingMemory {
+    fn observe_tool_result(
+        &mut self,
+        tool_name: &str,
+        input: &serde_json::Value,
+        output: &str,
+        is_error: bool,
+        cache_hit: bool,
+    ) -> bool {
+        if is_error || cache_hit {
+            return false;
+        }
+        let path = normalize_contract_path(
+            input
+                .get("path")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default(),
+        );
+        match tool_name {
+            "write_file" => {
+                if !path.is_empty() {
+                    self.delivered_artifacts.insert(path.clone());
+                }
+                let content = input
+                    .get("content")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or_default();
+                self.observed_resources
+                    .insert(format!("write:{path}:{}", stable_text_hash(content)))
+            }
+            "read_file" => self.observed_resources.insert(format!("read:{path}")),
+            "list_files" | "search_files" => {
+                let mut gained = false;
+                for line in output.lines().filter(|line| {
+                    line.trim_start().starts_with("[FILE]")
+                        || line.trim_start().starts_with("[DIR]")
+                }) {
+                    gained |= self
+                        .observed_resources
+                        .insert(format!("entry:{}", line.trim()));
+                }
+                gained
+            }
+            _ => self
+                .observed_resources
+                .insert(format!("result:{tool_name}:{}", stable_text_hash(output))),
+        }
+    }
+
+    fn finish_turn(&mut self, gained_information: bool) {
+        if gained_information {
+            self.consecutive_no_gain_turns = 0;
+        } else {
+            self.consecutive_no_gain_turns = self.consecutive_no_gain_turns.saturating_add(1);
+        }
+    }
+
+    fn delivery_complete(&self, contract: &TaskContract) -> bool {
+        !contract.artifact_paths.is_empty()
+            && contract
+                .artifact_paths
+                .iter()
+                .all(|path| self.delivered_artifacts.contains(path))
+    }
+}
+
+fn stable_text_hash(text: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    text.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn compile_task_contract(kind: model_router::TaskKind, user_message: &str) -> TaskContract {
+    let lower = user_message.to_lowercase();
+    let literature_task = ["文献", "pubmed", "综述", "证据", "检索"]
+        .iter()
+        .any(|needle| lower.contains(needle));
+    let artifact_paths = extract_artifact_paths(user_message);
+    let (class, allowed_tools, max_tool_turns, execution_policy) = if is_direct_answer_task(&lower)
+    {
+        (
+            TaskClass::DirectAnswer,
+            Some(NO_TOOLS),
+            1,
+            "\n\n## 快速回答契约\n这是无需检索或工作区操作的直接回答。禁止调用工具；用最短路径给出核心定义、用途和方向性解释，严格遵守用户字数要求。",
+        )
+    } else if is_explicit_rehab_query(&lower) {
+        (
+                TaskClass::RehabQuery,
+                Some(REHAB_QUERY_TOOLS),
+                12,
+                "\n\n## 本任务数据边界\n仅查询用户明确要求的患者/量表数据；保持只读，返回最小必要字段。",
+            )
+    } else if is_local_data_task(&lower) && !literature_task {
+        (TaskClass::LocalData, Some(DATA_TOOLS), 28, "")
+    } else if literature_task {
+        (TaskClass::Literature, Some(LITERATURE_TOOLS), 20, "")
+    } else if is_focused_plan_artifact_task(&lower) {
+        (
+                TaskClass::FocusedPlanArtifact,
+                Some(FOCUSED_ARTIFACT_TOOLS),
+                7,
+                "\n\n## 本任务执行预算\n这是边界明确的计划节点交付任务。最多使用 7 轮工具。若用户要求多个研究节点，第一轮必须调用 create_research_plan 写入结构化节点；随后直接调用 write_file 生成用户指定 Artifact。所有文件工具路径必须相对当前工作区，禁止传入工作区绝对路径。只有任务明确依赖某个现有文件时，才按已知相对路径读取一次，禁止先列根目录或用通配符探索。只允许写入用户指定的最终 Artifact，禁止创建辅助脚本或替代产物。若节点输入不足，必须把阻塞原因、已有证据和下一可执行动作写入目标 Artifact，禁止编造缺失数据。write_file 成功后下一轮直接总结，不得再次读取或搜索同一事实。",
+            )
+    } else if is_explicit_artifact_creation_task(&lower) {
+        (
+                TaskClass::ArtifactCreation,
+                Some(WORKSPACE_TOOLS),
+                5,
+                "\n\n## 本任务交付契约\n用户已经明确要求创建工作区 Artifact，因此不得因缺少非关键背景而停下询问。若研究主题或细节未给出，使用中性占位内容或明确标注的合理假设，并在文档中列出待确认项；先直接调用 write_file 生成用户指定路径，再依据写入结果确认非空并立即总结。不要在写入前反复列目录、读取不存在的记忆文件或要求用户回复“用示例”。",
+            )
+    } else if is_workspace_artifact_task(&lower) {
+        (TaskClass::Workspace, Some(WORKSPACE_TOOLS), 16, "")
+    } else if matches!(kind, model_router::TaskKind::QuickLookup) {
+        (TaskClass::QuickLookup, Some(LOOKUP_TOOLS), 8, "")
+    } else {
+        (TaskClass::OpenEnded, None, 28, "")
+    };
+    // Creating a bounded workspace artifact is an execution task, not an
+    // open-ended reasoning task. Deep reasoning here delays the first tool
+    // call and can consume the entire response budget before any write occurs.
+    let disable_deep_reasoning = matches!(
+        class,
+        TaskClass::DirectAnswer | TaskClass::FocusedPlanArtifact | TaskClass::ArtifactCreation
+    );
+    let response_token_cap = matches!(class, TaskClass::DirectAnswer).then_some(768);
+    TaskContract {
+        class,
+        allowed_tools,
+        max_tool_turns,
+        execution_policy,
+        artifact_paths,
+        disable_deep_reasoning,
+        response_token_cap,
+    }
+}
+
+fn task_execution_policy(user_message: &str) -> String {
+    compile_task_contract(
+        model_router::TaskKind::from_intent(user_message),
+        user_message,
+    )
+    .execution_policy
+    .to_string()
 }
 
 /// Keep tool evidence useful without replaying unbounded logs or entire data
 /// files into every subsequent model request.
 fn compact_tool_result(tool_name: &str, text: &str, is_error: bool) -> String {
-    const LIMIT: usize = 8_000;
-    const HEAD: usize = 5_500;
-    const TAIL: usize = 1_500;
-    if text.chars().count() <= LIMIT {
+    let (limit, head, tail) = tool_result_budget(tool_name, is_error);
+    if text.chars().count() <= limit {
         return text.to_string();
     }
-    let head: String = text.chars().take(HEAD).collect();
-    let tail: String = text
+    let head_text: String = text.chars().take(head).collect();
+    let tail_text: String = text
         .chars()
         .rev()
-        .take(TAIL)
+        .take(tail)
         .collect::<String>()
         .chars()
         .rev()
         .collect();
     format!(
         "[工具结果已压缩] tool={tool_name} error={is_error} original_chars={}\n\
-         --- 前部 ---\n{head}\n\
+         --- 前部 ---\n{head_text}\n\
          --- 省略 {} 字符；如需细节请按文件路径或行范围读取 ---\n\
-         --- 尾部 ---\n{tail}",
+         --- 尾部 ---\n{tail_text}",
         text.chars().count(),
-        text.chars().count().saturating_sub(HEAD + TAIL),
+        text.chars().count().saturating_sub(head + tail),
     )
+}
+
+fn tool_result_budget(tool_name: &str, is_error: bool) -> (usize, usize, usize) {
+    if is_error {
+        return (3_000, 2_200, 500);
+    }
+    match tool_name {
+        // File contents need enough room for local evidence, but should not
+        // replay an entire document into every subsequent model request.
+        "read_file" | "fetch_article" => (6_000, 4_500, 1_000),
+        // Search/list/command output is usually repetitive and benefits from a
+        // smaller envelope.
+        "list_files" | "search_files" | "search_pubmed" | "execute_command" => (4_000, 2_800, 800),
+        _ => (4_000, 2_800, 800),
+    }
 }
 
 /// Input compaction is independent from the model's response `max_tokens`.
@@ -419,43 +682,220 @@ fn compact_trigger_bytes() -> usize {
     tokens.saturating_mul(BYTES_PER_TOKEN_ESTIMATE)
 }
 
+#[cfg(test)]
 fn select_tools_for_task(
-    mut tools: Vec<ToolDefinition>,
+    tools: Vec<ToolDefinition>,
     kind: model_router::TaskKind,
     user_message: &str,
 ) -> Vec<ToolDefinition> {
-    let lower = user_message.to_lowercase();
-    let data_task = is_local_data_task(&lower);
-    let literature_task = ["文献", "pubmed", "综述", "证据", "检索"]
-        .iter()
-        .any(|needle| lower.contains(needle));
-    let allowed: Option<&[&str]> = if data_task && !literature_task {
-        Some(&[
-            "list_files",
-            "read_file",
-            "search_files",
-            "create_directory",
-            "write_file",
-            "execute_command",
-        ])
-    } else if matches!(kind, model_router::TaskKind::QuickLookup) || literature_task {
-        Some(&[
-            "search_pubmed",
-            "fetch_article",
-            "format_citation",
-            "list_files",
-            "read_file",
-            "search_files",
-            "save_paper",
-            "write_file",
-        ])
-    } else {
-        None
-    };
-    if let Some(allowed) = allowed {
+    let contract = compile_task_contract(kind, user_message);
+    select_tools_for_contract(tools, &contract)
+}
+
+fn select_tools_for_contract(
+    mut tools: Vec<ToolDefinition>,
+    contract: &TaskContract,
+) -> Vec<ToolDefinition> {
+    if let Some(allowed) = contract.allowed_tools {
         tools.retain(|tool| allowed.contains(&tool.name.as_str()));
+    } else if contract.class != TaskClass::RehabQuery {
+        // Patient/assessment database access is sensitive and highly specific.
+        tools.retain(|tool| tool.name != "rehab_data");
     }
     tools
+}
+
+fn is_workspace_artifact_task(text: &str) -> bool {
+    [
+        "读取",
+        "写入",
+        "文件",
+        "工作区",
+        "output/",
+        "output\\",
+        "节点",
+        "计划",
+        "产物",
+        "artifact",
+        ".md",
+        ".json",
+        ".toml",
+    ]
+    .iter()
+    .any(|needle| text.contains(needle))
+}
+
+fn is_direct_answer_task(text: &str) -> bool {
+    let direct_cue = [
+        "直接回答",
+        "简要回答",
+        "简短回答",
+        "不超过",
+        "用一句话",
+        "无需检索",
+        "不要创建文件",
+    ]
+    .iter()
+    .any(|needle| text.contains(needle));
+    let external_evidence_cue = [
+        "检索",
+        "搜索",
+        "查找",
+        "查一下",
+        "最新",
+        "文献",
+        "证据",
+        "pubmed",
+        "读取",
+        "工作区",
+    ]
+    .iter()
+    .any(|needle| text.contains(needle));
+    direct_cue && !external_evidence_cue
+}
+
+fn is_focused_plan_artifact_task(text: &str) -> bool {
+    let plan_or_node = ["计划", "节点", "plan.json", "node"]
+        .iter()
+        .any(|needle| text.contains(needle));
+    let explicit_delivery = ["写入", "生成", "保存", "output/", "output\\", "artifact"]
+        .iter()
+        .any(|needle| text.contains(needle));
+    plan_or_node && explicit_delivery
+}
+
+fn is_explicit_artifact_creation_task(text: &str) -> bool {
+    let create_intent = ["创建", "生成", "写入", "保存"]
+        .iter()
+        .any(|needle| text.contains(needle));
+    let artifact_path = ["output/", "output\\", "artifact", ".md", ".json", ".csv"]
+        .iter()
+        .any(|needle| text.contains(needle));
+    create_intent && artifact_path
+}
+
+fn extract_artifact_paths(text: &str) -> Vec<String> {
+    let mut paths = Vec::new();
+    for (start, _) in text
+        .match_indices("output/")
+        .chain(text.match_indices("output\\"))
+    {
+        let tail = &text[start..];
+        let end = tail
+            .find(|ch: char| {
+                ch.is_whitespace()
+                    || matches!(ch, '，' | '。' | '；' | ';' | ',' | ')' | '）' | ']' | '】')
+            })
+            .unwrap_or(tail.len());
+        let path = normalize_contract_path(
+            tail[..end].trim_matches(|ch: char| matches!(ch, '`' | '"' | '\'' | ':' | '：')),
+        );
+        if !path.is_empty() && !paths.contains(&path) {
+            paths.push(path);
+        }
+    }
+    paths
+}
+
+fn normalize_contract_path(path: &str) -> String {
+    path.replace('\\', "/").trim_start_matches("./").to_string()
+}
+
+fn normalize_path_against_workspace(
+    path: &str,
+    workspace_root: &std::path::Path,
+) -> Option<String> {
+    let candidate = std::path::Path::new(path);
+    if !candidate.is_absolute() {
+        return None;
+    }
+    candidate.strip_prefix(workspace_root).ok().map(|relative| {
+        relative
+            .to_string_lossy()
+            .replace('\\', "/")
+            .trim_start_matches("./")
+            .to_string()
+    })
+}
+
+fn normalize_workspace_tool_input(input: &mut serde_json::Value, ctx: &ToolContext) {
+    let Some(path) = input
+        .get("path")
+        .and_then(|value| value.as_str())
+        .map(str::to_string)
+    else {
+        return;
+    };
+    let Some(root) = ctx
+        .workspace_root
+        .lock()
+        .ok()
+        .and_then(|guard| guard.clone())
+    else {
+        return;
+    };
+    if let Some(relative) = normalize_path_against_workspace(&path, &root) {
+        input["path"] = serde_json::Value::String(relative);
+    }
+}
+
+fn validate_tool_call_against_contract(
+    contract: &TaskContract,
+    tool_name: &str,
+    input: &serde_json::Value,
+) -> Result<(), String> {
+    if tool_name != "write_file" || contract.artifact_paths.is_empty() {
+        return Ok(());
+    }
+    if !matches!(
+        contract.class,
+        TaskClass::FocusedPlanArtifact | TaskClass::ArtifactCreation
+    ) {
+        return Ok(());
+    }
+    let requested = normalize_contract_path(
+        input
+            .get("path")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default(),
+    );
+    if contract.artifact_paths.contains(&requested) {
+        Ok(())
+    } else {
+        Err(format!(
+            "任务契约拒绝写入 `{requested}`。本任务只允许写入最终 Artifact：{}。不要创建辅助脚本或替代文件；输入不足时请把阻塞说明写入目标 Artifact。",
+            contract.artifact_paths.join(", ")
+        ))
+    }
+}
+
+#[cfg(test)]
+fn max_tool_turns_for_task(user_message: &str) -> u32 {
+    compile_task_contract(
+        model_router::TaskKind::from_intent(user_message),
+        user_message,
+    )
+    .max_tool_turns
+}
+
+fn is_explicit_rehab_query(text: &str) -> bool {
+    let mentions_subject_data = [
+        "患者",
+        "受试者",
+        "量表",
+        "评估记录",
+        "测量记录",
+        "视频资产",
+        "语音资产",
+        "康复数据库",
+        "rehab_data",
+    ]
+    .iter()
+    .any(|needle| text.contains(needle));
+    let asks_to_query = ["查询", "查找", "读取", "检索", "列出", "统计"]
+        .iter()
+        .any(|needle| text.contains(needle));
+    mentions_subject_data && asks_to_query
 }
 
 fn is_local_data_task(text: &str) -> bool {
@@ -478,9 +918,8 @@ fn memory_index(workspace_root: &Mutex<Option<PathBuf>>) -> String {
     let text = std::fs::read_to_string(root.join("GALEN.md")).unwrap_or_default();
     if text.trim().is_empty() {
         return "\n\n## 项目记忆\n\
-            工作区根目录下有 GALEN.md 文件。\
-            每次完成文献检索、数据分析或得出重要结论后，请用 write_file 追加更新。\
-            格式：日期 | 来源 | 关键发现 | 关联文件"
+            当前工作区没有可用的 GALEN.md 项目记忆。不要尝试读取不存在的文件；\
+            只有当当前任务明确要求持久化新发现时，才创建或追加 GALEN.md。"
             .to_string();
     }
     if text.len() <= 1600 {
@@ -644,6 +1083,15 @@ mod context_tests {
     }
 
     #[test]
+    fn missing_memory_is_not_advertised_as_an_existing_file() {
+        let ws = tmp_ws("missing_memory", &[]);
+        let index = memory_index(&ws);
+        assert!(index.contains("没有可用的 GALEN.md"));
+        assert!(index.contains("不要尝试读取不存在的文件"));
+        assert!(!index.contains("根目录下有 GALEN.md"));
+    }
+
+    #[test]
     fn memory_long_is_indexed() {
         let mut lines = String::new();
         for i in 0..60 {
@@ -787,6 +1235,180 @@ mod context_tests {
     }
 
     #[test]
+    fn workspace_plan_task_hides_rehab_and_command_tools() {
+        let defs = vec![
+            ToolDefinition {
+                name: "read_file".into(),
+                description: None,
+                input_schema: serde_json::json!({}),
+            },
+            ToolDefinition {
+                name: "write_file".into(),
+                description: None,
+                input_schema: serde_json::json!({}),
+            },
+            ToolDefinition {
+                name: "execute_command".into(),
+                description: None,
+                input_schema: serde_json::json!({}),
+            },
+            ToolDefinition {
+                name: "rehab_data".into(),
+                description: None,
+                input_schema: serde_json::json!({}),
+            },
+        ];
+        let selected = select_tools_for_task(
+            defs,
+            model_router::TaskKind::Chat,
+            "读取现有研究计划，只执行 n3，写入 output/research-plan.md",
+        );
+        let names: Vec<&str> = selected.iter().map(|tool| tool.name.as_str()).collect();
+        assert_eq!(names, vec!["read_file", "write_file"]);
+    }
+
+    #[test]
+    fn focused_plan_delivery_has_a_bounded_execution_contract() {
+        let prompt = "读取研究计划的当前节点并写入 output/result.md";
+        assert!(is_focused_plan_artifact_task(prompt));
+        assert_eq!(max_tool_turns_for_task(prompt), 7);
+        let contract = compile_task_contract(model_router::TaskKind::Chat, prompt);
+        assert_eq!(contract.class, TaskClass::FocusedPlanArtifact);
+        assert_eq!(contract.artifact_paths, vec!["output/result.md"]);
+        let policy = task_execution_policy(prompt);
+        assert!(policy.contains("最多使用 7 轮工具"));
+        assert!(policy.contains("禁止先列根目录"));
+        assert!(policy.contains("write_file 成功"));
+        assert!(policy.contains("禁止编造缺失数据"));
+        assert!(contract.disable_deep_reasoning);
+        assert!(validate_tool_call_against_contract(
+            &contract,
+            "write_file",
+            &serde_json::json!({"path": "output/result.md", "content": "ok"})
+        )
+        .is_ok());
+        assert!(validate_tool_call_against_contract(
+            &contract,
+            "write_file",
+            &serde_json::json!({"path": "./output/result.md", "content": "ok"})
+        )
+        .is_ok());
+        assert!(validate_tool_call_against_contract(
+            &contract,
+            "write_file",
+            &serde_json::json!({"path": "output/helper.py", "content": "bad"})
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn open_ended_analysis_keeps_the_global_safety_ceiling() {
+        assert_eq!(max_tool_turns_for_task("深入分析这批复杂数据"), 28);
+    }
+
+    #[test]
+    fn explicit_artifact_creation_uses_assumptions_instead_of_refusing() {
+        let prompt = "创建 output/delivery.md，包含研究问题、PICO、风险和下一步";
+        assert!(is_explicit_artifact_creation_task(prompt));
+        assert_eq!(max_tool_turns_for_task(prompt), 5);
+        let policy = task_execution_policy(prompt);
+        assert!(policy.contains("不得因缺少非关键背景而停下询问"));
+        assert!(policy.contains("合理假设"));
+        assert!(policy.contains("直接调用 write_file"));
+    }
+
+    #[test]
+    fn direct_answer_contract_removes_tools_thinking_and_dynamic_context() {
+        let prompt = "请用不超过 180 字解释 FMA-UE 的用途。直接回答，不要创建文件。";
+        let contract = compile_task_contract(model_router::TaskKind::QuickLookup, prompt);
+        assert_eq!(contract.class, TaskClass::DirectAnswer);
+        assert_eq!(contract.allowed_tools, Some(NO_TOOLS));
+        assert_eq!(contract.max_tool_turns, 1);
+        assert!(contract.disable_deep_reasoning);
+        assert_eq!(contract.response_token_cap, Some(768));
+
+        let ws = tmp_ws("direct_answer", &[("GALEN.md", "不应注入的记忆")]);
+        let context = build_turn_context(prompt, crate::modes::ChatMode::Auto, &ws, true);
+        assert!(context.contains("快速回答契约"));
+        assert!(!context.contains("当前工作区"));
+        assert!(!context.contains("不应注入的记忆"));
+
+        let persona = crate::personas::find_persona("medical");
+        let compact =
+            build_system_prompt_for_contract(&persona, crate::modes::ChatMode::Auto, &contract);
+        assert!(!compact.contains("search_pubmed"));
+        assert!(compact.len() < build_system_prompt(&persona, crate::modes::ChatMode::Auto).len());
+    }
+
+    #[test]
+    fn explicit_search_request_does_not_use_direct_answer_contract() {
+        let prompt = "请检索最新文献后简短回答";
+        let contract = compile_task_contract(model_router::TaskKind::QuickLookup, prompt);
+        assert_ne!(contract.class, TaskClass::DirectAnswer);
+        assert!(!contract.disable_deep_reasoning);
+    }
+
+    #[test]
+    fn working_memory_detects_no_gain_and_completed_delivery() {
+        let contract =
+            compile_task_contract(model_router::TaskKind::Chat, "创建 output/delivery.md");
+        let mut memory = WorkingMemory::default();
+        let listing = "[FILE] plan.json (20 bytes)\n[DIR] output (0 bytes)";
+        let list_input = serde_json::json!({"path": ""});
+        assert!(memory.observe_tool_result("list_files", &list_input, listing, false, false));
+        assert!(!memory.observe_tool_result(
+            "search_files",
+            &serde_json::json!({"pattern": "*"}),
+            listing,
+            false,
+            false
+        ));
+        memory.finish_turn(false);
+        assert_eq!(memory.consecutive_no_gain_turns, 1);
+
+        assert!(memory.observe_tool_result(
+            "write_file",
+            &serde_json::json!({"path": "output/delivery.md", "content": "done"}),
+            "Wrote file",
+            false,
+            false
+        ));
+        assert!(memory.delivery_complete(&contract));
+    }
+
+    #[test]
+    fn workspace_absolute_paths_are_normalized_only_when_inside_root() {
+        let root = PathBuf::from(r"C:\tmp\galen-workspace");
+        assert_eq!(
+            normalize_path_against_workspace(r"C:\tmp\galen-workspace", &root),
+            Some(String::new())
+        );
+        assert_eq!(
+            normalize_path_against_workspace(r"C:\tmp\galen-workspace\output\x.md", &root),
+            Some("output/x.md".to_string())
+        );
+        assert_eq!(
+            normalize_path_against_workspace(r"C:\tmp\outside\x.md", &root),
+            None
+        );
+    }
+
+    #[test]
+    fn rehab_data_requires_an_explicit_subject_data_query() {
+        assert!(!is_explicit_rehab_query("生成康复研究计划"));
+        assert!(is_explicit_rehab_query("查询患者的量表评估记录"));
+    }
+
+    #[test]
+    fn tool_result_budgets_are_task_specific() {
+        let read_budget = tool_result_budget("read_file", false);
+        let search_budget = tool_result_budget("search_files", false);
+        let error_budget = tool_result_budget("read_file", true);
+        assert!(read_budget.0 > search_budget.0);
+        assert!(error_budget.0 < read_budget.0);
+    }
+
+    #[test]
     fn auto_opening_is_compact_and_action_oriented() {
         let ws = tmp_ws("auto_opening", &[]);
         let tail = build_turn_context("分析肌电数据", crate::modes::ChatMode::Auto, &ws, true);
@@ -860,6 +1482,7 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
     trace: Option<TraceSink>,
     on_event: F,
 ) -> Result<ChatRunSummary, String> {
+    let run_started = Instant::now();
     timing_probe("run_chat:start");
     let client =
         make_client(&model_alias, &router).map_err(|e| format!("创建模型客户端失败: {e}"))?;
@@ -896,12 +1519,15 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
     };
 
     // Build cache-stable prefix
-    let system_prompt = build_system_prompt(&persona, mode);
+    let context_started = Instant::now();
+    let task_kind = model_router::TaskKind::from_intent(&user_message);
+    let task_contract = compile_task_contract(task_kind, &user_message);
+    let system_prompt = build_system_prompt_for_contract(&persona, mode, &task_contract);
     // Dynamic state is refreshed every turn while the cache-stable prefix stays unchanged.
     let first_turn = history.is_empty();
     let turn_context = build_turn_context(&user_message, mode, &workspace_root, first_turn);
+    let context_assembly_ms = context_started.elapsed().as_millis() as u64;
     timing_probe("run_chat:context_ready");
-    let task_kind = model_router::TaskKind::from_intent(&user_message);
 
     let mut history = history; // mutable copy
                                // The frontend stores the user's raw text, so adding a fresh context envelope
@@ -916,6 +1542,7 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
 
     // Build tool registry and shared context
     let mut registry = ToolRegistry::default();
+    let mcp_started = Instant::now();
     // Cache MCP connections globally — connect once, reuse across turns.
     {
         timing_probe("run_chat:mcp_start");
@@ -933,6 +1560,7 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
         }
         timing_probe("run_chat:mcp_ready");
     }
+    let mcp_setup_ms = mcp_started.elapsed().as_millis() as u64;
     let on_event: Arc<dyn Fn(ChatEvent) + Send + Sync> = Arc::new(on_event);
     let mut ctx = ToolContext::with_event_sender(medical.clone(), workspace_root, on_event.clone());
     ctx.mode = mode;
@@ -944,14 +1572,25 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
 
     // Multi-turn loop: keep going until model responds with text (no tool calls)
     let mut turn = 0;
-    let max_turns = 28;
+    let max_tool_turns = task_contract.max_tool_turns;
     let mut last_tool_name: Option<String> = None;
     let mut same_tool_streak: u32 = 0;
     let mut con_error_streak: u32 = 0;
     let mut final_chance_used = false;
     let mut final_turn = false;
+    let mut empty_response_retried = false;
     let mut compaction_count: u32 = 0;
-    let mut run_summary = ChatRunSummary::default();
+    // Reuse identical read-only calls within one run. This prevents repeated
+    // file/search/database reads from consuming latency and replaying another
+    // large result while never suppressing writes, commands or unknown MCP
+    // side effects.
+    let mut readonly_tool_cache: HashMap<String, (String, bool)> = HashMap::new();
+    let mut working_memory = WorkingMemory::default();
+    let mut run_summary = ChatRunSummary {
+        context_assembly_ms,
+        mcp_setup_ms,
+        ..ChatRunSummary::default()
+    };
     // Input compaction has its own budget. `max_tokens` below is the response
     // budget and must not be used as a proxy for the provider context window.
     let max_tokens = router
@@ -962,7 +1601,7 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
     let compact_limit = compact_trigger_bytes();
     loop {
         turn += 1;
-        if turn > max_turns {
+        if turn > max_tool_turns {
             if final_chance_used {
                 on_event(ChatEvent::Error("Reached max tool-call turns".into()));
                 break;
@@ -1014,6 +1653,7 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
                 });
                 let tail = std::mem::take(&mut history);
                 // 智能压缩：把中间消息压成结构化摘要（失败则回退占位符）
+                run_summary.model_request_count = run_summary.model_request_count.saturating_add(1);
                 let summary = summarize_middle(&client, &model_id, &middle)
                     .await
                     .unwrap_or_default();
@@ -1045,20 +1685,24 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
                 }
                 history.extend(tail);
                 compaction_count += 1;
+                run_summary.compaction_count = compaction_count;
                 on_event(ChatEvent::Delta("[上下文已自动压缩]\n".to_string()));
             }
         }
 
-        let tools = if final_turn {
+        let mut tools = if final_turn {
             // Force convergence: no tools available on the final turn.
             Vec::new()
         } else {
-            select_tools_for_task(
+            select_tools_for_contract(
                 registry.all_definitions_for_mode(ctx.mode).await,
-                task_kind,
-                &user_message,
+                &task_contract,
             )
         };
+        if working_memory.consecutive_no_gain_turns >= 2 && !task_contract.artifact_paths.is_empty()
+        {
+            tools.retain(|tool| tool.name == "write_file");
+        }
         timing_probe(&format!("turn:{turn}:tools_ready:{}", tools.len()));
 
         // Inject a strong convergence instruction before the final request.
@@ -1086,17 +1730,20 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
         // The first turn gets the user-selected reasoning budget. Mechanical
         // tool follow-ups run without deep thinking; DeepSeek still receives
         // the required prior reasoning_content in assistant history.
-        let (turn_reasoning_effort, turn_thinking) =
-            if turn > 1 || is_local_data_task(&user_message) {
-                (
-                    None,
-                    Some(ThinkingConfig {
-                        thinking_type: "disabled".to_string(),
-                    }),
-                )
-            } else {
-                (reasoning_effort.clone(), thinking.clone())
-            };
+        let (turn_reasoning_effort, turn_thinking) = if turn > 1
+            || is_local_data_task(&user_message)
+            || task_contract.disable_deep_reasoning
+            || empty_response_retried
+        {
+            (
+                None,
+                Some(ThinkingConfig {
+                    thinking_type: "disabled".to_string(),
+                }),
+            )
+        } else {
+            (reasoning_effort.clone(), thinking.clone())
+        };
         let request_max_tokens = if final_turn {
             max_tokens.min(8_192).max(4_096)
         } else if !tools.is_empty() {
@@ -1104,6 +1751,10 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
         } else {
             max_tokens.min(4_096)
         };
+        let request_max_tokens = task_contract
+            .response_token_cap
+            .map(|cap| request_max_tokens.min(cap))
+            .unwrap_or(request_max_tokens);
         let request = MessageRequest {
             model: model_id.clone(),
             messages: history.clone(),
@@ -1122,6 +1773,7 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
         };
 
         timing_probe(&format!("turn:{turn}:stream_start"));
+        run_summary.model_request_count = run_summary.model_request_count.saturating_add(1);
         let mut stream = client
             .stream_message(&request)
             .await
@@ -1156,14 +1808,25 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
                         .max(event.usage.cache_read_input_tokens);
                 }
                 Ok(Some(ApiStreamEvent::ContentBlockStart(event))) => {
+                    run_summary
+                        .ttft_ms
+                        .get_or_insert(run_started.elapsed().as_millis() as u64);
                     timing_probe(&format!("turn:{turn}:first_content_block"));
                     match event.content_block {
                         OutputContentBlock::Text { text } => {
+                            if !text.trim().is_empty() {
+                                run_summary
+                                    .ttfr_ms
+                                    .get_or_insert(run_started.elapsed().as_millis() as u64);
+                            }
                             // Only initialize the accumulator — don't emit.
                             // ContentBlockDelta events carry the actual streamed text.
                             current_text = text;
                         }
                         OutputContentBlock::ToolUse { id, name, .. } => {
+                            run_summary
+                                .ttfr_ms
+                                .get_or_insert(run_started.elapsed().as_millis() as u64);
                             // Flush any text/thinking before starting tool call
                             if !current_text.is_empty() {
                                 text_blocks.push(std::mem::take(&mut current_text));
@@ -1183,6 +1846,11 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
                 }
                 Ok(Some(ApiStreamEvent::ContentBlockDelta(event))) => match event.delta {
                     ContentBlockDelta::TextDelta { text } => {
+                        if !text.trim().is_empty() {
+                            run_summary
+                                .ttfr_ms
+                                .get_or_insert(run_started.elapsed().as_millis() as u64);
+                        }
                         current_text.push_str(&text);
                         on_event(ChatEvent::Delta(text));
                     }
@@ -1219,6 +1887,8 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
                 Err(e) => {
                     run_summary.absorb_usage(&request_usage);
                     run_summary.iterations = turn;
+                    run_summary.total_ms = run_started.elapsed().as_millis() as u64;
+                    run_summary.compaction_count = compaction_count;
                     on_event(ChatEvent::Error(format!("stream error: {e}")));
                     return Ok(run_summary);
                 }
@@ -1245,8 +1915,9 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
             assistant_content.push(InputContentBlock::Text { text: text.clone() });
         }
         for tool in &tool_calls {
-            let input: serde_json::Value =
+            let mut input: serde_json::Value =
                 serde_json::from_str(&tool.input_json).unwrap_or(serde_json::Value::Null);
+            normalize_workspace_tool_input(&mut input, &ctx);
             assistant_content.push(InputContentBlock::ToolUse {
                 id: tool.id.clone(),
                 name: tool.name.clone(),
@@ -1263,12 +1934,30 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
         // If no tool calls, this is the final text response
         if tool_calls.is_empty() {
             let full_text = text_blocks.join("");
+            if full_text.trim().is_empty() && !empty_response_retried {
+                empty_response_retried = true;
+                history.push(InputMessage {
+                    role: "user".to_string(),
+                    content: vec![InputContentBlock::Text {
+                        text: "[系统恢复指令] 上一轮只产生了内部推理，没有最终文本或工具调用。关闭深度思考，立即执行最小必要工具动作；若无需工具则直接给出完整结论。"
+                            .to_string(),
+                    }],
+                });
+                continue;
+            }
+            if full_text.trim().is_empty() {
+                on_event(ChatEvent::Error(
+                    "模型连续返回空响应：未生成文本或工具调用，请重试。".to_string(),
+                ));
+                break;
+            }
             on_event(ChatEvent::Done(full_text));
             break;
         }
 
         // Execute tools and build result message
         let mut tool_results: Vec<InputContentBlock> = Vec::new();
+        let mut turn_gained_information = false;
         for tool in &tool_calls {
             // --- stagnation detection ---
             if let Some(ref last_name) = last_tool_name {
@@ -1280,35 +1969,112 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
             }
             last_tool_name = Some(tool.name.clone());
 
-            let input: serde_json::Value =
+            let mut input: serde_json::Value =
                 serde_json::from_str(&tool.input_json).unwrap_or(serde_json::Value::Null);
-            let result = registry.execute_dynamic(&tool.name, input, &ctx).await;
-            let is_error = result.is_err();
+            normalize_workspace_tool_input(&mut input, &ctx);
+            let cache_key = format!(
+                "{}:{}",
+                tool.name,
+                serde_json::to_string(&input).unwrap_or_else(|_| tool.input_json.clone())
+            );
+            let cacheable = registry.is_write_tool(&tool.name) == Some(false);
+            let cached = cacheable
+                .then(|| readonly_tool_cache.get(&cache_key).cloned())
+                .flatten();
+            let (text, is_error, cache_hit) = if let Some((text, is_error)) = cached {
+                (text, is_error, true)
+            } else {
+                let result =
+                    match validate_tool_call_against_contract(&task_contract, &tool.name, &input) {
+                        Ok(()) => {
+                            registry
+                                .execute_dynamic(&tool.name, input.clone(), &ctx)
+                                .await
+                        }
+                        Err(error) => Err(error),
+                    };
+                let (text, is_error) = match result {
+                    Ok(ok) => (ok, false),
+                    Err(error) => (error, true),
+                };
+                if cacheable {
+                    readonly_tool_cache.insert(cache_key, (text.clone(), is_error));
+                }
+                (text, is_error, false)
+            };
+            turn_gained_information |=
+                working_memory.observe_tool_result(&tool.name, &input, &text, is_error, cache_hit);
+            if registry.is_write_tool(&tool.name) != Some(false) {
+                // A write/command may change previously cached file or search
+                // results, so never let the read cache outlive a mutation.
+                readonly_tool_cache.clear();
+            }
             let input_preview: String = tool.input_json.chars().take(300).collect();
             if is_error {
                 con_error_streak += 1;
             } else {
                 con_error_streak = 0;
             }
-            let (text, is_error) = match result {
-                Ok(ok) => (ok, false),
-                Err(e) => (e, true),
+            let trace_output = if cache_hit {
+                format!("[只读缓存命中：未重复执行]\n{text}")
+            } else {
+                text.clone()
             };
             record_trace(
                 &trace,
                 turn,
                 tool.name.clone(),
                 input_preview,
-                text.clone(),
+                trace_output,
                 is_error,
             );
 
+            let model_text = if cache_hit {
+                format!(
+                    "[系统：相同只读调用已复用缓存，未重复执行。请使用已有结果继续任务，不要再次调用相同参数。]\n{text}"
+                )
+            } else {
+                text
+            };
             tool_results.push(InputContentBlock::ToolResult {
                 tool_use_id: tool.id.clone(),
                 content: vec![ToolResultContentBlock::Text {
-                    text: compact_tool_result(&tool.name, &text, is_error),
+                    text: compact_tool_result(&tool.name, &model_text, is_error),
                 }],
                 is_error,
+            });
+        }
+
+        working_memory.finish_turn(turn_gained_information);
+        if working_memory.delivery_complete(&task_contract) {
+            final_turn = true;
+            tool_results.push(InputContentBlock::ToolResult {
+                tool_use_id: "__delivery_complete__".to_string(),
+                content: vec![ToolResultContentBlock::Text {
+                    text: "[系统：任务契约中的 Artifact 已全部成功写入。下一轮直接总结交付，不再调用工具。]"
+                        .to_string(),
+                }],
+                is_error: false,
+            });
+        } else if working_memory.consecutive_no_gain_turns == 1 {
+            tool_results.push(InputContentBlock::ToolResult {
+                tool_use_id: "__no_gain_1__".to_string(),
+                content: vec![ToolResultContentBlock::Text {
+                    text: "[系统：本轮没有获得新文件、新事实或新 Artifact。请停止扩大搜索，基于已有信息执行下一项必要动作。]"
+                        .to_string(),
+                }],
+                is_error: false,
+            });
+        } else if working_memory.consecutive_no_gain_turns >= 2
+            && !task_contract.artifact_paths.is_empty()
+        {
+            tool_results.push(InputContentBlock::ToolResult {
+                tool_use_id: "__no_gain_2__".to_string(),
+                content: vec![ToolResultContentBlock::Text {
+                    text: "[系统：连续两轮没有信息增益。探索型工具将被关闭；请立即写入目标 Artifact，明确标注假设或阻塞点。]"
+                        .to_string(),
+                }],
+                is_error: false,
             });
         }
 
@@ -1357,6 +2123,8 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
         });
     }
 
+    run_summary.total_ms = run_started.elapsed().as_millis() as u64;
+    run_summary.compaction_count = compaction_count;
     Ok(run_summary)
 }
 

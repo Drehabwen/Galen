@@ -292,6 +292,12 @@ pub async fn send_message(
                                 serde_json::json!({ "path": path, "content": content })
                             )
                         }
+                        ChatEvent::ArtifactCreated(artifact) => {
+                            emit!("artifact-created", artifact)
+                        }
+                        ChatEvent::ResearchTaskUpdated(task) => {
+                            emit!("research-task-updated", task)
+                        }
                     }
                     if let ChatEvent::Done(text) = &event {
                         if let Ok(mut captured) = captured_final.lock() {
@@ -669,6 +675,18 @@ pub fn get_evidence(state: State<AppState>) -> Result<Vec<crate::evidence::Evide
         None => return Ok(Vec::new()),
     };
     crate::evidence::load_evidence(&root)
+}
+
+#[tauri::command]
+pub fn get_artifacts(
+    state: State<AppState>,
+) -> Result<Vec<crate::artifact::ArtifactRecord>, String> {
+    let backend = lock_mutex(&state.backend)?;
+    let root = match backend.get_workspace_root() {
+        Some(root) => root,
+        None => return Ok(Vec::new()),
+    };
+    crate::artifact::list_artifacts(&root)
 }
 
 // ---------------------------------------------------------------------------

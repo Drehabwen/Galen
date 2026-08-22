@@ -1,10 +1,13 @@
+pub mod artifact;
 pub mod backend;
 pub mod chat_session;
 mod commands;
+pub mod eval;
 pub mod evidence;
 pub mod mcp_client;
 pub mod modes;
 pub mod personas;
+pub mod probe;
 pub mod research_task;
 pub mod runtime_manager;
 pub mod skills;
@@ -64,6 +67,7 @@ pub fn run() {
             commands::test_model_connection,
             commands::append_evidence,
             commands::get_evidence,
+            commands::get_artifacts,
             commands::create_research_task,
             commands::get_active_research_task,
             commands::save_research_task_nodes,

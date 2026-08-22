@@ -45,6 +45,8 @@ async fn run_stage(
         ChatEvent::ThinkingDone(_) => println!("\n--- 思考结束 ---"),
         ChatEvent::Error(e) => println!("\n[错误] {e}"),
         ChatEvent::Done(_) => println!("\n--- 完成 ---"),
+        ChatEvent::ArtifactCreated(artifact) => println!("\n[产物] {}", artifact.path),
+        ChatEvent::ResearchTaskUpdated(task) => println!("\n[任务] {}", task.title),
         _ => {}
     };
 

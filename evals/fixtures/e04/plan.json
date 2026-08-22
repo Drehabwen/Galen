@@ -1,0 +1,6 @@
+[
+  {"id":"n1","title":"检索文献","status":"completed","result":"完成 8 篇 RCT 筛选"},
+  {"id":"n2","title":"提取数据","status":"completed","result":"完成 FMA-UE 数据提取"},
+  {"id":"n3","title":"合并效应量并检查异质性","status":"pending","dependsOn":["n2"],"result":null},
+  {"id":"n4","title":"撰写报告","status":"pending","dependsOn":["n3"],"result":null}
+]

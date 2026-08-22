@@ -37,8 +37,16 @@ export function useResearchTask(
   const skipNextSaveRef = useRef(false);
 
   const acceptSnapshot = useCallback((snapshot: ResearchTask) => {
+    const normalizedNodes = normalizeResearchNodes(snapshot.nodes);
+    // Snapshots emitted by the host are authoritative. Synchronize both the
+    // task metadata and the canvas nodes, while preventing the mirror state
+    // from being written straight back as a redundant revision.
+    skipNextSaveRef.current = true;
     revisionRef.current = snapshot.revision;
-    setTask(snapshot);
+    setTask({ ...snapshot, nodes: normalizedNodes });
+    setNodes(normalizedNodes);
+    setConfirmed(normalizedNodes.length > 0);
+    setError(null);
   }, []);
 
   const restore = useCallback(async () => {
@@ -160,6 +168,7 @@ export function useResearchTask(
     createTask,
     patchNode,
     appendEvidence,
+    acceptSnapshot,
     flushWrites,
     restore,
     error,

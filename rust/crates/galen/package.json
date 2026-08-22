@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "test": "vitest run",
+    "test:ui-contract": "vitest run src/domain/deliveryLoop.test.ts",
+    "probe:closed-loop": "cargo run --manifest-path src-tauri/Cargo.toml --bin probe -- closed-loop",
     "preview": "vite preview",
     "tauri": "tauri"
   },

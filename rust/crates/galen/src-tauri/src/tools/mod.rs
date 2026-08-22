@@ -30,6 +30,7 @@ pub mod command;
 pub mod fs;
 pub mod medical;
 pub mod rehab;
+pub mod research;
 pub mod search;
 pub mod workspace_path;
 
@@ -176,6 +177,7 @@ impl ToolRegistry {
         self.register(medical::FormatCitation);
         self.register(clinical::AnalyzeClinicalCase);
         self.register(rehab::RehabData);
+        self.register(research::CreateResearchPlan);
         self.register(medical::SearchRehabLiterature);
 
         // File operations
@@ -196,6 +198,12 @@ impl ToolRegistry {
     /// Tool definitions for the model.
     pub fn definitions(&self) -> Vec<ToolDefinition> {
         self.tools.values().map(|t| t.definition()).collect()
+    }
+
+    /// Report whether a built-in tool mutates state. Unknown/MCP tools return
+    /// `None` so callers do not accidentally cache an external side effect.
+    pub fn is_write_tool(&self, name: &str) -> Option<bool> {
+        self.tools.get(name).map(|tool| tool.is_write())
     }
 
     // ── MCP ──
@@ -369,7 +377,7 @@ mod tests {
     fn registry_has_all_builtin_definitions() {
         let registry = ToolRegistry::default();
         let defs = registry.definitions();
-        assert_eq!(defs.len(), 16);
+        assert_eq!(defs.len(), 17);
         let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
         for expected in &[
             "search_pubmed",
@@ -378,6 +386,7 @@ mod tests {
             "analyze_clinical_case",
             "rehab_data",
             "search_rehab_literature",
+            "create_research_plan",
             "write_file",
             "read_file",
             "delete_file",

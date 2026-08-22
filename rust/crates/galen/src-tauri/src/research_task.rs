@@ -241,6 +241,90 @@ pub fn attach_evidence_ids(
     Ok(task)
 }
 
+/// Bind a delivered artifact to the active task and one concrete node. When a
+/// chat writes a file without first creating a plan, create a one-node direct
+/// delivery task so the artifact is never orphaned from the research canvas.
+pub fn attach_artifact(
+    workspace: &Path,
+    artifact_id: &str,
+    artifact_path: &str,
+    preferred_node_id: Option<&str>,
+) -> Result<ResearchTask, String> {
+    let _guard = lock_task_store()?;
+    let mut task = match load_or_migrate_active_task_unlocked(workspace)? {
+        Some(task) => task,
+        None => create_task_unlocked(
+            workspace,
+            artifact_title(artifact_path),
+            format!("交付工作区产物 {artifact_path}"),
+            vec![ResearchNode {
+                id: "delivery".to_string(),
+                index: "01".to_string(),
+                title: "直接交付".to_string(),
+                description: Some("由 Galen 自动创建并登记的工作区产物".to_string()),
+                node_type: "delivery".to_string(),
+                status: "pending".to_string(),
+                owner: Some("Galen".to_string()),
+                inputs: Vec::new(),
+                outputs: Vec::new(),
+                depends_on: Vec::new(),
+                tags: vec!["auto-created".to_string()],
+                risk_level: Some("low".to_string()),
+                approval_required: false,
+                sub_sessions: Vec::new(),
+                result: None,
+                evidence: Vec::new(),
+                extra: BTreeMap::new(),
+            }],
+        )?,
+    };
+
+    if !task.artifact_ids.iter().any(|id| id == artifact_id) {
+        task.artifact_ids.push(artifact_id.to_string());
+    }
+    let node_index = preferred_node_id
+        .and_then(|id| task.nodes.iter().position(|node| node.id == id))
+        .or_else(|| task.nodes.iter().position(|node| node.status == "running"))
+        .or_else(|| {
+            task.nodes.iter().position(|node| {
+                node.status != "completed"
+                    && node.depends_on.iter().all(|dependency| {
+                        task.nodes.iter().any(|candidate| {
+                            candidate.id == *dependency && candidate.status == "completed"
+                        })
+                    })
+            })
+        })
+        .or_else(|| task.nodes.len().checked_sub(1))
+        .ok_or("研究任务没有可绑定产物的节点")?;
+    let node = &mut task.nodes[node_index];
+    if !node.outputs.iter().any(|path| path == artifact_path) {
+        node.outputs.push(artifact_path.to_string());
+    }
+    node.status = "completed".to_string();
+    node.result = Some(format!("已生成产物 {artifact_path}"));
+
+    task.status = if task.nodes.iter().all(|node| node.status == "completed") {
+        ResearchTaskStatus::Deliverable
+    } else {
+        derive_status(&task.nodes)
+    };
+    task.schema_version = SCHEMA_VERSION;
+    task.revision = task.revision.saturating_add(1);
+    task.updated_at = now_timestamp();
+    save_task(workspace, &task)?;
+    Ok(task)
+}
+
+fn artifact_title(path: &str) -> String {
+    Path::new(path)
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("研究交付")
+        .to_string()
+}
+
 fn lock_task_store() -> Result<MutexGuard<'static, ()>, String> {
     TASK_STORE_LOCK
         .lock()
@@ -542,6 +626,37 @@ mod tests {
         let workspace = temp_workspace("traversal");
         let error = replace_nodes(&workspace, "../outside", 1, Vec::new()).unwrap_err();
         assert!(error.contains("ID 无效"));
+        let _ = std::fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn artifact_creates_a_direct_delivery_task_when_no_plan_exists() {
+        let workspace = temp_workspace("direct-artifact");
+        let task = attach_artifact(&workspace, "art-1", "output/result.md", None).unwrap();
+        assert_eq!(task.status, ResearchTaskStatus::Deliverable);
+        assert_eq!(task.nodes.len(), 1);
+        assert_eq!(task.nodes[0].outputs, vec!["output/result.md"]);
+        assert_eq!(task.artifact_ids, vec!["art-1"]);
+        let _ = std::fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn artifact_completes_the_preferred_plan_node() {
+        let workspace = temp_workspace("planned-artifact");
+        let mut second = node("s02", "pending");
+        second.depends_on = vec!["s01".to_string()];
+        let created = create_task(
+            &workspace,
+            "研究计划".to_string(),
+            "生成计划产物".to_string(),
+            vec![node("s01", "pending"), second],
+        )
+        .unwrap();
+        let task = attach_artifact(&workspace, "art-2", "output/brief.md", Some("s01")).unwrap();
+        assert_eq!(task.task_id, created.task_id);
+        assert_eq!(task.nodes[0].status, "completed");
+        assert_eq!(task.nodes[1].status, "pending");
+        assert_eq!(task.status, ResearchTaskStatus::Ready);
         let _ = std::fs::remove_dir_all(workspace);
     }
 }

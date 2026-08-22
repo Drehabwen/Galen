@@ -36,7 +36,7 @@ impl GalenTool for WriteFile {
         ToolDefinition {
             name: "write_file".into(),
             description: Some("Write content to a file in the workspace.".into()),
-            input_schema: json!({"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}),
+            input_schema: json!({"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"},"node_id":{"type":"string","description":"Optional research node id to receive this artifact."}},"required":["path","content"]}),
         }
     }
     fn is_write(&self) -> bool {
@@ -45,7 +45,14 @@ impl GalenTool for WriteFile {
     async fn execute(&self, input: Value, ctx: &ToolContext) -> Result<String, String> {
         let path = input["path"].as_str().ok_or("Missing 'path'")?;
         let content = input["content"].as_str().ok_or("Missing 'content'")?;
+        let preferred_node_id = input["node_id"].as_str().map(str::to_string);
         let target = resolve_workspace_path(&ctx.workspace_root, path)?;
+        let workspace = ctx
+            .workspace_root
+            .lock()
+            .map_err(|error| format!("Workspace lock error: {error}"))?
+            .clone()
+            .ok_or("请先选择工作区")?;
         let target_str = target.to_string_lossy().to_string();
         let content_owned = content.to_string();
         let result =
@@ -53,7 +60,37 @@ impl GalenTool for WriteFile {
                 .await
                 .map_err(|e| format!("{e}"))?
                 .map_err(|e| format!("{e}"))?;
-        Ok(format!("Wrote to {}", result.file_path))
+        let active_task_id =
+            crate::research_task::load_active_task(&workspace)?.map(|task| task.task_id);
+        let artifact = crate::artifact::register_file(
+            &workspace,
+            path,
+            active_task_id,
+            preferred_node_id.clone(),
+        )?;
+        let task = crate::research_task::attach_artifact(
+            &workspace,
+            &artifact.id,
+            &artifact.path,
+            preferred_node_id.as_deref(),
+        )?;
+        let node_id = task
+            .nodes
+            .iter()
+            .find(|node| node.outputs.iter().any(|output| output == &artifact.path))
+            .map(|node| node.id.clone())
+            .ok_or("产物已写入，但未能绑定研究节点")?;
+        let artifact =
+            crate::artifact::link_artifact(&workspace, &artifact.id, &task.task_id, &node_id)?;
+        ctx.send_event(ChatEvent::ResearchTaskUpdated(task.clone()));
+        ctx.send_event(ChatEvent::ArtifactCreated(artifact.clone()));
+        Ok(json!({
+            "status": "delivered",
+            "file_path": result.file_path,
+            "artifact": artifact,
+            "research_task": task,
+        })
+        .to_string())
     }
 }
 

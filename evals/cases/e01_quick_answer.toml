@@ -1,0 +1,17 @@
+schema_version = 1
+id = "E01"
+name = "快速科研问答"
+suite = "smoke"
+prompt = "请用不超过 180 字解释 FMA-UE 在脑卒中上肢康复研究中的用途，并指出分数升高通常代表什么。直接回答，不要创建文件。"
+timeout_seconds = 180
+max_model_requests = 2
+max_tool_calls = 2
+max_human_interventions = 0
+
+[required]
+facts = ["FMA-UE"]
+
+[forbidden]
+repeated_call_limit = 1
+tools = ["execute_command", "write_file"]
+response_patterns = ["我无法回答"]
