@@ -103,6 +103,7 @@ rust/
 | 文档 | 说明 |
 |------|------|
 | [产品使用说明](docs/GALEN_USER_GUIDE.md) | 面向使用者的完整操作手册 |
+| [Alpha 自由探索手册](docs/GALEN_ALPHA_EXPLORATION_GUIDE.md) | 面向受邀体验者的安全边界、探索方向与问题反馈模板 |
 | [统一数据模型](docs/rehab-data-model.md) | 多模态康复数据的接入与证据链设计 |
 | [开发者接入](docs/DEVELOPER_ONBOARDING.md) | macOS / Windows 开发者环境、构建与协作规则 |
 | [PRD](docs/galen-prd-v0.2.md) | 产品需求与迭代方向 |
