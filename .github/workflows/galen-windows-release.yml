@@ -17,7 +17,28 @@ jobs:
   publish:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+
+      - name: Validate updater signing secret
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) {
+            throw "TAURI_SIGNING_PRIVATE_KEY is missing."
+          }
+
+          try {
+            $decoded = [Text.Encoding]::UTF8.GetString(
+              [Convert]::FromBase64String($env:TAURI_SIGNING_PRIVATE_KEY.Trim())
+            )
+          } catch {
+            throw "TAURI_SIGNING_PRIVATE_KEY must be the exact base64 text from galen-updater.key, without quotes, code fences, or a file path."
+          }
+
+          if (-not $decoded.StartsWith("untrusted comment:")) {
+            throw "TAURI_SIGNING_PRIVATE_KEY decoded successfully but is not a Tauri updater private key."
+          }
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -25,7 +46,7 @@ jobs:
         with:
           workspaces: rust -> rust/target
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: npm
