@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicepkg/vscode-tauri/main/schemas/tauri.conf.schema.json",
   "productName": "Galen",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "com.galen.app",
   "build": {
     "frontendDist": "../dist",
@@ -29,6 +29,7 @@
   "bundle": {
     "active": true,
     "targets": "nsis",
+    "createUpdaterArtifacts": true,
     "externalBin": [
       "binaries/typst",
       "binaries/deno",
@@ -42,6 +43,17 @@
     ],
     "macOS": {
       "minimumSystemVersion": "11.0"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IERERkVBRUREMTA5MDA0MgpSV1JDQUFuUjdlcmZEUWdBNktxU1puK0phSU04eFQvL3dXMzdqNnNTeVBrbVRuclZpSmluVlV1Rgo=",
+      "endpoints": [
+        "https://github.com/Drehabwen/Galen/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

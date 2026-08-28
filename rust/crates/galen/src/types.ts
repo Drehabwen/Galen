@@ -15,6 +15,15 @@ export interface ModelStatus {
   is_default: boolean;
 }
 
+export interface DecisionRecord {
+  id: string;
+  timestampMs: number;
+  statement: string;
+  topic: string;
+  status: "active" | "superseded" | "dismissed";
+  supersededBy?: string | null;
+}
+
 export interface FileEntry {
   name: string;
   path: string;

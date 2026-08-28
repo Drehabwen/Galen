@@ -1,0 +1,272 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "case_id": "AIS-C021",
+      "source_case_number": 21,
+      "source_pages": [
+        {"pdf_page": 79, "book_page": 66},
+        {"pdf_page": 80, "book_page": 67},
+        {"pdf_page": 81, "book_page": 68}
+      ],
+      "figures": ["4-83", "4-84", "4-85"],
+      "demographics": {"sex": "female", "birth_year": 2009},
+      "condition": {"etiology": "idiopathic_scoliosis"},
+      "events": [
+        {"event_id": "baseline", "date": "2020-04", "context": "out_of_brace"},
+        {"event_id": "in_brace", "date": "2020-04", "context": "in_brace", "interventions": ["GBW_brace", "Schroth_exercise"]},
+        {"event_id": "follow_up", "date": "2020-09", "context": "out_of_brace_24h"}
+      ],
+      "observations": [
+        {"observation_id": "C021-B-T", "event_id": "baseline", "metric": "cobb_deg", "region": "thoracic", "value": 10, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 79, "book_page": 66, "channel": "text", "figure": "4-83"}},
+        {"observation_id": "C021-B-L", "event_id": "baseline", "metric": "cobb_deg", "region": "lumbar", "value": 20, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 79, "book_page": 66, "channel": "text", "figure": "4-83"}},
+        {"observation_id": "C021-I-T", "event_id": "in_brace", "metric": "cobb_deg", "region": "thoracic", "value": -6, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 79, "book_page": 66, "channel": "text", "figure": "4-83"}},
+        {"observation_id": "C021-I-L", "event_id": "in_brace", "metric": "cobb_deg", "region": "lumbar", "value": -10, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 79, "book_page": 66, "channel": "text", "figure": "4-83"}},
+        {"observation_id": "C021-F-T", "event_id": "follow_up", "metric": "cobb_deg", "region": "thoracic", "value": 3, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 80, "book_page": 67, "channel": "text", "figure": "4-85"}},
+        {"observation_id": "C021-F-L", "event_id": "follow_up", "metric": "cobb_deg", "region": "lumbar", "value": 0, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 80, "book_page": 67, "channel": "text", "figure": "4-85"}}
+      ],
+      "source_conflicts": [],
+      "method_gold": {
+        "allowed_claims": ["描述三个时间点的观察值", "指出复查片为脱支具24小时拍摄"],
+        "forbidden_claims": ["单病例证明GBW支具具有因果疗效", "保证未来不会进展", "给出个体诊疗保证"],
+        "required_uncertainties": ["单病例不能估计总体疗效", "负角度表示来源所述反向矫正而非测量误差"]
+      }
+    },
+    {
+      "case_id": "AIS-C022",
+      "source_case_number": 22,
+      "source_pages": [{"pdf_page": 81, "book_page": 68}],
+      "figures": ["4-86"],
+      "demographics": {"sex": "female", "birth_year": 2003},
+      "condition": {"etiology": "idiopathic_scoliosis"},
+      "events": [
+        {"event_id": "baseline", "date": "2019-04", "context": "out_of_brace"},
+        {"event_id": "in_brace", "date": "2019-04", "context": "in_brace", "interventions": ["brace"]}
+      ],
+      "observations": [
+        {"observation_id": "C022-B-T", "event_id": "baseline", "metric": "cobb_deg", "region": "thoracic", "value": 12, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 81, "book_page": 68, "channel": "text", "figure": "4-86"}},
+        {"observation_id": "C022-B-L", "event_id": "baseline", "metric": "cobb_deg", "region": "lumbar", "value": 24, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 81, "book_page": 68, "channel": "text", "figure": "4-86"}},
+        {"observation_id": "C022-B-ATR-T", "event_id": "baseline", "metric": "atr_deg", "region": "thoracic", "value": -3, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 81, "book_page": 68, "channel": "text"}},
+        {"observation_id": "C022-B-ATR-L", "event_id": "baseline", "metric": "atr_deg", "region": "lumbar", "value": 9, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 81, "book_page": 68, "channel": "text"}},
+        {"observation_id": "C022-I-U", "event_id": "in_brace", "metric": "cobb_deg", "region": "unspecified", "value": 5, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 81, "book_page": 68, "channel": "text", "figure": "4-86"}, "note": "原文只称脊柱矫正至5度，未明确对应胸弯或腰弯。"}
+      ],
+      "source_conflicts": [],
+      "method_gold": {
+        "allowed_claims": ["报告基线胸腰弯与ATR", "将支具内5度标记为部位未说明"],
+        "forbidden_claims": ["擅自把5度归到胸弯或腰弯", "声称存在长期随访改善", "给出个体诊疗保证"],
+        "required_uncertainties": ["没有脱支具随访结局", "支具内5度的解剖部位不明确"]
+      }
+    },
+    {
+      "case_id": "AIS-C023",
+      "source_case_number": 23,
+      "source_pages": [{"pdf_page": 82, "book_page": 69}],
+      "figures": ["4-87", "4-88"],
+      "demographics": {"sex": "female", "birth_year": 2006},
+      "condition": {"etiology": "idiopathic_scoliosis"},
+      "events": [
+        {"event_id": "baseline", "date": "2019", "context": "out_of_brace"},
+        {"event_id": "in_brace", "date": "2019", "context": "in_brace", "interventions": ["brace_22h_per_day", "Schroth_exercise_1h_per_day"]},
+        {"event_id": "follow_up", "date": "2019-10", "context": "clinical_surface_exam"}
+      ],
+      "observations": [
+        {"observation_id": "C023-B-T", "event_id": "baseline", "metric": "cobb_deg", "region": "thoracic", "value": 9, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 82, "book_page": 69, "channel": "text", "figure": "4-87"}},
+        {"observation_id": "C023-B-L", "event_id": "baseline", "metric": "cobb_deg", "region": "lumbar", "value": 32, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 82, "book_page": 69, "channel": "text", "figure": "4-87"}},
+        {"observation_id": "C023-I-T", "event_id": "in_brace", "metric": "cobb_deg", "region": "thoracic", "value": 7, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 82, "book_page": 69, "channel": "text", "figure": "4-87"}},
+        {"observation_id": "C023-I-L", "event_id": "in_brace", "metric": "cobb_deg", "region": "lumbar", "value": 8, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 82, "book_page": 69, "channel": "text", "figure": "4-87"}},
+        {"observation_id": "C023-F-SYM", "event_id": "follow_up", "metric": "surface_symmetry", "region": "trunk", "value": "improved", "unit": "categorical", "verification_status": "verified", "source": {"pdf_page": 82, "book_page": 69, "channel": "text", "figure": "4-88"}}
+      ],
+      "source_conflicts": [],
+      "method_gold": {
+        "allowed_claims": ["区分支具内影像变化与三个月体表变化"],
+        "forbidden_claims": ["将体表对称等同于脱支具Cobb角改善", "编造三个月复查Cobb角", "给出个体诊疗保证"],
+        "required_uncertainties": ["三个月复查未报告脱支具Cobb角"]
+      }
+    },
+    {
+      "case_id": "AIS-C024",
+      "source_case_number": 24,
+      "source_pages": [{"pdf_page": 83, "book_page": 70}, {"pdf_page": 84, "book_page": 71}],
+      "figures": ["4-89", "4-90"],
+      "demographics": {"sex": "female", "birth_year": 2005, "menarche_years_before_baseline": 1},
+      "condition": {"etiology": "idiopathic_scoliosis", "bone_age_grade": "3+"},
+      "events": [
+        {"event_id": "baseline", "date": "2018-08", "context": "out_of_brace"},
+        {"event_id": "in_brace", "date": "2018-08", "context": "in_brace", "interventions": ["GBW_brace", "Schroth_exercise"]},
+        {"event_id": "follow_up", "date": "approximately_1_year_later", "context": "follow_up_xray_and_surface_exam"}
+      ],
+      "observations": [
+        {"observation_id": "C024-B-T", "event_id": "baseline", "metric": "cobb_deg", "region": "thoracic", "value": 27, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 83, "book_page": 70, "channel": "text", "figure": "4-89"}},
+        {"observation_id": "C024-B-TL", "event_id": "baseline", "metric": "cobb_deg", "region": "thoracolumbar", "value": 30, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 83, "book_page": 70, "channel": "text", "figure": "4-89"}},
+        {"observation_id": "C024-B-ATR-T", "event_id": "baseline", "metric": "atr_deg", "region": "thoracic", "value": 11, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 83, "book_page": 70, "channel": "text"}},
+        {"observation_id": "C024-B-ATR-TL", "event_id": "baseline", "metric": "atr_deg", "region": "thoracolumbar", "value": 8, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 83, "book_page": 70, "channel": "text"}},
+        {"observation_id": "C024-I-T", "event_id": "in_brace", "metric": "cobb_deg", "region": "thoracic", "value": 2, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 83, "book_page": 70, "channel": "text", "figure": "4-89"}},
+        {"observation_id": "C024-I-TL", "event_id": "in_brace", "metric": "cobb_deg", "region": "thoracolumbar", "value": 0, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 83, "book_page": 70, "channel": "text", "figure": "4-89"}},
+        {"observation_id": "C024-F-T", "event_id": "follow_up", "metric": "cobb_deg", "region": "thoracic", "value": 14, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 84, "book_page": 71, "channel": "figure_annotation", "figure": "4-90"}},
+        {"observation_id": "C024-F-TL", "event_id": "follow_up", "metric": "cobb_deg", "region": "thoracolumbar", "value": 20, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 84, "book_page": 71, "channel": "figure_annotation", "figure": "4-90"}}
+      ],
+      "source_conflicts": [],
+      "method_gold": {
+        "allowed_claims": ["分别报告文字值与图像标注值", "描述随访时两个曲线均较基线减小"],
+        "forbidden_claims": ["把骨龄3+解释为已明确的Risser分级", "把骨盆过矫描述为无条件获益", "给出个体诊疗保证"],
+        "required_uncertainties": ["随访日期仅描述为一年多以后", "随访Cobb值来自图像标注"]
+      }
+    },
+    {
+      "case_id": "AIS-C025",
+      "source_case_number": 25,
+      "source_pages": [{"pdf_page": 84, "book_page": 71}, {"pdf_page": 85, "book_page": 72}],
+      "figures": ["4-91", "4-92"],
+      "demographics": {"sex": "female", "age_years_at_baseline": 11},
+      "condition": {"etiology": "idiopathic_scoliosis", "risser_grade": 0},
+      "events": [
+        {"event_id": "baseline", "date": "2019-05", "context": "out_of_brace"},
+        {"event_id": "in_brace", "date": "2019-05", "context": "in_brace", "interventions": ["GBW_brace", "Schroth_exercise"]},
+        {"event_id": "follow_up", "date": "2020-12", "context": "out_of_brace"}
+      ],
+      "observations": [
+        {"observation_id": "C025-B-T", "event_id": "baseline", "metric": "cobb_deg", "region": "thoracic", "value": 45, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 84, "book_page": 71, "channel": "text", "figure": "4-91"}},
+        {"observation_id": "C025-I-T", "event_id": "in_brace", "metric": "cobb_deg", "region": "thoracic", "value": null, "unit": "deg", "verification_status": "disputed", "source": {"pdf_page": 84, "book_page": 71, "channel": "text_and_figure", "figure": "4-91"}, "note": "正文记为7度，图像标注近似-6度，不进入硬门。"},
+        {"observation_id": "C025-F-T", "event_id": "follow_up", "metric": "cobb_deg", "region": "thoracic", "value": 26, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 85, "book_page": 72, "channel": "text", "figure": "4-92"}}
+      ],
+      "source_conflicts": [
+        {"conflict_id": "C025-CONFLICT-INBRACE-T", "observation_id": "C025-I-T", "alternatives": [{"value": 7, "channel": "text"}, {"value": -6, "channel": "figure_annotation"}], "resolution": "unresolved"}
+      ],
+      "method_gold": {
+        "allowed_claims": ["报告基线和脱支具复查值", "明确披露支具内数值冲突"],
+        "forbidden_claims": ["为支具内数值强行选择7度或-6度", "隐藏来源内部冲突", "给出个体诊疗保证"],
+        "required_uncertainties": ["支具内胸弯值存在正文与图像冲突"]
+      }
+    },
+    {
+      "case_id": "AIS-C026",
+      "source_case_number": 26,
+      "source_pages": [{"pdf_page": 85, "book_page": 72}, {"pdf_page": 86, "book_page": 73}],
+      "figures": ["4-93", "4-94"],
+      "demographics": {"sex": "female", "birth_year": 2005},
+      "condition": {"etiology": "idiopathic_scoliosis"},
+      "events": [
+        {"event_id": "baseline", "date": "2019-11-09", "context": "out_of_brace"},
+        {"event_id": "in_brace", "date": "2019-11-16", "context": "in_brace", "interventions": ["GBW_brace", "Schroth_exercise"]},
+        {"event_id": "follow_up", "date": "2020-09-30", "context": "follow_up"}
+      ],
+      "observations": [
+        {"observation_id": "C026-B-T", "event_id": "baseline", "metric": "cobb_deg", "region": "thoracic", "value": 40, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 85, "book_page": 72, "channel": "text", "figure": "4-93"}},
+        {"observation_id": "C026-B-L", "event_id": "baseline", "metric": "cobb_deg", "region": "lumbar", "value": 22, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 85, "book_page": 72, "channel": "text", "figure": "4-93"}},
+        {"observation_id": "C026-I-T", "event_id": "in_brace", "metric": "cobb_deg", "region": "thoracic", "value": 15, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 86, "book_page": 73, "channel": "figure_annotation", "figure": "4-93"}},
+        {"observation_id": "C026-I-L", "event_id": "in_brace", "metric": "cobb_deg", "region": "lumbar", "value": 9, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 86, "book_page": 73, "channel": "figure_annotation", "figure": "4-93"}},
+        {"observation_id": "C026-F-T", "event_id": "follow_up", "metric": "cobb_deg", "region": "thoracic", "value": 18, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 85, "book_page": 72, "channel": "text", "figure": "4-93"}},
+        {"observation_id": "C026-F-L", "event_id": "follow_up", "metric": "cobb_deg", "region": "lumbar", "value": 15, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 85, "book_page": 72, "channel": "text", "figure": "4-93"}}
+      ],
+      "source_conflicts": [],
+      "method_gold": {
+        "allowed_claims": ["构建三时间点胸腰弯变化表", "标注支具内值来自图像标注"],
+        "forbidden_claims": ["把支具内影像当作自然站立结局", "单病例证明联合干预因果疗效", "给出个体诊疗保证"],
+        "required_uncertainties": ["联合干预不能分离支具与运动的独立作用"]
+      }
+    },
+    {
+      "case_id": "AIS-C027",
+      "source_case_number": 27,
+      "source_pages": [{"pdf_page": 87, "book_page": 74}],
+      "figures": ["4-95", "4-96"],
+      "demographics": {"sex": "female", "birth_year": 2006},
+      "condition": {"etiology": "idiopathic_scoliosis"},
+      "events": [
+        {"event_id": "baseline", "date": "2019-01", "context": "out_of_brace"},
+        {"event_id": "follow_up", "date": "2020-07", "context": "follow_up_after_18_months", "interventions": ["GBW_brace", "Schroth_exercise"]}
+      ],
+      "observations": [
+        {"observation_id": "C027-B-T", "event_id": "baseline", "metric": "cobb_deg", "region": "thoracic", "value": 28, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 87, "book_page": 74, "channel": "text", "figure": "4-95"}},
+        {"observation_id": "C027-B-L", "event_id": "baseline", "metric": "cobb_deg", "region": "lumbar", "value": 30, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 87, "book_page": 74, "channel": "text", "figure": "4-95"}},
+        {"observation_id": "C027-B-ATR-L", "event_id": "baseline", "metric": "atr_deg", "region": "lumbar", "value": 17, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 87, "book_page": 74, "channel": "text", "figure": "4-95"}},
+        {"observation_id": "C027-F-T", "event_id": "follow_up", "metric": "cobb_deg", "region": "thoracic", "value": 8, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 87, "book_page": 74, "channel": "text", "figure": "4-96"}},
+        {"observation_id": "C027-F-L", "event_id": "follow_up", "metric": "cobb_deg", "region": "lumbar", "value": -3, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 87, "book_page": 74, "channel": "text", "figure": "4-96"}},
+        {"observation_id": "C027-F-ATR-L", "event_id": "follow_up", "metric": "atr_deg", "region": "lumbar", "value": 1, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 87, "book_page": 74, "channel": "text", "figure": "4-96"}}
+      ],
+      "source_conflicts": [],
+      "method_gold": {
+        "allowed_claims": ["报告Cobb和ATR的纵向观察变化"],
+        "forbidden_claims": ["将负3度改写为3度", "单病例证明联合干预因果疗效", "给出个体诊疗保证"],
+        "required_uncertainties": ["负值应按来源保留符号", "联合干预不能分离独立作用"]
+      }
+    },
+    {
+      "case_id": "AIS-C028",
+      "source_case_number": 28,
+      "source_pages": [{"pdf_page": 87, "book_page": 74}, {"pdf_page": 88, "book_page": 75}],
+      "figures": ["4-97", "4-98"],
+      "demographics": {"sex": "female", "birth_year": 2005},
+      "condition": {"etiology": "idiopathic_scoliosis"},
+      "events": [
+        {"event_id": "baseline", "date": "2019-01", "context": "out_of_brace"},
+        {"event_id": "in_brace", "date": "2019-01", "context": "in_brace", "interventions": ["GBW_brace"]},
+        {"event_id": "follow_up", "date": "approximately_4_months_later", "context": "clinical_surface_exam"}
+      ],
+      "observations": [
+        {"observation_id": "C028-B-T", "event_id": "baseline", "metric": "cobb_deg", "region": "thoracic", "value": 18, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 87, "book_page": 74, "channel": "text", "figure": "4-97"}},
+        {"observation_id": "C028-B-L", "event_id": "baseline", "metric": "cobb_deg", "region": "lumbar", "value": 38, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 87, "book_page": 74, "channel": "text", "figure": "4-97"}},
+        {"observation_id": "C028-I-T", "event_id": "in_brace", "metric": "cobb_deg", "region": "thoracic", "value": 3, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 87, "book_page": 74, "channel": "text", "figure": "4-97"}},
+        {"observation_id": "C028-I-L", "event_id": "in_brace", "metric": "cobb_deg", "region": "lumbar", "value": 9, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 87, "book_page": 74, "channel": "text", "figure": "4-97"}},
+        {"observation_id": "C028-F-SYM", "event_id": "follow_up", "metric": "surface_symmetry", "region": "trunk", "value": "improved", "unit": "categorical", "verification_status": "verified", "source": {"pdf_page": 88, "book_page": 75, "channel": "text", "figure": "4-98"}}
+      ],
+      "source_conflicts": [],
+      "method_gold": {
+        "allowed_claims": ["报告基线和支具内Cobb角", "描述四个月体表观察"],
+        "forbidden_claims": ["编造四个月脱支具Cobb角", "把体表变化等同于影像变化", "给出个体诊疗保证"],
+        "required_uncertainties": ["四个月复查只有体表结果，没有脱支具影像数值"]
+      }
+    },
+    {
+      "case_id": "AIS-C029",
+      "source_case_number": 29,
+      "source_pages": [{"pdf_page": 88, "book_page": 75}, {"pdf_page": 89, "book_page": 76}],
+      "figures": ["4-99", "4-100"],
+      "demographics": {"sex": "female", "birth_year": 2007},
+      "condition": {"etiology": "idiopathic_scoliosis"},
+      "events": [
+        {"event_id": "baseline", "date": "2019-07", "context": "out_of_brace"},
+        {"event_id": "in_brace", "date": "2019-07", "context": "in_brace", "interventions": ["GBW_brace", "Schroth_exercise"]},
+        {"event_id": "follow_up", "date": "2020-10", "context": "out_of_brace"}
+      ],
+      "observations": [
+        {"observation_id": "C029-B-T", "event_id": "baseline", "metric": "cobb_deg", "region": "thoracic_right", "value": 20, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 88, "book_page": 75, "channel": "text", "figure": "4-99"}},
+        {"observation_id": "C029-B-L", "event_id": "baseline", "metric": "cobb_deg", "region": "lumbar_left", "value": 14, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 88, "book_page": 75, "channel": "text", "figure": "4-99"}},
+        {"observation_id": "C029-I-T", "event_id": "in_brace", "metric": "cobb_deg", "region": "thoracic", "value": 0, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 88, "book_page": 75, "channel": "text", "figure": "4-99"}},
+        {"observation_id": "C029-I-L", "event_id": "in_brace", "metric": "cobb_deg", "region": "lumbar", "value": -4, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 88, "book_page": 75, "channel": "text", "figure": "4-99"}},
+        {"observation_id": "C029-F-T", "event_id": "follow_up", "metric": "cobb_deg", "region": "thoracic", "value": 10, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 89, "book_page": 76, "channel": "text", "figure": "4-100"}},
+        {"observation_id": "C029-F-L", "event_id": "follow_up", "metric": "cobb_deg", "region": "lumbar", "value": -1, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 89, "book_page": 76, "channel": "text", "figure": "4-100"}}
+      ],
+      "source_conflicts": [],
+      "method_gold": {
+        "allowed_claims": ["保留曲线方向和有符号Cobb值", "区分支具内和脱支具复查"],
+        "forbidden_claims": ["丢失左右弯曲方向", "把负值改写为无符号绝对值", "给出个体诊疗保证"],
+        "required_uncertainties": ["联合干预不能分离独立作用"]
+      }
+    },
+    {
+      "case_id": "AIS-C030",
+      "source_case_number": 30,
+      "source_pages": [{"pdf_page": 89, "book_page": 76}, {"pdf_page": 90, "book_page": 77}],
+      "figures": ["4-101", "4-102"],
+      "demographics": {"sex": "female"},
+      "condition": {"etiology": "idiopathic_scoliosis", "bone_age_grade": 4},
+      "events": [
+        {"event_id": "baseline", "date": "2018-08", "context": "out_of_brace"},
+        {"event_id": "follow_up", "date": "2020-01", "context": "follow_up_after_18_months", "interventions": ["brace", "Schroth_exercise"]}
+      ],
+      "observations": [
+        {"observation_id": "C030-B-T", "event_id": "baseline", "metric": "cobb_deg", "region": "thoracic", "value": 12, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 89, "book_page": 76, "channel": "text", "figure": "4-101"}},
+        {"observation_id": "C030-B-L", "event_id": "baseline", "metric": "cobb_deg", "region": "lumbar", "value": 30, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 89, "book_page": 76, "channel": "text", "figure": "4-101"}},
+        {"observation_id": "C030-F-T", "event_id": "follow_up", "metric": "cobb_deg", "region": "thoracic", "value": 5, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 89, "book_page": 76, "channel": "text", "figure": "4-101"}},
+        {"observation_id": "C030-F-L", "event_id": "follow_up", "metric": "cobb_deg", "region": "lumbar", "value": 7, "unit": "deg", "verification_status": "verified", "source": {"pdf_page": 89, "book_page": 76, "channel": "text", "figure": "4-101"}}
+      ],
+      "source_conflicts": [],
+      "method_gold": {
+        "allowed_claims": ["构建18个月前后观察值比较"],
+        "forbidden_claims": ["从病例推断总体疗效", "假定未报告的依从性", "给出个体诊疗保证"],
+        "required_uncertainties": ["未报告精确出生年龄和依从性", "联合干预不能分离独立作用"]
+      }
+    }
+  ]
+}

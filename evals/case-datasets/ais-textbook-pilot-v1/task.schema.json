@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://galen.local/schemas/ais-task-v1.json",
+  "title": "Galen case-derived evaluation task",
+  "type": "object",
+  "required": ["task_id", "case_id", "split", "task_type", "input_ref", "visible_event_ids", "prompt", "hard_gate_observation_ids", "forbidden_claims"],
+  "properties": {
+    "task_id": {"type": "string"},
+    "case_id": {"type": "string", "pattern": "^AIS-C[0-9]{3}$"},
+    "split": {"enum": ["development", "validation", "hidden"]},
+    "task_type": {"enum": ["baseline_extraction", "temporal_safety", "longitudinal_synthesis", "missing_data_audit", "research_boundary"]},
+    "input_ref": {"type": "string", "pattern": "^inputs\\.jsonl#AIS-C[0-9]{3}-T[1-4]$"},
+    "visible_event_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+    "hidden_event_ids": {"type": "array", "items": {"type": "string"}},
+    "hard_gate_observation_ids": {"type": "array", "items": {"type": "string"}},
+    "forbidden_claims": {"type": "array", "items": {"type": "string"}}
+  }
+}

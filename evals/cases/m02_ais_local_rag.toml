@@ -1,0 +1,23 @@
+schema_version = 1
+id = "M02"
+name = "脊柱侧弯本地证据优先与可预览交付"
+suite = "medical-rag"
+risk_tier = "high"
+prompt = "请仅使用当前研究任务已经沉淀的本地证据，回答：青少年特发性脊柱侧弯的研究中，施罗斯训练通常关注哪些影像或躯干结局，生活质量可使用什么量表？先检索本地证据，不访问外部文献数据库。生成 output/ais-evidence-summary.md，并在每条结论后标注证据 ID。"
+fixture = "fixtures/rag_ais_scoliosis"
+timeout_seconds = 180
+max_model_requests = 5
+max_tool_calls = 5
+max_human_interventions = 0
+
+[required]
+facts = ["Cobb", "躯干旋转角", "SRS-22"]
+artifacts = ["output/ais-evidence-summary.md"]
+tools = ["search_evidence"]
+evidence_ids = ["ev-ais-schroth", "ev-ais-srs22"]
+
+[forbidden]
+repeated_call_limit = 1
+tools = ["search_pubmed", "search_rehab_literature"]
+response_patterns = ["PMID", "脑卒中机器人", "下背痛"]
+evidence_ids = ["ev-stroke-gait", "ev-low-back-pain"]

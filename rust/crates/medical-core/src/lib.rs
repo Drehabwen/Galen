@@ -34,10 +34,7 @@ impl MedicalCore {
     }
 
     pub async fn fetch_article(&self, pmid: &str) -> Result<Option<Paper>, pubmed::PubMedError> {
-        let papers = self
-            .pubmed
-            .fetch_articles(&[pmid.to_string()])
-            .await?;
+        let papers = self.pubmed.fetch_articles(&[pmid.to_string()]).await?;
         Ok(papers.into_iter().next())
     }
 

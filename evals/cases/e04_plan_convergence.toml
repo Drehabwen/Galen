@@ -2,6 +2,7 @@ schema_version = 1
 id = "E04"
 name = "多节点科研计划收敛"
 suite = "agent"
+risk_tier = "high"
 prompt = "读取现有研究计划，只执行当前可运行的 n3 节点。不要重复 n1、n2；完成后将简洁结果写入 output/research-plan.md，并说明下一可运行节点。"
 fixture = "fixtures/e04"
 timeout_seconds = 300

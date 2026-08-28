@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 2,
+  "revision": 2,
+  "taskId": "eval-e08",
+  "title": "恢复评测任务",
+  "goal": "验证重启后不重复已完成节点",
+  "status": "running",
+  "createdAt": "2026-08-23T00:00:00Z",
+  "updatedAt": "2026-08-23T00:01:00Z",
+  "nodes": [
+    {
+      "id": "s01",
+      "index": "01",
+      "title": "基线整理",
+      "nodeType": "planning",
+      "status": "completed",
+      "owner": "Galen",
+      "inputs": [],
+      "outputs": ["output/baseline.md"],
+      "dependsOn": [],
+      "tags": [],
+      "riskLevel": "low",
+      "approvalRequired": false,
+      "subSessions": [],
+      "result": "基线已整理",
+      "evidence": []
+    },
+    {
+      "id": "s02",
+      "index": "02",
+      "title": "继续分析",
+      "nodeType": "analysis",
+      "status": "pending",
+      "owner": "Galen",
+      "inputs": ["output/baseline.md"],
+      "outputs": [],
+      "dependsOn": ["s01"],
+      "tags": [],
+      "riskLevel": "low",
+      "approvalRequired": false,
+      "subSessions": [],
+      "evidence": []
+    }
+  ],
+  "evidenceIds": [],
+  "artifactIds": []
+}

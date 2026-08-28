@@ -1,0 +1,100 @@
+{
+  "case_id": "AIS-C025",
+  "condition": {
+    "etiology": "idiopathic_scoliosis",
+    "risser_grade": 0
+  },
+  "demographics": {
+    "age_years_at_baseline": 11,
+    "sex": "female"
+  },
+  "events": [
+    {
+      "context": "out_of_brace",
+      "date": "2019-05",
+      "event_id": "baseline"
+    },
+    {
+      "context": "in_brace",
+      "date": "2019-05",
+      "event_id": "in_brace",
+      "interventions": [
+        "GBW_brace",
+        "Schroth_exercise"
+      ]
+    },
+    {
+      "context": "out_of_brace",
+      "date": "2020-12",
+      "event_id": "follow_up"
+    }
+  ],
+  "observations": [
+    {
+      "event_id": "baseline",
+      "metric": "cobb_deg",
+      "observation_id": "C025-B-T",
+      "region": "thoracic",
+      "source": {
+        "book_page": 71,
+        "channel": "text",
+        "figure": "4-91",
+        "pdf_page": 84
+      },
+      "unit": "deg",
+      "value": 45
+    },
+    {
+      "event_id": "in_brace",
+      "metric": "cobb_deg",
+      "observation_id": "C025-I-T",
+      "region": "thoracic",
+      "source": {
+        "book_page": 71,
+        "channel": "text_and_figure",
+        "figure": "4-91",
+        "pdf_page": 84
+      },
+      "unit": "deg",
+      "value": null
+    },
+    {
+      "event_id": "follow_up",
+      "metric": "cobb_deg",
+      "observation_id": "C025-F-T",
+      "region": "thoracic",
+      "source": {
+        "book_page": 72,
+        "channel": "text",
+        "figure": "4-92",
+        "pdf_page": 85
+      },
+      "unit": "deg",
+      "value": 26
+    }
+  ],
+  "schema_version": 1,
+  "task_id": "AIS-C025-T3",
+  "visible_event_ids": [
+    "baseline",
+    "in_brace",
+    "follow_up"
+  ],
+  "visible_source_conflicts": [
+    {
+      "alternatives": [
+        {
+          "channel": "text",
+          "value": 7
+        },
+        {
+          "channel": "figure_annotation",
+          "value": -6
+        }
+      ],
+      "conflict_id": "C025-CONFLICT-INBRACE-T",
+      "observation_id": "C025-I-T",
+      "resolution": "unresolved"
+    }
+  ]
+}

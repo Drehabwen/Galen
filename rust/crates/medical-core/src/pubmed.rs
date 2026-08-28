@@ -59,10 +59,7 @@ impl PubMedClient {
         })
     }
 
-    pub async fn fetch_articles(
-        &self,
-        pmids: &[String],
-    ) -> Result<Vec<Paper>, PubMedError> {
+    pub async fn fetch_articles(&self, pmids: &[String]) -> Result<Vec<Paper>, PubMedError> {
         if pmids.is_empty() {
             return Ok(Vec::new());
         }
@@ -87,10 +84,7 @@ impl PubMedClient {
         parse_pubmed_xml(&xml)
     }
 
-    pub async fn fetch_fulltext(
-        &self,
-        pmids: &[String],
-    ) -> Result<Vec<FullText>, PubMedError> {
+    pub async fn fetch_fulltext(&self, pmids: &[String]) -> Result<Vec<FullText>, PubMedError> {
         if pmids.is_empty() {
             return Ok(Vec::new());
         }
@@ -124,7 +118,10 @@ impl PubMedClient {
         let url = build_url(ESPELL_URL, &query_params);
         let response = self.client.get(&url).send().await?;
         let body: ESpellResult = response.json().await?;
-        Ok(body.esearchresult.correctedquery.unwrap_or_else(|| query.to_string()))
+        Ok(body
+            .esearchresult
+            .correctedquery
+            .unwrap_or_else(|| query.to_string()))
     }
 }
 
@@ -202,7 +199,10 @@ fn parse_pubmed_xml(xml: &str) -> Result<Vec<Paper>, PubMedError> {
         .map_err(|e| PubMedError::Parse(format!("XML parse: {e}")))?;
 
     let mut papers = Vec::new();
-    for article in doc.descendants().filter(|n| n.has_tag_name("PubmedArticle")) {
+    for article in doc
+        .descendants()
+        .filter(|n| n.has_tag_name("PubmedArticle"))
+    {
         if let Some(paper) = parse_pubmed_article(&doc, article) {
             papers.push(paper);
         }
@@ -222,9 +222,7 @@ fn parse_pubmed_article(_doc: &roxmltree::Document, article: roxmltree::Node) ->
         .unwrap_or("")
         .to_string();
 
-    let article_node = medline
-        .descendants()
-        .find(|n| n.has_tag_name("Article"))?;
+    let article_node = medline.descendants().find(|n| n.has_tag_name("Article"))?;
 
     let title = article_node
         .descendants()
@@ -277,7 +275,9 @@ fn parse_pubmed_article(_doc: &roxmltree::Document, article: roxmltree::Node) ->
 
     let authors: Vec<Author> = article_node
         .descendants()
-        .filter(|n| n.has_tag_name("Author") && n.parent().map_or(false, |p| p.has_tag_name("AuthorList")))
+        .filter(|n| {
+            n.has_tag_name("Author") && n.parent().map_or(false, |p| p.has_tag_name("AuthorList"))
+        })
         .filter_map(|author_node| {
             let last_name = author_node
                 .descendants()

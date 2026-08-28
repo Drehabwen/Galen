@@ -1,0 +1,19 @@
+schema_version = 1
+id = "M01"
+name = "康复科研文献问答（PubMedQA 风格 smoke）"
+suite = "medical-benchmark"
+risk_tier = "high"
+prompt = "阅读工作区根目录的 GALEN.md（文献记忆，含证据），回答以下 3 个问题，并生成 output/answer.md，每条回答注明引用来源（作者/年份）。\n1. 6 周有氧训练对脑卒中患者 6MWT 步行距离的组间差异约为多少米？\n2. 未考虑失访时，主方案每组需要多少例受试者？\n3. 考虑 15% 失访后，每组需要多少例受试者？\n仅依据工作区提供的信息作答，不得编造数值；若证据不足请明确说明。"
+fixture = "fixtures/m01"
+timeout_seconds = 300
+max_model_requests = 8
+max_tool_calls = 10
+max_human_interventions = 0
+
+[required]
+facts = ["35", "47", "56"]
+artifacts = ["output/answer.md"]
+
+[forbidden]
+repeated_call_limit = 2
+response_patterns = ["无法回答", "信息不足，无法"]

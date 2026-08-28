@@ -1,0 +1,125 @@
+{
+  "case_id": "AIS-C021",
+  "condition": {
+    "etiology": "idiopathic_scoliosis"
+  },
+  "demographics": {
+    "birth_year": 2009,
+    "sex": "female"
+  },
+  "events": [
+    {
+      "context": "out_of_brace",
+      "date": "2020-04",
+      "event_id": "baseline"
+    },
+    {
+      "context": "in_brace",
+      "date": "2020-04",
+      "event_id": "in_brace",
+      "interventions": [
+        "GBW_brace",
+        "Schroth_exercise"
+      ]
+    },
+    {
+      "context": "out_of_brace_24h",
+      "date": "2020-09",
+      "event_id": "follow_up"
+    }
+  ],
+  "observations": [
+    {
+      "event_id": "baseline",
+      "metric": "cobb_deg",
+      "observation_id": "C021-B-T",
+      "region": "thoracic",
+      "source": {
+        "book_page": 66,
+        "channel": "text",
+        "figure": "4-83",
+        "pdf_page": 79
+      },
+      "unit": "deg",
+      "value": 10
+    },
+    {
+      "event_id": "baseline",
+      "metric": "cobb_deg",
+      "observation_id": "C021-B-L",
+      "region": "lumbar",
+      "source": {
+        "book_page": 66,
+        "channel": "text",
+        "figure": "4-83",
+        "pdf_page": 79
+      },
+      "unit": "deg",
+      "value": 20
+    },
+    {
+      "event_id": "in_brace",
+      "metric": "cobb_deg",
+      "observation_id": "C021-I-T",
+      "region": "thoracic",
+      "source": {
+        "book_page": 66,
+        "channel": "text",
+        "figure": "4-83",
+        "pdf_page": 79
+      },
+      "unit": "deg",
+      "value": -6
+    },
+    {
+      "event_id": "in_brace",
+      "metric": "cobb_deg",
+      "observation_id": "C021-I-L",
+      "region": "lumbar",
+      "source": {
+        "book_page": 66,
+        "channel": "text",
+        "figure": "4-83",
+        "pdf_page": 79
+      },
+      "unit": "deg",
+      "value": -10
+    },
+    {
+      "event_id": "follow_up",
+      "metric": "cobb_deg",
+      "observation_id": "C021-F-T",
+      "region": "thoracic",
+      "source": {
+        "book_page": 67,
+        "channel": "text",
+        "figure": "4-85",
+        "pdf_page": 80
+      },
+      "unit": "deg",
+      "value": 3
+    },
+    {
+      "event_id": "follow_up",
+      "metric": "cobb_deg",
+      "observation_id": "C021-F-L",
+      "region": "lumbar",
+      "source": {
+        "book_page": 67,
+        "channel": "text",
+        "figure": "4-85",
+        "pdf_page": 80
+      },
+      "unit": "deg",
+      "value": 0
+    }
+  ],
+  "schema_version": 1,
+  "task_id": "AIS-C021-T4",
+  "visible_event_ids": [
+    "baseline",
+    "in_brace",
+    "follow_up"
+  ],
+  "visible_source_conflicts": []
+}

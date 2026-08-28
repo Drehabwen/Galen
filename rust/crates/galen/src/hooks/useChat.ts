@@ -167,7 +167,7 @@ export function useChat(workspaceRoot: string | null) {
           historyJson: historyJson,
           mode: mode || "discuss",
           personaId: personaId || "medical",
-          thinkingLevel: thinkingLevel || "medium",
+          thinkingLevel: thinkingLevel || "low",
         });
       } catch (e) {
         setError(String(e));
@@ -175,7 +175,11 @@ export function useChat(workspaceRoot: string | null) {
         sendingRef.current = false;
       }
     },
-    [backendAvailable]
+    // `messages` is intentionally a dependency. The backend session is the
+    // durable source of truth, but this recent-history fallback must reflect
+    // the latest rendered conversation if persistence is unavailable or a
+    // legacy session is being migrated.
+    [backendAvailable, messages]
   );
 
   const clear = useCallback(() => {

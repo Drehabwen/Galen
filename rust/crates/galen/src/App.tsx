@@ -10,11 +10,12 @@ import { SessionChat } from "./components/SessionChat";
 import { SessionInspectorDrawer } from "./components/SessionInspectorDrawer";
 import { GlobalResourceBar } from "./components/GlobalResourceBar";
 import { ContextPanel } from "./components/ContextPanel";
+import { UpdateManager } from "./components/UpdateManager";
 import { WelcomeWizard } from "./components/WelcomeWizard";
 import { useEnvironment } from "./hooks/useEnvironment";
 import { useMode } from "./hooks/useMode";
 import type { ChatMode } from "./hooks/useMode";
-import type { ModelConfig, ModelStatus } from "./types";
+import type { DecisionRecord, ModelConfig, ModelStatus } from "./types";
 import { ModelStatusPanel } from "./components/ModelStatusPanel";
 import { WorkbenchRail } from "./components/WorkbenchRail";
 import { StatusDot } from "./components/ui/primitives";
@@ -40,11 +41,15 @@ export default function App() {
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [model, setModel] = useState("");
   const [modelStatuses, setModelStatuses] = useState<ModelStatus[]>([]);
+  const [conversationDecisions, setConversationDecisions] = useState<DecisionRecord[]>([]);
   const [showModelStatus, setShowModelStatus] = useState(false);
   const [wizardInitialStep, setWizardInitialStep] = useState(0);
-  const [thinkingLevel, setThinkingLevel] = useState<string>(
-    () => localStorage.getItem("galen.thinkingLevel") || "medium",
-  );
+  const [thinkingLevel, setThinkingLevel] = useState<string>(() => {
+    const saved = localStorage.getItem("galen.thinkingLevel");
+    // DeepSeek maps `medium` to high effort. Migrate the old default so normal
+    // conversations use the genuinely faster low-effort Flash path.
+    return !saved || saved === "medium" ? "low" : saved;
+  });
   const research = useResearchTask(chat.backendAvailable, wsRoot);
   const researchTask = research.task;
   const planNodes = research.nodes;
@@ -209,6 +214,32 @@ export default function App() {
       .then(setMemoryStatus)
       .catch(() => setMemoryStatus(null));
   }, [chat.backendAvailable, wsRoot]);
+
+  useEffect(() => {
+    if (!chat.backendAvailable || !wsRoot) {
+      setConversationDecisions([]);
+      return;
+    }
+    invoke<DecisionRecord[]>("get_conversation_decisions")
+      .then(setConversationDecisions)
+      .catch(() => setConversationDecisions([]));
+  }, [chat.backendAvailable, wsRoot, chat.messages.length]);
+
+  const refreshConversationDecisions = useCallback(async () => {
+    if (!chat.backendAvailable || !wsRoot) return;
+    const next = await invoke<DecisionRecord[]>("get_conversation_decisions");
+    setConversationDecisions(next);
+  }, [chat.backendAvailable, wsRoot]);
+
+  const handleReviseDecision = useCallback(async (id: string, statement: string) => {
+    await invoke("revise_conversation_decision", { id, statement });
+    await refreshConversationDecisions();
+  }, [refreshConversationDecisions]);
+
+  const handleDismissDecision = useCallback(async (id: string) => {
+    await invoke("dismiss_conversation_decision", { id });
+    await refreshConversationDecisions();
+  }, [refreshConversationDecisions]);
 
   useEffect(() => {
     if (!chat.backendAvailable || !wsRoot) {
@@ -452,6 +483,9 @@ export default function App() {
     setModels(nextModels);
     setModelStatuses(nextStatuses);
     setModel((current) => {
+      if (defaultModel && nextModels.some((item) => item.name === defaultModel)) {
+        return defaultModel;
+      }
       if (current && nextModels.some((item) => item.name === current)) return current;
       return (
         nextModels.find((item) => item.name === defaultModel)?.name ??
@@ -537,6 +571,7 @@ export default function App() {
         )}
 
         {/* Model / key status */}
+        <UpdateManager />
         <button
           className="btn btn-sm btn-ghost"
           onClick={openModelStatus}
@@ -702,6 +737,9 @@ export default function App() {
         <ContextPanel
           messages={chat.messages}
           compacted={chat.messages.length > 20}
+          decisions={conversationDecisions}
+          onReviseDecision={handleReviseDecision}
+          onDismissDecision={handleDismissDecision}
         />
       )}
       <GlobalResourceBar artifacts={artifacts} onOpenArtifact={handleOpenRegisteredArtifact} />

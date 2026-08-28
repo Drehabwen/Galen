@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://galen.local/schemas/ais-case-v1.json",
+  "title": "Galen longitudinal rehabilitation source case",
+  "type": "object",
+  "required": ["case_id", "source_case_number", "source_pages", "demographics", "events", "observations", "method_gold"],
+  "properties": {
+    "case_id": {"type": "string", "pattern": "^AIS-C[0-9]{3}$"},
+    "source_case_number": {"type": "integer", "minimum": 1},
+    "source_pages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["pdf_page", "book_page"],
+        "properties": {
+          "pdf_page": {"type": "integer", "minimum": 1},
+          "book_page": {"type": "integer", "minimum": 1}
+        }
+      }
+    },
+    "demographics": {"type": "object"},
+    "events": {"type": "array", "minItems": 2},
+    "observations": {"type": "array", "minItems": 1},
+    "source_conflicts": {"type": "array"},
+    "method_gold": {
+      "type": "object",
+      "required": ["allowed_claims", "forbidden_claims", "required_uncertainties"]
+    }
+  }
+}

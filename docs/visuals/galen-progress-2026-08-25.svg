@@ -1,0 +1,148 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc">
+  <title id="title">Galen 项目进步全景图</title>
+  <desc id="desc">截至2026年8月25日，展示Galen从向导可用性、上下文与记忆、可维护性、可靠性评测、真实病例基准到康复闭环的演进，以及100例、400任务、30/30通过和零候选硬门槛污染等指标。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F4F7F2"/>
+      <stop offset="1" stop-color="#E8F0EB"/>
+    </linearGradient>
+    <linearGradient id="hero" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#083D35"/>
+      <stop offset="1" stop-color="#0B6655"/>
+    </linearGradient>
+    <linearGradient id="progress" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#18A889"/>
+      <stop offset="0.78" stop-color="#18A889"/>
+      <stop offset="1" stop-color="#B7CEC5"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="16" flood-color="#163C32" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      text { font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif; }
+      .kicker { font-size: 18px; font-weight: 700; letter-spacing: 3px; fill: #93CABC; }
+      .hero-title { font-size: 54px; font-weight: 800; fill: #FFFFFF; }
+      .hero-sub { font-size: 23px; font-weight: 400; fill: #CDE4DD; }
+      .section { font-size: 25px; font-weight: 800; fill: #173C33; }
+      .section-note { font-size: 16px; fill: #658077; }
+      .metric-value { font-size: 50px; font-weight: 800; fill: #0B6655; }
+      .metric-unit { font-size: 18px; font-weight: 700; fill: #4D6C63; }
+      .metric-label { font-size: 18px; font-weight: 700; fill: #1D4037; }
+      .metric-note { font-size: 14px; fill: #70877F; }
+      .mile-id { font-size: 13px; font-weight: 800; letter-spacing: 1px; fill: #FFFFFF; }
+      .mile-title { font-size: 18px; font-weight: 800; fill: #173C33; }
+      .mile-sub { font-size: 14px; fill: #6B817A; }
+      .tag { font-size: 12px; font-weight: 800; letter-spacing: 1px; }
+      .gap { font-size: 17px; font-weight: 600; fill: #294A41; }
+      .foot { font-size: 13px; fill: #71877F; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="1000" fill="url(#bg)"/>
+  <rect x="36" y="32" width="1528" height="178" rx="28" fill="url(#hero)" filter="url(#shadow)"/>
+  <text x="82" y="78" class="kicker">GALEN · PROGRESS MAP · 2026.08.25</text>
+  <text x="82" y="139" class="hero-title">从“能回答”到“值得信任”</text>
+  <text x="82" y="180" class="hero-sub">Galen 正从通用 AI Agent，演进为连接现实康复、科研证据与持续反馈的可靠工作台</text>
+  <g transform="translate(1348 73)">
+    <circle cx="60" cy="45" r="46" fill="#D6F0E8" opacity="0.18"/>
+    <path d="M28 53 C43 25, 59 25, 74 53 S103 80, 112 42" fill="none" stroke="#9EE4D2" stroke-width="7" stroke-linecap="round"/>
+    <circle cx="28" cy="53" r="7" fill="#FFFFFF"/>
+    <circle cx="74" cy="53" r="7" fill="#FFFFFF"/>
+    <circle cx="112" cy="42" r="7" fill="#FFFFFF"/>
+  </g>
+
+  <text x="52" y="258" class="section">已经可以被数字证明的进步</text>
+  <text x="52" y="287" class="section-note">只展示可追溯的工程与测评结果，不用主观“成熟度百分比”</text>
+
+  <g filter="url(#shadow)">
+    <rect x="52" y="314" width="355" height="154" rx="20" fill="#FFFFFF"/>
+    <rect x="427" y="314" width="355" height="154" rx="20" fill="#FFFFFF"/>
+    <rect x="802" y="314" width="355" height="154" rx="20" fill="#FFFFFF"/>
+    <rect x="1177" y="314" width="355" height="154" rx="20" fill="#FFFFFF"/>
+  </g>
+  <rect x="52" y="314" width="8" height="154" rx="4" fill="#18A889"/>
+  <rect x="427" y="314" width="8" height="154" rx="4" fill="#18A889"/>
+  <rect x="802" y="314" width="8" height="154" rx="4" fill="#4B8FD8"/>
+  <rect x="1177" y="314" width="8" height="154" rx="4" fill="#D18A35"/>
+
+  <text x="82" y="359" class="metric-label">真实教材病例</text>
+  <text x="82" y="416" class="metric-value">100</text>
+  <text x="184" y="416" class="metric-unit">例</text>
+  <text x="82" y="446" class="metric-note">10例已核验 · 90例OCR候选</text>
+
+  <text x="457" y="359" class="metric-label">病例衍生任务</text>
+  <text x="457" y="416" class="metric-value">400</text>
+  <text x="569" y="416" class="metric-unit">项</text>
+  <text x="457" y="446" class="metric-note">抽取 · 时间安全 · 纵向综合 · 研究边界</text>
+
+  <text x="832" y="359" class="metric-label">T2 重复测试</text>
+  <text x="832" y="416" class="metric-value">30/30</text>
+  <text x="997" y="416" class="metric-unit">通过</text>
+  <text x="832" y="446" class="metric-note">source-closed + stream watchdog · Repeat-5</text>
+
+  <text x="1207" y="359" class="metric-label">候选事实误入硬门槛</text>
+  <text x="1207" y="416" class="metric-value">0</text>
+  <text x="1245" y="416" class="metric-unit">项</text>
+  <text x="1207" y="446" class="metric-note">未核验事实不会被当成临床真值</text>
+
+  <text x="52" y="526" class="section">能力演进：每一步都解决一个真实失败模式</text>
+  <line x1="113" y1="604" x2="1387" y2="604" stroke="url(#progress)" stroke-width="10" stroke-linecap="round"/>
+
+  <g>
+    <circle cx="120" cy="604" r="28" fill="#0B6655"/>
+    <circle cx="382" cy="604" r="28" fill="#0B6655"/>
+    <circle cx="644" cy="604" r="28" fill="#0B6655"/>
+    <circle cx="906" cy="604" r="28" fill="#0B6655"/>
+    <circle cx="1168" cy="604" r="28" fill="#0B6655"/>
+    <circle cx="1430" cy="604" r="28" fill="#FFFFFF" stroke="#7CA599" stroke-width="6"/>
+    <text x="120" y="609" text-anchor="middle" class="mile-id">M1</text>
+    <text x="382" y="609" text-anchor="middle" class="mile-id">M2</text>
+    <text x="644" y="609" text-anchor="middle" class="mile-id">M3</text>
+    <text x="906" y="609" text-anchor="middle" class="mile-id">M4</text>
+    <text x="1168" y="609" text-anchor="middle" class="mile-id">M5</text>
+    <text x="1430" y="609" text-anchor="middle" font-size="13" font-weight="800" fill="#55776D">M6</text>
+  </g>
+
+  <g text-anchor="middle">
+    <text x="120" y="658" class="mile-title">可进入</text>
+    <text x="120" y="683" class="mile-sub">向导循环与环境链路</text>
+    <rect x="79" y="700" width="82" height="24" rx="12" fill="#D8EEE8"/>
+    <text x="120" y="717" class="tag" fill="#0B6655">已完成</text>
+
+    <text x="382" y="658" class="mile-title">可持续工作</text>
+    <text x="382" y="683" class="mile-sub">上下文 · 记忆 · 任务边界</text>
+    <rect x="341" y="700" width="82" height="24" rx="12" fill="#D8EEE8"/>
+    <text x="382" y="717" class="tag" fill="#0B6655">已完成</text>
+
+    <text x="644" y="658" class="mile-title">可维护</text>
+    <text x="644" y="683" class="mile-sub">组件拆分 · 流式看门狗</text>
+    <rect x="603" y="700" width="82" height="24" rx="12" fill="#D8EEE8"/>
+    <text x="644" y="717" class="tag" fill="#0B6655">已完成</text>
+
+    <text x="906" y="658" class="mile-title">可度量</text>
+    <text x="906" y="683" class="mile-sub">来源 · 时间 · 因果边界</text>
+    <rect x="858" y="700" width="96" height="24" rx="12" fill="#DCEAF8"/>
+    <text x="906" y="717" class="tag" fill="#356FAD">已验证</text>
+
+    <text x="1168" y="658" class="mile-title">真实病例检验</text>
+    <text x="1168" y="683" class="mile-sub">100例 · 400任务 · 隔离切分</text>
+    <rect x="1120" y="700" width="96" height="24" rx="12" fill="#DCEAF8"/>
+    <text x="1168" y="717" class="tag" fill="#356FAD">已验证</text>
+
+    <text x="1430" y="658" class="mile-title">连接现实康复</text>
+    <text x="1430" y="683" class="mile-sub">采集→科研→反馈闭环</text>
+    <rect x="1376" y="700" width="108" height="24" rx="12" fill="#F5E5D3"/>
+    <text x="1430" y="717" class="tag" fill="#A25F18">进行中</text>
+  </g>
+
+  <rect x="52" y="770" width="1496" height="168" rx="24" fill="#FFFFFF" filter="url(#shadow)"/>
+  <text x="82" y="814" class="section">下一阶段：不是继续堆功能，而是打通最后一公里</text>
+  <g>
+    <circle cx="96" cy="853" r="9" fill="#D18A35"/><text x="116" y="859" class="gap">90例候选分批升级为视觉核验金标准</text>
+    <circle cx="96" cy="895" r="9" fill="#D18A35"/><text x="116" y="901" class="gap">影像、体表、支具状态进入统一患者时间轴</text>
+    <circle cx="805" cy="853" r="9" fill="#D18A35"/><text x="825" y="859" class="gap">交付物在 Galen 内渲染、预览并反查证据</text>
+    <circle cx="805" cy="895" r="9" fill="#D18A35"/><text x="825" y="901" class="gap">完成无需讲解也能成立的比赛 Demo 闭环</text>
+  </g>
+
+  <text x="52" y="978" class="foot">数据截至 2026-08-25 · 来源：Galen 本地测评报告、100例构建审计与数据集校验输出 · 候选病例不等同于临床金标准</text>
+</svg>

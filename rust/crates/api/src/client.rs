@@ -121,6 +121,14 @@ impl MessageStream {
         }
     }
 
+    #[must_use]
+    pub fn attempt_count(&self) -> Option<u32> {
+        match self {
+            Self::Anthropic(_) => None,
+            Self::OpenAiCompat(stream) => Some(stream.attempt_count()),
+        }
+    }
+
     pub async fn next_event(&mut self) -> Result<Option<StreamEvent>, ApiError> {
         match self {
             Self::Anthropic(stream) => stream.next_event().await,

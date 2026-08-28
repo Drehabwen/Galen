@@ -2,6 +2,7 @@ schema_version = 1
 id = "E01"
 name = "快速科研问答"
 suite = "smoke"
+risk_tier = "standard"
 prompt = "请用不超过 180 字解释 FMA-UE 在脑卒中上肢康复研究中的用途，并指出分数升高通常代表什么。直接回答，不要创建文件。"
 timeout_seconds = 180
 max_model_requests = 2

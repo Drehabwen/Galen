@@ -1,0 +1,20 @@
+schema_version = 1
+id = "E08"
+name = "宿主任务状态恢复"
+suite = "lifecycle"
+risk_tier = "critical"
+prompt = "恢复当前 ResearchTask，只继续执行未完成的 s02 节点。不要重新执行 s01；将恢复说明写入 output/state-recovery.md，并明确 s01 已完成、s02 是当前节点。"
+fixture = "fixtures/e08"
+timeout_seconds = 240
+max_model_requests = 5
+max_tool_calls = 3
+max_human_interventions = 0
+
+[required]
+facts = ["s01", "s02", "已完成"]
+artifacts = ["output/state-recovery.md"]
+tools = ["write_file"]
+
+[forbidden]
+repeated_call_limit = 1
+response_patterns = ["重新执行 s01", "从头开始"]

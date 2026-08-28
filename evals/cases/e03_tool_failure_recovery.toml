@@ -1,0 +1,20 @@
+schema_version = 1
+id = "E03"
+name = "工具失败后恢复"
+suite = "recovery"
+risk_tier = "high"
+prompt = "先读取 inputs/missing.md。若文件不存在，只记录一次错误，不要重复读取；随后读取 inputs/brief.md，并将其中的研究目标写入 output/recovery.md，注明已采用备用输入。"
+fixture = "fixtures/e03"
+timeout_seconds = 240
+max_model_requests = 6
+max_tool_calls = 5
+max_human_interventions = 0
+
+[required]
+facts = ["备用输入", "FMA-UE"]
+artifacts = ["output/recovery.md"]
+tools = ["read_file", "write_file"]
+
+[forbidden]
+repeated_call_limit = 1
+response_patterns = ["请用户重新提供 missing.md"]

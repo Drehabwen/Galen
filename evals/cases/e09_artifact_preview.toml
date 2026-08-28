@@ -2,6 +2,7 @@ schema_version = 1
 id = "E09"
 name = "可预览科研交付物"
 suite = "artifact"
+risk_tier = "high"
 prompt = "创建 output/delivery.md，内容包含研究问题、PICO、主要结局、风险和下一步。完成后检查文件存在且非空。"
 timeout_seconds = 240
 max_model_requests = 6

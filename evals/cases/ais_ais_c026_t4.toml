@@ -1,0 +1,60 @@
+schema_version = 1
+id = "AIS-C026-T4"
+name = "AIS病例试点 AIS-C026-T4"
+suite = "ais-textbook-pilot"
+risk_tier = "high"
+prompt = "把该病例转化为可进入病例系列研究的数据行，并说明这些观察支持与不支持哪些科研结论。不得把单病例描述升级为因果疗效证据。\n\n先读取 inputs/case-input.json。该文件是本任务唯一病例来源，禁止外部检索。每个使用到的观察值必须在产物中另起一行写成 `<真实观察ID>=<数值> <单位>`，例如 `C026-B-T=40 deg`；字符“观察ID”不能代替真实 ID；不得写出输入中不存在的观察ID。产物必须原样包含：科研边界：单病例不能证明因果疗效。将完整结果写入 output/ais-c026-t4.md，最终回复只需说明产物路径。"
+fixture = "fixtures/ais_textbook_pilot/AIS-C026-T4"
+timeout_seconds = 240
+max_model_requests = 6
+max_tool_calls = 8
+max_human_interventions = 0
+
+[required]
+facts = []
+artifacts = ["output/ais-c026-t4.md"]
+tools = ["read_file", "write_file"]
+evidence_ids = []
+
+[forbidden]
+repeated_call_limit = 2
+tools = ["search_pubmed", "search_rehab_literature"]
+response_patterns = []
+evidence_ids = []
+
+[structured]
+source_closed_degree_values = false
+allowed_degree_values = []
+source_closed_numeric_values = false
+allowed_numeric_values = [9, 15, 18, 22, 40, 2005, 2019, 2020]
+require_causal_boundary = true
+[[structured.observations]]
+id = "C026-B-T"
+value = 40
+unit = "deg"
+tolerance = 0.0
+[[structured.observations]]
+id = "C026-B-L"
+value = 22
+unit = "deg"
+tolerance = 0.0
+[[structured.observations]]
+id = "C026-I-T"
+value = 15
+unit = "deg"
+tolerance = 0.0
+[[structured.observations]]
+id = "C026-I-L"
+value = 9
+unit = "deg"
+tolerance = 0.0
+[[structured.observations]]
+id = "C026-F-T"
+value = 18
+unit = "deg"
+tolerance = 0.0
+[[structured.observations]]
+id = "C026-F-L"
+value = 15
+unit = "deg"
+tolerance = 0.0

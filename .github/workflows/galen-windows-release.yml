@@ -1,0 +1,61 @@
+name: Galen Windows release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: galen-windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust -> rust/target
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: rust/crates/galen/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: rust/crates/galen
+        run: npm ci
+
+      - name: Download bundled runtimes
+        run: python rust/scripts/download_sidecars.py
+
+      - name: Verify Galen before release
+        working-directory: rust/crates/galen
+        run: |
+          npm test
+          npm run build
+
+      - name: Build, sign and publish Galen
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: rust/crates/galen
+          tagName: v__VERSION__
+          releaseName: Galen v__VERSION__
+          releaseBody: |
+            Galen 桌面版更新。已安装支持自动更新的版本后，可在应用内直接下载并安装。
+          releaseDraft: false
+          prerelease: false
+          args: --bundles nsis

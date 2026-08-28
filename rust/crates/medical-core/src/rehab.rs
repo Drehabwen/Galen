@@ -162,7 +162,11 @@ impl RehabStudyType {
 /// assert!(q.contains("rehabilitation[MeSH]"));
 /// assert!(q.contains(r#""randomized controlled trial"[pt]"#));
 /// ```
-pub fn build_rehab_query(topic: &str, focus: Option<RehabFocus>, study_type: RehabStudyType) -> String {
+pub fn build_rehab_query(
+    topic: &str,
+    focus: Option<RehabFocus>,
+    study_type: RehabStudyType,
+) -> String {
     let mut parts: Vec<String> = Vec::with_capacity(4);
 
     let topic = topic.trim();

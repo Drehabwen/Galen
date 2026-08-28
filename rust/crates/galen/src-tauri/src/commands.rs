@@ -188,7 +188,7 @@ pub async fn send_message(
     tag: Option<String>, // Session tag for event isolation (empty = main chat)
     thinking_level: Option<String>,
 ) -> Result<(), String> {
-    let thinking_level = thinking_level.unwrap_or_else(|| "medium".to_string());
+    let thinking_level = thinking_level.unwrap_or_else(|| "low".to_string());
     // Phase 1: extract all needed data from locked state (before any .await)
     let (model_alias, model_id, medical, router, workspace_path, persona) = {
         let backend = lock_mutex(&state.backend)?;
@@ -248,6 +248,7 @@ pub async fn send_message(
         };
         let final_text = Arc::new(Mutex::new(None::<String>));
         let captured_final = final_text.clone();
+        let tool_traces = Arc::new(Mutex::new(Vec::<crate::backend::ToolTrace>::new()));
         let persisted_model = model_alias.clone();
         let persisted_user = message.clone();
         let started_at_ms = SystemTime::now()
@@ -265,7 +266,7 @@ pub async fn send_message(
             medical,
             router,
             Mutex::new(workspace_path.clone()),
-            None,
+            Some(tool_traces.clone()),
             {
                 let suffix = suffix.clone();
                 move |event| {
@@ -279,7 +280,12 @@ pub async fn send_message(
                     }
                     match &event {
                         ChatEvent::Delta(text) => emit!("chat-delta", text),
-                        ChatEvent::Done(text) => emit!("chat-done", text),
+                        // Do not expose completion until the exchange has been
+                        // durably appended below. Once the UI receives Done it
+                        // unlocks the input, so emitting here allowed an
+                        // immediate follow-up to race ahead of persistence and
+                        // reach the model without the preceding turn.
+                        ChatEvent::Done(_) => {}
                         ChatEvent::ThinkingDelta(text) => emit!("chat-thinking-delta", text),
                         ChatEvent::ThinkingDone(text) => emit!("chat-thinking-done", text),
                         ChatEvent::Error(e) => emit!("chat-error", e.as_str()),
@@ -319,19 +325,33 @@ pub async fn send_message(
         };
 
         let completed = final_text.lock().ok().and_then(|value| value.clone());
-        if let (Some(root), Some(assistant_text)) = (workspace_path.as_deref(), completed) {
-            if let Err(error) = crate::chat_session::append_exchange(
-                root,
-                session_tag.as_deref(),
-                &persisted_model,
-                &persisted_user,
-                &assistant_text,
-                started_at_ms,
-                &metrics,
-            ) {
-                let ename = format!("chat-error{err_tag}");
-                let _ = window_clone.emit(&ename, &error);
+        if let Some(assistant_text) = completed {
+            if let Some(root) = workspace_path.as_deref() {
+                let completed_traces = tool_traces
+                    .lock()
+                    .map(|value| value.clone())
+                    .unwrap_or_default();
+                if let Err(error) = crate::chat_session::append_exchange(
+                    root,
+                    session_tag.as_deref(),
+                    &persisted_model,
+                    &persisted_user,
+                    &assistant_text,
+                    &completed_traces,
+                    started_at_ms,
+                    &metrics,
+                ) {
+                    let ename = format!("chat-error{err_tag}");
+                    let _ = window_clone.emit(&ename, &error);
+                    return;
+                }
             }
+
+            // Completion is the UI's hand-off point. Emitting it only after
+            // persistence guarantees that the very next turn can load this
+            // exchange from the authoritative session.
+            let done_name = format!("chat-done{suffix}");
+            let _ = window_clone.emit(&done_name, &assistant_text);
         }
     });
 
@@ -348,6 +368,46 @@ pub fn get_chat_session(
         return Ok(Vec::new());
     };
     crate::chat_session::load_messages(&root, tag.as_deref())
+}
+
+#[tauri::command]
+pub fn get_conversation_decisions(
+    state: State<AppState>,
+) -> Result<Vec<crate::conversation_memory::DecisionRecord>, String> {
+    let backend = lock_mutex(&state.backend)?;
+    let Some(root) = backend.get_workspace_root() else {
+        return Ok(Vec::new());
+    };
+    crate::conversation_memory::load_recent_decisions(&root, Some(24))
+}
+
+#[tauri::command]
+pub fn revise_conversation_decision(
+    state: State<AppState>,
+    id: String,
+    statement: String,
+) -> Result<crate::conversation_memory::DecisionRecord, String> {
+    let backend = lock_mutex(&state.backend)?;
+    let root = backend
+        .get_workspace_root()
+        .ok_or_else(|| "请先选择工作区".to_string())?;
+    let timestamp_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| format!("系统时间错误: {error}"))?
+        .as_millis() as u64;
+    crate::conversation_memory::revise_decision(&root, &id, &statement, timestamp_ms)
+}
+
+#[tauri::command]
+pub fn dismiss_conversation_decision(
+    state: State<AppState>,
+    id: String,
+) -> Result<(), String> {
+    let backend = lock_mutex(&state.backend)?;
+    let root = backend
+        .get_workspace_root()
+        .ok_or_else(|| "请先选择工作区".to_string())?;
+    crate::conversation_memory::dismiss_decision(&root, &id)
 }
 
 #[tauri::command]
@@ -385,15 +445,16 @@ pub async fn get_mcp_status() -> Vec<McpServerStatus> {
 /// Provider defaults to DeepSeek (the most common choice for Chinese users),
 /// but the file can be hand-edited for any OpenAI-compatible provider.
 const DEFAULT_MODEL_TEMPLATE: &str = r#"[router]
-default = "deepseek-v4-pro"
+default = "deepseek-v4-flash"
 fast = "deepseek-v4-flash"
+analysis = "deepseek-v4-pro"
 
 [models.deepseek-v4-pro]
 provider = "openai_compat"
 api_key = "{api_key}"
 model_id = "deepseek-v4-pro"
 base_url = "https://api.deepseek.com/v1"
-description = "DeepSeek V4 Pro（默认，最强推理）"
+description = "DeepSeek V4 Pro（深度研究）"
 max_tokens = 32768
 
 [models.deepseek-v4-flash]
@@ -401,7 +462,7 @@ provider = "openai_compat"
 api_key = "{api_key}"
 model_id = "deepseek-v4-flash"
 base_url = "https://api.deepseek.com/v1"
-description = "DeepSeek V4 Flash（快速）"
+description = "DeepSeek V4 Flash（默认，快速）"
 max_tokens = 32768
 "#;
 
@@ -493,7 +554,7 @@ fn template_with_default(api_key: &str, default_model: Option<&str>) -> String {
     let mut content = DEFAULT_MODEL_TEMPLATE.replace("{api_key}", api_key);
     if let Some(default) = default_model {
         content = content.replace(
-            "default = \"deepseek-v4-pro\"",
+            "default = \"deepseek-v4-flash\"",
             &format!("default = \"{default}\""),
         );
     }
@@ -513,9 +574,10 @@ mod tests {
     }
 
     #[test]
-    fn template_defaults_to_pro() {
+    fn template_defaults_to_flash_and_routes_analysis_to_pro() {
         let t = template_with_default("sk-test", None);
-        assert!(t.contains("default = \"deepseek-v4-pro\""));
+        assert!(t.contains("default = \"deepseek-v4-flash\""));
+        assert!(t.contains("analysis = \"deepseek-v4-pro\""));
     }
 
     #[test]

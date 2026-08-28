@@ -104,8 +104,8 @@
 
 | 模型 | 用途 |
 |---|---|
-| DeepSeek V4 Pro（默认） | 最强推理，复杂任务 |
-| DeepSeek V4 Flash | 快速响应，简单问题 |
+| DeepSeek V4 Flash（默认） | 快速响应，日常讨论与常规任务 |
+| DeepSeek V4 Pro | 最强推理，复杂深度研究 |
 
 **思考强度**
 

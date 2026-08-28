@@ -1,0 +1,20 @@
+schema_version = 1
+id = "E06"
+name = "无信息增益停止"
+suite = "convergence"
+risk_tier = "high"
+prompt = "只读取一次 inputs/source.md，提取样本量和主要结局并写入 output/no-loop.md。写入成功后立即总结，禁止再次读取、搜索或重复写入。"
+fixture = "fixtures/e06"
+timeout_seconds = 180
+max_model_requests = 4
+max_tool_calls = 2
+max_human_interventions = 0
+
+[required]
+facts = ["64", "BBS"]
+artifacts = ["output/no-loop.md"]
+tools = ["read_file", "write_file"]
+
+[forbidden]
+repeated_call_limit = 1
+tools = ["list_files", "search_files", "execute_command"]

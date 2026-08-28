@@ -32,7 +32,7 @@ Galen 是面向**康复科研**的闭环工作台：一线场景的多模态数�
 |------|------|
 | 🔁 **任务级闭环** | 输入任务 → 计划画布 → 节点自动执行 → 证据回流 → 全部完成自动成文，人类随时可介入签核 |
 | 🧠 **科研品味内核** | 主编人格 + 装配版科研技能库（设计评审 / 检索 / 证据提取 / 数据分析 / 写作 / 自审），七条科研品味判断标准 |
-| 🚀 **DeepSeek 默认** | 默认 DeepSeek V4 Pro，可选 V4 Flash，思考强度四档；不再依赖 Anthropic |
+| 🚀 **DeepSeek 默认** | 默认 DeepSeek V4 Flash，复杂深度研究可切换 V4 Pro，思考强度四档；不再依赖 Anthropic |
 | 📚 **文献检索** | 修复后的 PubMed 检索（兼容 XML DTD），支持摘要加载与证据分级整理 |
 | 🏥 **康复数据接入** | 只读 SQLite 数据工具，7 种操作，查询结果带来源头；支持量表、评估、视频、语音四类数据 |
 | 📐 **统一数据模型** | `subject → assessment_session → scale / measure / video / audio → evidence`，跨模态可查询、证据可追溯 |
@@ -70,9 +70,17 @@ cargo build --release -p galen
 
 ```toml
 [router]
-default = "default"
+default = "deepseek-v4-flash"
+fast = "deepseek-v4-flash"
+analysis = "deepseek-v4-pro"
 
-[models.default]
+[models.deepseek-v4-flash]
+provider = "openai_compat"
+api_key = "sk-xxx"
+model_id = "deepseek-v4-flash"
+base_url = "https://api.deepseek.com/v1"
+
+[models.deepseek-v4-pro]
 provider = "openai_compat"
 api_key = "sk-xxx"
 model_id = "deepseek-v4-pro"
@@ -97,6 +105,25 @@ rust/
 - 桌面框架：Tauri 2.x + React 18 + TypeScript + Vite 5
 - 外部依赖（sidecar）：typst / deno / uv，由 `rust/scripts/download_sidecars.py` 按平台下载
 - CI：GitHub Actions 同时构建 Windows（NSIS）与 macOS（app + dmg，Intel / Apple Silicon）
+
+## 可靠性评测
+
+Galen 的评测直接运行 Rust Agent Loop，同时检查模型响应、工具轨迹、工作区状态、
+医学数字来源、科研边界、可预览产物、Token 与端到端时延。AIS 教科书试点包含
+10 个去标识化病例、40 个任务，并按病例隔离 development / validation / hidden。
+
+当前冻结配置下，DeepSeek V4 Pro 在 6 个 T2 来源封闭任务上完成 Repeat-5：
+30/30 通过，`pass^5 = 100%`，TTFR P95 为 1.70 秒，总耗时 P95 为 21.5 秒。
+这代表开发集 T2 的 PR Gate，不代表整个产品或隐藏集已达到发布门槛。
+
+```powershell
+cd rust
+cargo run -p galen --bin eval -- validate
+cargo run -p galen --bin eval -- reliability --input ../evals/runs/run.jsonl --k 5
+```
+
+详见 [评测说明](evals/README.md)与
+[Repeat-5 报告](evals/reports/ais-t2-source-closed-watchdog-pro-repeat5-final-2026-08-25.md)。
 
 ## 文档
 

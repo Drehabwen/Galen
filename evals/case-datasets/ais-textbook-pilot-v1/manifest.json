@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "dataset_id": "ais-textbook-pilot-v1",
+  "name": "脊柱侧弯保守治疗病例科研评测集试点",
+  "language": "zh-CN",
+  "use_scope": "local_research_only",
+  "source": {
+    "title": "脊柱侧弯保守治疗100例",
+    "authors": ["南小峰", "谢华"],
+    "publisher": "浙江工商大学出版社",
+    "publication_year": 2021,
+    "isbn": "978-7-5178-4571-3",
+    "source_file": "docs/脊柱侧弯保守治疗100例_14996973.pdf",
+    "pdf_pages": 191,
+    "file_sha256": "1b6631c313f4efeb04027aad1042f519b6933b8747a81f40e39c2ea6ed7c218e",
+    "redistribution": "source_not_in_dataset"
+  },
+  "case_range": [21, 30],
+  "case_count": 10,
+  "task_count": 40,
+  "generated_file": "tasks.jsonl",
+  "inputs_file": "inputs.jsonl",
+  "dataset_content_sha256": "3947eb756fdf3e8bc1b418224c3eab39b98e5b8cfff949ee3404e20e1ea5361d",
+  "review_state": "assistant_visual_review_complete_owner_audit_pending",
+  "review_policy": {
+    "hard_gate_status": ["verified"],
+    "non_scoring_status": ["candidate", "disputed"],
+    "minimum_source_locators_per_observation": 1,
+    "require_case_grouped_split": true
+  }
+}

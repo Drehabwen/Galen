@@ -28,8 +28,8 @@ type TestState =
   | { kind: "fail"; message: string; errorClass?: "invalid" | "network" | "unknown" };
 
 const MODELS = [
-  { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro", desc: "最强推理，复杂科研任务（默认）" },
-  { id: "deepseek-v4-flash", label: "DeepSeek V4 Flash", desc: "快速响应，简单问题" },
+  { id: "deepseek-v4-flash", label: "DeepSeek V4 Flash", desc: "默认使用，快速响应" },
+  { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro", desc: "深度研究，复杂科研任务" },
 ] as const;
 
 type StepKey = "model" | "workspace" | "mode" | "env";
@@ -62,7 +62,7 @@ export function WelcomeWizard({
 }: WelcomeWizardProps) {
   const [step, setStep] = useState<StepKey>(STEP_ORDER[initialStep] ?? "model");
   const [apiKeyInput, setApiKeyInput] = useState("");
-  const [selectedModel, setSelectedModel] = useState<string>("deepseek-v4-pro");
+  const [selectedModel, setSelectedModel] = useState<string>("deepseek-v4-flash");
   const [apiKeySaved, setApiKeySaved] = useState(false);
   const [testState, setTestState] = useState<TestState>({ kind: "idle" });
   const [workspacePath, setWorkspacePath] = useState<string | null>(null);

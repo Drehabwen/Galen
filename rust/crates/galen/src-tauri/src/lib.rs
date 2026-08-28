@@ -1,16 +1,26 @@
 pub mod artifact;
 pub mod backend;
+mod chat_loop;
 pub mod chat_session;
 mod commands;
+mod context_compaction;
+mod context_engine;
+#[cfg(test)]
+mod context_engine_tests;
+pub mod conversation_memory;
 pub mod eval;
+pub mod eval_report;
 pub mod evidence;
+pub mod evidence_search;
 pub mod mcp_client;
 pub mod modes;
 pub mod personas;
 pub mod probe;
+pub mod rag_eval;
 pub mod research_task;
 pub mod runtime_manager;
 pub mod skills;
+mod task_contract;
 pub mod tools;
 mod workspace;
 
@@ -36,6 +46,13 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_process::init())
+        .setup(|app| {
+            #[cfg(desktop)]
+            app.handle()
+                .plugin(tauri_plugin_updater::Builder::new().build())?;
+            Ok(())
+        })
         .manage(AppState {
             backend: std::sync::Mutex::new(backend),
             ws_config: std::sync::Mutex::new(ws_config),
@@ -57,6 +74,9 @@ pub fn run() {
             commands::analyze_clinical_case,
             commands::send_message,
             commands::get_chat_session,
+            commands::get_conversation_decisions,
+            commands::revise_conversation_decision,
+            commands::dismiss_conversation_decision,
             commands::clear_chat_session,
             commands::get_runtime_status,
             commands::get_mcp_status,

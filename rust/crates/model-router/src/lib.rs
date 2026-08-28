@@ -16,7 +16,11 @@ pub enum TaskKind {
 impl TaskKind {
     pub fn from_intent(text: &str) -> Self {
         let lower = text.to_lowercase();
-        if lower.contains("查") || lower.contains("什么是") || lower.contains("解释") || lower.contains("定义") {
+        if lower.contains("查")
+            || lower.contains("什么是")
+            || lower.contains("解释")
+            || lower.contains("定义")
+        {
             return Self::QuickLookup;
         }
         if lower.contains("综述")
@@ -27,7 +31,11 @@ impl TaskKind {
         {
             return Self::DeepAnalysis;
         }
-        if lower.contains("代码") || lower.contains("编程") || lower.contains("bug") || lower.contains("编译") {
+        if lower.contains("代码")
+            || lower.contains("编程")
+            || lower.contains("bug")
+            || lower.contains("编译")
+        {
             return Self::CodeGen;
         }
         Self::Chat
@@ -100,8 +108,7 @@ impl ModelRouter {
     }
 
     pub fn to_provider_config(&self, alias: &str) -> Option<ProviderConfig> {
-        self.get_model(alias)
-            .map(ProviderConfig::from_model_entry)
+        self.get_model(alias).map(ProviderConfig::from_model_entry)
     }
 
     pub fn has_models(&self) -> bool {
@@ -137,10 +144,7 @@ api_key = "sk-ant-sonnet"
 model_id = "claude-sonnet-4-6"
 description = "Deep analysis model"
 "#;
-        let mut tmp = tempfile::Builder::new()
-            .suffix(".toml")
-            .tempfile()
-            .unwrap();
+        let mut tmp = tempfile::Builder::new().suffix(".toml").tempfile().unwrap();
         write!(tmp, "{toml_str}").unwrap();
         let path = tmp.path().to_path_buf();
         let router = ModelRouter::load_from(&path).unwrap();
@@ -186,10 +190,7 @@ default = "main"
 provider = "anthropic"
 model_id = "claude-sonnet-4-6"
 "#;
-        let mut tmp = tempfile::Builder::new()
-            .suffix(".toml")
-            .tempfile()
-            .unwrap();
+        let mut tmp = tempfile::Builder::new().suffix(".toml").tempfile().unwrap();
         write!(tmp, "{toml_str}").unwrap();
         let router = ModelRouter::load_from(tmp.path()).unwrap();
         let _ = tmp.close();
@@ -254,10 +255,7 @@ model_id = "claude-sonnet-4-6"
     #[test]
     fn empty_models_config_is_ok() {
         let toml_str = "";
-        let mut tmp = tempfile::Builder::new()
-            .suffix(".toml")
-            .tempfile()
-            .unwrap();
+        let mut tmp = tempfile::Builder::new().suffix(".toml").tempfile().unwrap();
         write!(tmp, "{toml_str}").unwrap();
         let router = ModelRouter::load_from(tmp.path()).unwrap();
         let _ = tmp.close();

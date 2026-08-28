@@ -577,7 +577,12 @@ mod tests {
     #[test]
     fn run_validates_empty_input() {
         let result = run(
-            ClinicalCaseInput { case_text: "  ".into(), age: None, sex: None, context: None },
+            ClinicalCaseInput {
+                case_text: "  ".into(),
+                age: None,
+                sex: None,
+                context: None,
+            },
             "markdown",
         );
         assert!(result.is_err());
@@ -587,7 +592,12 @@ mod tests {
     #[test]
     fn run_rejects_unknown_format() {
         let result = run(
-            ClinicalCaseInput { case_text: "chest pain".into(), age: None, sex: None, context: None },
+            ClinicalCaseInput {
+                case_text: "chest pain".into(),
+                age: None,
+                sex: None,
+                context: None,
+            },
             "xml",
         );
         assert!(result.is_err());

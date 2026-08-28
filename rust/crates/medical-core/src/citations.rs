@@ -59,23 +59,12 @@ fn format_apa_authors(authors: &[crate::types::Author]) -> String {
         1 => authors[0].to_string(),
         2 => format!("{} & {}", authors[0].to_string(), authors[1].to_string()),
         _ if authors.len() <= 7 => {
-            let names: Vec<String> = authors
-                .iter()
-                .map(|a| a.to_string())
-                .collect();
+            let names: Vec<String> = authors.iter().map(|a| a.to_string()).collect();
             let last = names.len() - 1;
-            format!(
-                "{} & {}",
-                names[..last].join(", "),
-                names[last]
-            )
+            format!("{} & {}", names[..last].join(", "), names[last])
         }
         _ => {
-            let first_six: Vec<String> = authors
-                .iter()
-                .take(6)
-                .map(|a| a.to_string())
-                .collect();
+            let first_six: Vec<String> = authors.iter().take(6).map(|a| a.to_string()).collect();
             format!(
                 "{} ... {}",
                 first_six.join(", "),
@@ -154,10 +143,7 @@ fn abbreviate_journal(journal: &str) -> String {
             if w.len() <= 3 || w.to_uppercase() == w {
                 w.to_string()
             } else {
-                let cleaned: String = w
-                    .chars()
-                    .filter(|c| c.is_alphabetic())
-                    .collect();
+                let cleaned: String = w.chars().filter(|c| c.is_alphabetic()).collect();
                 if cleaned.len() <= 3 {
                     cleaned
                 } else {
@@ -182,7 +168,10 @@ fn bibtex_single(p: &Paper) -> String {
     let year = p.year.as_deref().unwrap_or("0000");
 
     let mut entry = format!("@article{{{key},\n");
-    entry.push_str(&format!("  author = {{{}}},\n", format_bibtex_authors(&p.authors)));
+    entry.push_str(&format!(
+        "  author = {{{}}},\n",
+        format_bibtex_authors(&p.authors)
+    ));
     entry.push_str(&format!("  title = {{{}}},\n", p.title));
     if let Some(ref journal) = p.journal {
         entry.push_str(&format!("  journal = {{{journal}}},\n"));
@@ -232,20 +221,20 @@ fn format_bibtex_authors(authors: &[crate::types::Author]) -> String {
     let names: Vec<String> = authors
         .iter()
         .map(|a| {
-            format!(
-                "{} {}",
-                a.last_name,
-                a.initials.as_deref().unwrap_or("")
-            )
-            .trim()
-            .to_string()
+            format!("{} {}", a.last_name, a.initials.as_deref().unwrap_or(""))
+                .trim()
+                .to_string()
         })
         .collect();
     names.join(" and ")
 }
 
 fn format_ris(papers: &[Paper]) -> String {
-    papers.iter().map(ris_single).collect::<Vec<_>>().join("\n\n")
+    papers
+        .iter()
+        .map(ris_single)
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }
 
 fn ris_single(p: &Paper) -> String {
@@ -255,7 +244,11 @@ fn ris_single(p: &Paper) -> String {
     for author in &p.authors {
         entry.push_str(&format!(
             "AU  - {}\n",
-            format!("{} {}", author.last_name, author.fore_name.as_deref().unwrap_or(""))
+            format!(
+                "{} {}",
+                author.last_name,
+                author.fore_name.as_deref().unwrap_or("")
+            )
         ));
     }
 
@@ -409,8 +402,14 @@ mod tests {
     #[test]
     fn citation_style_from_str() {
         assert_eq!(CitationStyle::from_str("apa"), Some(CitationStyle::Apa));
-        assert_eq!(CitationStyle::from_str("VANCOUVER"), Some(CitationStyle::Vancouver));
-        assert_eq!(CitationStyle::from_str("bibtex"), Some(CitationStyle::BibTeX));
+        assert_eq!(
+            CitationStyle::from_str("VANCOUVER"),
+            Some(CitationStyle::Vancouver)
+        );
+        assert_eq!(
+            CitationStyle::from_str("bibtex"),
+            Some(CitationStyle::BibTeX)
+        );
         assert_eq!(CitationStyle::from_str("RIS"), Some(CitationStyle::RIS));
         assert_eq!(CitationStyle::from_str("mla"), Some(CitationStyle::Mla));
         assert_eq!(CitationStyle::from_str("unknown"), None);

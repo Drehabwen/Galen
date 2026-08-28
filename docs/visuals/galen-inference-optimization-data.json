@@ -1,0 +1,574 @@
+{
+  "memory_foundation": {
+    "passed": true,
+    "assertions": 9,
+    "assertion_total": 9,
+    "total_ms": 59670,
+    "input_tokens": 18813,
+    "output_tokens": 5327,
+    "requests": 6,
+    "cache_hit": 0,
+    "cache_miss": 0,
+    "turns": [
+      {
+        "turn": 1,
+        "total_ms": 26986,
+        "input_tokens": 2358,
+        "output_tokens": 2332,
+        "requests": 1,
+        "continuations": 0,
+        "request_details": []
+      },
+      {
+        "turn": 2,
+        "total_ms": 7236,
+        "input_tokens": 13104,
+        "output_tokens": 494,
+        "requests": 4,
+        "continuations": 0,
+        "request_details": []
+      },
+      {
+        "turn": 3,
+        "total_ms": 25448,
+        "input_tokens": 3351,
+        "output_tokens": 2501,
+        "requests": 1,
+        "continuations": 0,
+        "request_details": []
+      }
+    ]
+  },
+  "tool_contract": {
+    "passed": true,
+    "assertions": 9,
+    "assertion_total": 9,
+    "total_ms": 91596,
+    "input_tokens": 23177,
+    "output_tokens": 8348,
+    "requests": 6,
+    "cache_hit": 0,
+    "cache_miss": 0,
+    "turns": [
+      {
+        "turn": 1,
+        "total_ms": 60258,
+        "input_tokens": 5120,
+        "output_tokens": 5327,
+        "requests": 2,
+        "continuations": 0,
+        "request_details": []
+      },
+      {
+        "turn": 2,
+        "total_ms": 5816,
+        "input_tokens": 13104,
+        "output_tokens": 480,
+        "requests": 3,
+        "continuations": 0,
+        "request_details": []
+      },
+      {
+        "turn": 3,
+        "total_ms": 25522,
+        "input_tokens": 4953,
+        "output_tokens": 2541,
+        "requests": 1,
+        "continuations": 0,
+        "request_details": []
+      }
+    ]
+  },
+  "flash_high": {
+    "passed": true,
+    "assertions": 9,
+    "assertion_total": 9,
+    "total_ms": 91491,
+    "input_tokens": 26610,
+    "output_tokens": 7339,
+    "requests": 7,
+    "cache_hit": 8320,
+    "cache_miss": 18290,
+    "turns": [
+      {
+        "turn": 1,
+        "total_ms": 50934,
+        "input_tokens": 4677,
+        "output_tokens": 3815,
+        "requests": 2,
+        "continuations": 0,
+        "request_details": [
+          {
+            "turn": 1,
+            "attemptCount": 1,
+            "streamConnectMs": 212,
+            "firstReasoningTokenMs": 1013,
+            "firstVisibleTokenMs": null,
+            "totalMs": 32431,
+            "inputTokens": 2358,
+            "outputTokens": 2401,
+            "cacheHitTokens": 0,
+            "cacheMissTokens": 2358,
+            "stopReason": "length"
+          },
+          {
+            "turn": 2,
+            "attemptCount": 1,
+            "streamConnectMs": 102,
+            "firstReasoningTokenMs": null,
+            "firstVisibleTokenMs": 755,
+            "totalMs": 18400,
+            "inputTokens": 2319,
+            "outputTokens": 1414,
+            "cacheHitTokens": 896,
+            "cacheMissTokens": 1423,
+            "stopReason": "end_turn"
+          }
+        ]
+      },
+      {
+        "turn": 2,
+        "total_ms": 6753,
+        "input_tokens": 12420,
+        "output_tokens": 577,
+        "requests": 3,
+        "continuations": 0,
+        "request_details": [
+          {
+            "turn": 1,
+            "attemptCount": 1,
+            "streamConnectMs": 165,
+            "firstReasoningTokenMs": null,
+            "firstVisibleTokenMs": null,
+            "totalMs": 559,
+            "inputTokens": 3882,
+            "outputTokens": 47,
+            "cacheHitTokens": 896,
+            "cacheMissTokens": 2986,
+            "stopReason": "tool_use"
+          },
+          {
+            "turn": 2,
+            "attemptCount": 1,
+            "streamConnectMs": 99,
+            "firstReasoningTokenMs": null,
+            "firstVisibleTokenMs": null,
+            "totalMs": 5066,
+            "inputTokens": 3985,
+            "outputTokens": 526,
+            "cacheHitTokens": 3840,
+            "cacheMissTokens": 145,
+            "stopReason": "tool_use"
+          },
+          {
+            "turn": 3,
+            "attemptCount": 1,
+            "streamConnectMs": 108,
+            "firstReasoningTokenMs": null,
+            "firstVisibleTokenMs": 776,
+            "totalMs": 944,
+            "inputTokens": 4553,
+            "outputTokens": 4,
+            "cacheHitTokens": 896,
+            "cacheMissTokens": 3657,
+            "stopReason": "end_turn"
+          }
+        ]
+      },
+      {
+        "turn": 3,
+        "total_ms": 33804,
+        "input_tokens": 9513,
+        "output_tokens": 2947,
+        "requests": 2,
+        "continuations": 1,
+        "request_details": [
+          {
+            "turn": 1,
+            "attemptCount": 1,
+            "streamConnectMs": 219,
+            "firstReasoningTokenMs": 1507,
+            "firstVisibleTokenMs": 23667,
+            "totalMs": 25809,
+            "inputTokens": 4628,
+            "outputTokens": 2400,
+            "cacheHitTokens": 896,
+            "cacheMissTokens": 3732,
+            "stopReason": "length"
+          },
+          {
+            "turn": 2,
+            "attemptCount": 1,
+            "streamConnectMs": 114,
+            "firstReasoningTokenMs": null,
+            "firstVisibleTokenMs": 1051,
+            "totalMs": 7860,
+            "inputTokens": 4885,
+            "outputTokens": 547,
+            "cacheHitTokens": 896,
+            "cacheMissTokens": 3989,
+            "stopReason": "end_turn"
+          }
+        ]
+      }
+    ]
+  },
+  "flash_fast": {
+    "passed": true,
+    "assertions": 9,
+    "assertion_total": 9,
+    "total_ms": 52676,
+    "input_tokens": 17451,
+    "output_tokens": 4494,
+    "requests": 5,
+    "cache_hit": 7168,
+    "cache_miss": 10283,
+    "turns": [
+      {
+        "turn": 1,
+        "total_ms": 23002,
+        "input_tokens": 2279,
+        "output_tokens": 1931,
+        "requests": 1,
+        "continuations": 0,
+        "request_details": [
+          {
+            "turn": 1,
+            "attemptCount": 1,
+            "streamConnectMs": 144,
+            "firstReasoningTokenMs": 1005,
+            "firstVisibleTokenMs": 12141,
+            "totalMs": 22911,
+            "inputTokens": 2279,
+            "outputTokens": 1931,
+            "cacheHitTokens": 896,
+            "cacheMissTokens": 1383,
+            "stopReason": "end_turn"
+          }
+        ]
+      },
+      {
+        "turn": 2,
+        "total_ms": 5424,
+        "input_tokens": 11023,
+        "output_tokens": 368,
+        "requests": 3,
+        "continuations": 0,
+        "request_details": [
+          {
+            "turn": 1,
+            "attemptCount": 1,
+            "streamConnectMs": 150,
+            "firstReasoningTokenMs": null,
+            "firstVisibleTokenMs": null,
+            "totalMs": 1173,
+            "inputTokens": 3488,
+            "outputTokens": 47,
+            "cacheHitTokens": 896,
+            "cacheMissTokens": 2592,
+            "stopReason": "tool_use"
+          },
+          {
+            "turn": 2,
+            "attemptCount": 1,
+            "streamConnectMs": 122,
+            "firstReasoningTokenMs": null,
+            "firstVisibleTokenMs": null,
+            "totalMs": 3207,
+            "inputTokens": 3591,
+            "outputTokens": 317,
+            "cacheHitTokens": 3456,
+            "cacheMissTokens": 135,
+            "stopReason": "tool_use"
+          },
+          {
+            "turn": 3,
+            "attemptCount": 1,
+            "streamConnectMs": 117,
+            "firstReasoningTokenMs": null,
+            "firstVisibleTokenMs": 650,
+            "totalMs": 853,
+            "inputTokens": 3944,
+            "outputTokens": 4,
+            "cacheHitTokens": 896,
+            "cacheMissTokens": 3048,
+            "stopReason": "end_turn"
+          }
+        ]
+      },
+      {
+        "turn": 3,
+        "total_ms": 24250,
+        "input_tokens": 4149,
+        "output_tokens": 2195,
+        "requests": 1,
+        "continuations": 0,
+        "request_details": [
+          {
+            "turn": 1,
+            "attemptCount": 1,
+            "streamConnectMs": 160,
+            "firstReasoningTokenMs": 1159,
+            "firstVisibleTokenMs": 11714,
+            "totalMs": 24094,
+            "inputTokens": 4149,
+            "outputTokens": 2195,
+            "cacheHitTokens": 1024,
+            "cacheMissTokens": 3125,
+            "stopReason": "end_turn"
+          }
+        ]
+      }
+    ]
+  },
+  "pro_uncapped": {
+    "passed": true,
+    "assertions": 9,
+    "assertion_total": 9,
+    "total_ms": 82454,
+    "input_tokens": 28386,
+    "output_tokens": 3628,
+    "requests": 6,
+    "cache_hit": 12416,
+    "cache_miss": 15970,
+    "turns": [
+      {
+        "turn": 1,
+        "total_ms": 61610,
+        "input_tokens": 7005,
+        "output_tokens": 2608,
+        "requests": 2,
+        "continuations": 1,
+        "request_details": [
+          {
+            "turn": 1,
+            "attemptCount": 1,
+            "streamConnectMs": 161,
+            "firstReasoningTokenMs": null,
+            "firstVisibleTokenMs": 1337,
+            "totalMs": 55897,
+            "inputTokens": 2279,
+            "outputTokens": 2400,
+            "cacheHitTokens": 0,
+            "cacheMissTokens": 2279,
+            "stopReason": "length"
+          },
+          {
+            "turn": 2,
+            "attemptCount": 1,
+            "streamConnectMs": 754,
+            "firstReasoningTokenMs": null,
+            "firstVisibleTokenMs": 1749,
+            "totalMs": 5611,
+            "inputTokens": 4726,
+            "outputTokens": 208,
+            "cacheHitTokens": 4608,
+            "cacheMissTokens": 118,
+            "stopReason": "end_turn"
+          }
+        ]
+      },
+      {
+        "turn": 2,
+        "total_ms": 5267,
+        "input_tokens": 15638,
+        "output_tokens": 211,
+        "requests": 3,
+        "continuations": 0,
+        "request_details": [
+          {
+            "turn": 1,
+            "attemptCount": 1,
+            "streamConnectMs": 209,
+            "firstReasoningTokenMs": null,
+            "firstVisibleTokenMs": null,
+            "totalMs": 1300,
+            "inputTokens": 5076,
+            "outputTokens": 47,
+            "cacheHitTokens": 896,
+            "cacheMissTokens": 4180,
+            "stopReason": "tool_use"
+          },
+          {
+            "turn": 2,
+            "attemptCount": 1,
+            "streamConnectMs": 144,
+            "firstReasoningTokenMs": null,
+            "firstVisibleTokenMs": null,
+            "totalMs": 2381,
+            "inputTokens": 5179,
+            "outputTokens": 161,
+            "cacheHitTokens": 5120,
+            "cacheMissTokens": 59,
+            "stopReason": "tool_use"
+          },
+          {
+            "turn": 3,
+            "attemptCount": 1,
+            "streamConnectMs": 161,
+            "firstReasoningTokenMs": null,
+            "firstVisibleTokenMs": 1235,
+            "totalMs": 1389,
+            "inputTokens": 5383,
+            "outputTokens": 3,
+            "cacheHitTokens": 896,
+            "cacheMissTokens": 4487,
+            "stopReason": "end_turn"
+          }
+        ]
+      },
+      {
+        "turn": 3,
+        "total_ms": 15577,
+        "input_tokens": 5743,
+        "output_tokens": 809,
+        "requests": 1,
+        "continuations": 0,
+        "request_details": [
+          {
+            "turn": 1,
+            "attemptCount": 1,
+            "streamConnectMs": 230,
+            "firstReasoningTokenMs": null,
+            "firstVisibleTokenMs": 1225,
+            "totalMs": 15425,
+            "inputTokens": 5743,
+            "outputTokens": 809,
+            "cacheHitTokens": 896,
+            "cacheMissTokens": 4847,
+            "stopReason": "end_turn"
+          }
+        ]
+      }
+    ]
+  },
+  "pro_fast": {
+    "passed": true,
+    "assertions": 9,
+    "assertion_total": 9,
+    "total_ms": 57457,
+    "input_tokens": 22472,
+    "output_tokens": 2821,
+    "requests": 6,
+    "cache_hit": 9856,
+    "cache_miss": 12616,
+    "turns": [
+      {
+        "turn": 1,
+        "total_ms": 28077,
+        "input_tokens": 5879,
+        "output_tokens": 1339,
+        "requests": 2,
+        "continuations": 1,
+        "request_details": [
+          {
+            "turn": 1,
+            "attemptCount": 1,
+            "streamConnectMs": 198,
+            "firstReasoningTokenMs": null,
+            "firstVisibleTokenMs": 1591,
+            "totalMs": 24159,
+            "inputTokens": 2316,
+            "outputTokens": 1200,
+            "cacheHitTokens": 896,
+            "cacheMissTokens": 1420,
+            "stopReason": "length"
+          },
+          {
+            "turn": 2,
+            "attemptCount": 1,
+            "streamConnectMs": 112,
+            "firstReasoningTokenMs": null,
+            "firstVisibleTokenMs": 1102,
+            "totalMs": 3817,
+            "inputTokens": 3563,
+            "outputTokens": 139,
+            "cacheHitTokens": 2304,
+            "cacheMissTokens": 1259,
+            "stopReason": "end_turn"
+          }
+        ]
+      },
+      {
+        "turn": 2,
+        "total_ms": 6931,
+        "input_tokens": 12082,
+        "output_tokens": 351,
+        "requests": 3,
+        "continuations": 0,
+        "request_details": [
+          {
+            "turn": 1,
+            "attemptCount": 1,
+            "streamConnectMs": 189,
+            "firstReasoningTokenMs": null,
+            "firstVisibleTokenMs": null,
+            "totalMs": 1580,
+            "inputTokens": 3844,
+            "outputTokens": 47,
+            "cacheHitTokens": 896,
+            "cacheMissTokens": 2948,
+            "stopReason": "tool_use"
+          },
+          {
+            "turn": 2,
+            "attemptCount": 1,
+            "streamConnectMs": 152,
+            "firstReasoningTokenMs": null,
+            "firstVisibleTokenMs": null,
+            "totalMs": 3793,
+            "inputTokens": 3947,
+            "outputTokens": 301,
+            "cacheHitTokens": 3840,
+            "cacheMissTokens": 107,
+            "stopReason": "tool_use"
+          },
+          {
+            "turn": 3,
+            "attemptCount": 1,
+            "streamConnectMs": 135,
+            "firstReasoningTokenMs": null,
+            "firstVisibleTokenMs": 1271,
+            "totalMs": 1421,
+            "inputTokens": 4291,
+            "outputTokens": 3,
+            "cacheHitTokens": 896,
+            "cacheMissTokens": 3395,
+            "stopReason": "end_turn"
+          }
+        ]
+      },
+      {
+        "turn": 3,
+        "total_ms": 22449,
+        "input_tokens": 4511,
+        "output_tokens": 1131,
+        "requests": 1,
+        "continuations": 0,
+        "request_details": [
+          {
+            "turn": 1,
+            "attemptCount": 1,
+            "streamConnectMs": 179,
+            "firstReasoningTokenMs": null,
+            "firstVisibleTokenMs": 1155,
+            "totalMs": 22300,
+            "inputTokens": 4511,
+            "outputTokens": 1131,
+            "cacheHitTokens": 1024,
+            "cacheMissTokens": 3487,
+            "stopReason": "end_turn"
+          }
+        ]
+      }
+    ]
+  },
+  "sources": {
+    "memory_foundation": "evals/runs/context-memory-probe-1787788683645.json",
+    "tool_contract": "evals/runs/context-memory-probe-1787789495473.json",
+    "flash_high": "evals/runs/context-memory-probe-1787791061394.json",
+    "flash_fast": "evals/runs/context-memory-probe-1787791339153.json",
+    "pro_uncapped": "evals/runs/context-memory-probe-1787791511229.json",
+    "pro_fast": "evals/runs/context-memory-probe-1787791718521.json"
+  }
+}

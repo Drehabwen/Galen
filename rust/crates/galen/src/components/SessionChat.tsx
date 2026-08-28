@@ -151,7 +151,7 @@ export function SessionChat({
           mode: "auto",
           personaId: "medical",
           tag: node.id,
-          thinkingLevel: thinkingLevel || "medium",
+          thinkingLevel: thinkingLevel || "low",
         });
       } catch (e) {
         setError(String(e));

@@ -1,0 +1,80 @@
+{
+  "as_of": "2026-08-25",
+  "headline": "Galen is moving from an AI chat wrapper to a reliable rehabilitation research loop",
+  "metrics": [
+    {
+      "label": "真实教材病例",
+      "value": 100,
+      "unit": "例",
+      "note": "10例已核验，90例OCR候选"
+    },
+    {
+      "label": "病例衍生任务",
+      "value": 400,
+      "unit": "项",
+      "note": "每例4类可靠性任务"
+    },
+    {
+      "label": "T2重复测试",
+      "value": 30,
+      "denominator": 30,
+      "unit": "通过",
+      "note": "source-closed + watchdog Repeat-5"
+    },
+    {
+      "label": "候选事实误入硬门槛",
+      "value": 0,
+      "unit": "项",
+      "note": "未核验事实禁止精确评分"
+    }
+  ],
+  "milestones": [
+    {
+      "id": "M1",
+      "title": "可进入",
+      "subtitle": "向导循环与环境配置链路",
+      "status": "completed"
+    },
+    {
+      "id": "M2",
+      "title": "可持续工作",
+      "subtitle": "上下文、记忆与任务边界",
+      "status": "completed"
+    },
+    {
+      "id": "M3",
+      "title": "可维护",
+      "subtitle": "巨型组件拆分与流式看门狗",
+      "status": "completed"
+    },
+    {
+      "id": "M4",
+      "title": "可度量",
+      "subtitle": "来源闭合、时间泄漏、因果边界",
+      "status": "validated"
+    },
+    {
+      "id": "M5",
+      "title": "可在真实病例上检验",
+      "subtitle": "100例 / 400任务 / 分组切分",
+      "status": "validated"
+    },
+    {
+      "id": "M6",
+      "title": "连接现实康复",
+      "subtitle": "采集→证据→科研→反馈闭环",
+      "status": "in_progress"
+    }
+  ],
+  "remaining_gaps": [
+    "将90例OCR候选逐批提升为视觉核验金标准",
+    "把影像、体表与支具状态纳入统一时间轴",
+    "在Galen内部完成交付物渲染与证据反查",
+    "完成一个无需讲解也能成立的比赛Demo闭环"
+  ],
+  "sources": [
+    "evals/reports/ais-t2-source-closed-watchdog-pro-repeat5-final-2026-08-25.md",
+    "evals/reports/ais-textbook-100-build-audit-2026-08-25.md",
+    "scripts/evals/build_ais_textbook_100_dataset.py"
+  ]
+}

@@ -1,0 +1,25 @@
+schema_version = 1
+id = "E11"
+name = "压缩后任务成功率保留"
+suite = "context-engineering"
+risk_tier = "high"
+prompt = "根据工作区记忆继续拟定研究方案，生成 output/context-check.md。必须原样保留样本量 48、主要结局 FMA-UE、随机 12 周，并列明这三个约束。"
+fixture = "fixtures/e11"
+timeout_seconds = 300
+max_model_requests = 6
+max_tool_calls = 10
+max_human_interventions = 0
+
+[context]
+variant = "compacted"
+preserve_recent = 8
+max_tokens = 10000
+require_fields = ["- Scope:", "- Current work:", "- Pending work:", "- Key files referenced:", "- Tools mentioned:", "- Recent user requests:"]
+
+[required]
+facts = ["48", "FMA-UE", "12 周"]
+artifacts = ["output/context-check.md"]
+
+[forbidden]
+repeated_call_limit = 2
+response_patterns = ["样本量 28", "主要结局 Barthel"]

@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "group_key": "case_id",
+  "development": ["AIS-C021", "AIS-C022", "AIS-C023", "AIS-C024", "AIS-C025", "AIS-C026"],
+  "validation": ["AIS-C027", "AIS-C028"],
+  "hidden": ["AIS-C029", "AIS-C030"]
+}

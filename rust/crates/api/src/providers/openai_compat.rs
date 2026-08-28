@@ -167,7 +167,7 @@ impl OpenAiCompatClient {
             ..request.clone()
         };
         preflight_message_request(&request)?;
-        let response = self.send_with_retry(&request).await?;
+        let (response, _) = self.send_with_retry(&request).await?;
         let request_id = request_id_from_headers(response.headers());
         let body = response.text().await.map_err(ApiError::from)?;
         // Some backends return {"error":{"message":"...","type":"...","code":...}}
@@ -218,7 +218,7 @@ impl OpenAiCompatClient {
         request: &MessageRequest,
     ) -> Result<MessageStream, ApiError> {
         preflight_message_request(request)?;
-        let response = self
+        let (response, attempt_count) = self
             .send_with_retry(&request.clone().with_streaming())
             .await?;
         Ok(MessageStream {
@@ -228,20 +228,21 @@ impl OpenAiCompatClient {
             pending: VecDeque::new(),
             done: false,
             state: StreamState::new(request.model.clone()),
+            attempt_count,
         })
     }
 
     async fn send_with_retry(
         &self,
         request: &MessageRequest,
-    ) -> Result<reqwest::Response, ApiError> {
+    ) -> Result<(reqwest::Response, u32), ApiError> {
         let mut attempts = 0;
 
         let last_error = loop {
             attempts += 1;
             let retryable_error = match self.send_raw_request(request).await {
                 Ok(response) => match expect_success(response).await {
-                    Ok(response) => return Ok(response),
+                    Ok(response) => return Ok((response, attempts)),
                     Err(error) if error.is_retryable() && attempts <= self.max_retries + 1 => error,
                     Err(error) => return Err(error),
                 },
@@ -366,12 +367,18 @@ pub struct MessageStream {
     pending: VecDeque<StreamEvent>,
     done: bool,
     state: StreamState,
+    attempt_count: u32,
 }
 
 impl MessageStream {
     #[must_use]
     pub fn request_id(&self) -> Option<&str> {
         self.request_id.as_deref()
+    }
+
+    #[must_use]
+    pub const fn attempt_count(&self) -> u32 {
+        self.attempt_count
     }
 
     pub async fn next_event(&mut self) -> Result<Option<StreamEvent>, ApiError> {
@@ -488,12 +495,7 @@ impl StreamState {
         }
 
         if let Some(usage) = chunk.usage {
-            self.usage = Some(Usage {
-                input_tokens: usage.prompt_tokens,
-                cache_creation_input_tokens: 0,
-                cache_read_input_tokens: 0,
-                output_tokens: usage.completion_tokens,
-            });
+            self.usage = Some(usage.normalized());
         }
 
         for choice in chunk.choices {
@@ -502,10 +504,7 @@ impl StreamState {
             // separate: reasoning → Thinking blocks, content → Text blocks.
             // Do NOT fall back reasoning into text — that would duplicate it.
             let reasoning = choice.delta.reasoning_content.clone();
-            let text_content = choice
-                .delta
-                .content
-                .filter(|v| !v.is_empty());
+            let text_content = choice.delta.content.filter(|v| !v.is_empty());
             if let Some(content) = text_content {
                 if !self.text_started {
                     self.text_started = true;
@@ -524,10 +523,7 @@ impl StreamState {
 
             // Emit Thinking blocks for `reasoning_content` so it can be
             // round-tripped back to the API on subsequent turns (DeepSeek V4, etc.).
-            if let Some(reasoning_text) = reasoning
-                .as_deref()
-                .filter(|v| !v.is_empty())
-            {
+            if let Some(reasoning_text) = reasoning.as_deref().filter(|v| !v.is_empty()) {
                 if !self.thinking_started {
                     self.thinking_started = true;
                     events.push(StreamEvent::ContentBlockStart(ContentBlockStartEvent {
@@ -754,6 +750,33 @@ struct OpenAiUsage {
     prompt_tokens: u32,
     #[serde(default)]
     completion_tokens: u32,
+    #[serde(default)]
+    prompt_cache_hit_tokens: u32,
+    #[serde(default)]
+    prompt_cache_miss_tokens: u32,
+    #[serde(default)]
+    prompt_tokens_details: Option<OpenAiPromptTokenDetails>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct OpenAiPromptTokenDetails {
+    #[serde(default)]
+    cached_tokens: u32,
+}
+
+impl OpenAiUsage {
+    fn normalized(&self) -> Usage {
+        let nested_cache_hits = self
+            .prompt_tokens_details
+            .as_ref()
+            .map_or(0, |details| details.cached_tokens);
+        Usage {
+            input_tokens: self.prompt_tokens,
+            cache_creation_input_tokens: self.prompt_cache_miss_tokens,
+            cache_read_input_tokens: self.prompt_cache_hit_tokens.max(nested_cache_hits),
+            output_tokens: self.completion_tokens,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -1262,18 +1285,11 @@ fn normalize_response(
             .finish_reason
             .map(|value| normalize_finish_reason(&value)),
         stop_sequence: None,
-        usage: Usage {
-            input_tokens: response
-                .usage
-                .as_ref()
-                .map_or(0, |usage| usage.prompt_tokens),
-            cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0,
-            output_tokens: response
-                .usage
-                .as_ref()
-                .map_or(0, |usage| usage.completion_tokens),
-        },
+        usage: response
+            .usage
+            .as_ref()
+            .map(OpenAiUsage::normalized)
+            .unwrap_or_default(),
         request_id: None,
     })
 }
@@ -1473,7 +1489,7 @@ mod tests {
     use super::{
         build_chat_completion_request, chat_completions_endpoint, is_reasoning_model,
         normalize_finish_reason, openai_tool_choice, parse_tool_arguments, OpenAiCompatClient,
-        OpenAiCompatConfig,
+        OpenAiCompatConfig, OpenAiUsage,
     };
     use crate::error::ApiError;
     use crate::types::{
@@ -2273,5 +2289,32 @@ mod tests {
         assert_eq!(super::strip_routing_prefix("kimi/kimi-k2.5"), "kimi-k2.5");
         assert_eq!(super::strip_routing_prefix("kimi-k2.5"), "kimi-k2.5"); // no prefix, unchanged
         assert_eq!(super::strip_routing_prefix("kimi/kimi-k1.5"), "kimi-k1.5");
+    }
+
+    #[test]
+    fn deepseek_usage_preserves_cache_hit_and_miss_tokens() {
+        let usage: OpenAiUsage = serde_json::from_value(json!({
+            "prompt_tokens": 1200,
+            "completion_tokens": 80,
+            "prompt_cache_hit_tokens": 900,
+            "prompt_cache_miss_tokens": 300
+        }))
+        .unwrap();
+        let normalized = usage.normalized();
+        assert_eq!(normalized.input_tokens, 1200);
+        assert_eq!(normalized.output_tokens, 80);
+        assert_eq!(normalized.cache_read_input_tokens, 900);
+        assert_eq!(normalized.cache_creation_input_tokens, 300);
+    }
+
+    #[test]
+    fn openai_nested_cached_tokens_are_preserved() {
+        let usage: OpenAiUsage = serde_json::from_value(json!({
+            "prompt_tokens": 1200,
+            "completion_tokens": 80,
+            "prompt_tokens_details": { "cached_tokens": 640 }
+        }))
+        .unwrap();
+        assert_eq!(usage.normalized().cache_read_input_tokens, 640);
     }
 }

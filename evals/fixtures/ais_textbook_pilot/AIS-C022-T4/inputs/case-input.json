@@ -1,0 +1,102 @@
+{
+  "case_id": "AIS-C022",
+  "condition": {
+    "etiology": "idiopathic_scoliosis"
+  },
+  "demographics": {
+    "birth_year": 2003,
+    "sex": "female"
+  },
+  "events": [
+    {
+      "context": "out_of_brace",
+      "date": "2019-04",
+      "event_id": "baseline"
+    },
+    {
+      "context": "in_brace",
+      "date": "2019-04",
+      "event_id": "in_brace",
+      "interventions": [
+        "brace"
+      ]
+    }
+  ],
+  "observations": [
+    {
+      "event_id": "baseline",
+      "metric": "cobb_deg",
+      "observation_id": "C022-B-T",
+      "region": "thoracic",
+      "source": {
+        "book_page": 68,
+        "channel": "text",
+        "figure": "4-86",
+        "pdf_page": 81
+      },
+      "unit": "deg",
+      "value": 12
+    },
+    {
+      "event_id": "baseline",
+      "metric": "cobb_deg",
+      "observation_id": "C022-B-L",
+      "region": "lumbar",
+      "source": {
+        "book_page": 68,
+        "channel": "text",
+        "figure": "4-86",
+        "pdf_page": 81
+      },
+      "unit": "deg",
+      "value": 24
+    },
+    {
+      "event_id": "baseline",
+      "metric": "atr_deg",
+      "observation_id": "C022-B-ATR-T",
+      "region": "thoracic",
+      "source": {
+        "book_page": 68,
+        "channel": "text",
+        "pdf_page": 81
+      },
+      "unit": "deg",
+      "value": -3
+    },
+    {
+      "event_id": "baseline",
+      "metric": "atr_deg",
+      "observation_id": "C022-B-ATR-L",
+      "region": "lumbar",
+      "source": {
+        "book_page": 68,
+        "channel": "text",
+        "pdf_page": 81
+      },
+      "unit": "deg",
+      "value": 9
+    },
+    {
+      "event_id": "in_brace",
+      "metric": "cobb_deg",
+      "observation_id": "C022-I-U",
+      "region": "unspecified",
+      "source": {
+        "book_page": 68,
+        "channel": "text",
+        "figure": "4-86",
+        "pdf_page": 81
+      },
+      "unit": "deg",
+      "value": 5
+    }
+  ],
+  "schema_version": 1,
+  "task_id": "AIS-C022-T4",
+  "visible_event_ids": [
+    "baseline",
+    "in_brace"
+  ],
+  "visible_source_conflicts": []
+}

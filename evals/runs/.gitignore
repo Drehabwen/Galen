@@ -1,3 +1,4 @@
 *.jsonl
 *.html
+*.json
 !.gitignore

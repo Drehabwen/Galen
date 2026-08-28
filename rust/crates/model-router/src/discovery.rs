@@ -12,7 +12,10 @@ impl ProviderConfig {
     pub fn from_model_entry(entry: &ModelEntry) -> Self {
         Self {
             provider: entry.provider.clone(),
-            api_key: entry.api_key.clone().or_else(|| discover_api_key(&entry.provider)),
+            api_key: entry
+                .api_key
+                .clone()
+                .or_else(|| discover_api_key(&entry.provider)),
             model_id: entry.model_id.clone(),
             base_url: entry.base_url.clone(),
         }
@@ -64,8 +67,7 @@ fn read_from_dotenv(name: &str) -> Option<String> {
             if key == name {
                 let value = value.trim();
                 let value = if (value.starts_with('"') && value.ends_with('"'))
-                    || (value.starts_with('\'') && value.ends_with('\''))
-                    && value.len() >= 2
+                    || (value.starts_with('\'') && value.ends_with('\'')) && value.len() >= 2
                 {
                     &value[1..value.len() - 1]
                 } else {
@@ -100,7 +102,8 @@ mod tests {
         // We need a .env in a temp dir, and then we change CWD temporarily.
         let dir = tempfile::tempdir().unwrap();
         let env_path = dir.path().join(".env");
-        let content = "ANTHROPIC_API_KEY=sk-ant-from-dotenv\n# comment\nOPENAI_API_KEY=sk-openai-quoted\n";
+        let content =
+            "ANTHROPIC_API_KEY=sk-ant-from-dotenv\n# comment\nOPENAI_API_KEY=sk-openai-quoted\n";
         std::fs::write(&env_path, content).unwrap();
 
         // Verify the file exists and has the expected content

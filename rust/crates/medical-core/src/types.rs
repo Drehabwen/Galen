@@ -28,7 +28,7 @@ pub struct Author {
 impl std::fmt::Display for Author {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.fore_name.as_deref() {
-            Some(fore) if !fore.is_empty() => write!(f,"{}, {}", self.last_name, fore),
+            Some(fore) if !fore.is_empty() => write!(f, "{}, {}", self.last_name, fore),
             _ => write!(f, "{}", self.last_name),
         }
     }

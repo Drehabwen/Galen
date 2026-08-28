@@ -1,0 +1,261 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="2680" viewBox="0 0 1800 2680" role="img">
+<title>Galen 上下文与推理调度优化仪表盘</title>
+<desc>展示多轮上下文、工具契约、缓存前缀、思考预算与响应收敛的优化过程和探针结果。</desc>
+<defs>
+<filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#17372E" flood-opacity="0.08"/></filter>
+<marker id="arrow-green" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#00856A"/></marker>
+<marker id="arrow-coral" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#D96C4E"/></marker>
+</defs>
+<rect width="1800" height="2680" fill="#F4F1EA"/>
+<text x="80" y="78" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="16" fill="#00856A" font-weight="700" text-anchor="start" letter-spacing="3" opacity="1">GALEN / CONTEXT × INFERENCE</text>
+<text x="80" y="132" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="48" fill="#17372E" font-weight="800" text-anchor="start" letter-spacing="0" opacity="1">从“记得住”到“答得快”</text>
+<text x="80" y="176" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="22" fill="#71827B" font-weight="400" text-anchor="start" letter-spacing="0" opacity="1">上下文工程、工具收敛、缓存稳定性与推理预算的连续优化</text>
+<rect x="1425" y="65" width="295" height="100" rx="18" fill="#DCEFE8" stroke="none" stroke-width="1" opacity="1"/>
+<text x="1455" y="102" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="15" fill="#71827B" font-weight="600" text-anchor="start" letter-spacing="0" opacity="1">质量门</text>
+<text x="1455" y="142" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="32" fill="#00856A" font-weight="800" text-anchor="start" letter-spacing="0" opacity="1">9 / 9 通过</text>
+<rect x="80" y="225" width="390" height="180" rx="22" fill="#FFFDF8" stroke="none" stroke-width="1" opacity="1" filter="url(#shadow)"/>
+<text x="108" y="260" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="16" fill="#71827B" font-weight="600" text-anchor="start" letter-spacing="0" opacity="1">Flash 总耗时</text>
+<text x="108" y="320" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="42" fill="#00856A" font-weight="800" text-anchor="start" letter-spacing="0" opacity="1">52.7s</text>
+<text x="108" y="365" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="16" fill="#71827B" font-weight="400" text-anchor="start" letter-spacing="0" opacity="1">优化前 91.5s</text>
+<rect x="338" y="250" width="102" height="34" rx="17" fill="#DCEFE8" stroke="none" stroke-width="1" opacity="1"/>
+<text x="389" y="273" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="15" fill="#00856A" font-weight="700" text-anchor="middle" letter-spacing="0" opacity="1">−42%</text>
+<rect x="500" y="225" width="390" height="180" rx="22" fill="#FFFDF8" stroke="none" stroke-width="1" opacity="1" filter="url(#shadow)"/>
+<text x="528" y="260" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="16" fill="#71827B" font-weight="600" text-anchor="start" letter-spacing="0" opacity="1">输入 Token</text>
+<text x="528" y="320" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="42" fill="#00856A" font-weight="800" text-anchor="start" letter-spacing="0" opacity="1">17,451</text>
+<text x="528" y="365" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="16" fill="#71827B" font-weight="400" text-anchor="start" letter-spacing="0" opacity="1">优化前 26,610</text>
+<rect x="758" y="250" width="102" height="34" rx="17" fill="#DCEFE8" stroke="none" stroke-width="1" opacity="1"/>
+<text x="809" y="273" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="15" fill="#00856A" font-weight="700" text-anchor="middle" letter-spacing="0" opacity="1">−34%</text>
+<rect x="920" y="225" width="390" height="180" rx="22" fill="#FFFDF8" stroke="none" stroke-width="1" opacity="1" filter="url(#shadow)"/>
+<text x="948" y="260" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="16" fill="#71827B" font-weight="600" text-anchor="start" letter-spacing="0" opacity="1">输出 Token</text>
+<text x="948" y="320" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="42" fill="#00856A" font-weight="800" text-anchor="start" letter-spacing="0" opacity="1">4,494</text>
+<text x="948" y="365" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="16" fill="#71827B" font-weight="400" text-anchor="start" letter-spacing="0" opacity="1">优化前 7,339</text>
+<rect x="1178" y="250" width="102" height="34" rx="17" fill="#DCEFE8" stroke="none" stroke-width="1" opacity="1"/>
+<text x="1229" y="273" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="15" fill="#00856A" font-weight="700" text-anchor="middle" letter-spacing="0" opacity="1">−39%</text>
+<rect x="1340" y="225" width="390" height="180" rx="22" fill="#FFFDF8" stroke="none" stroke-width="1" opacity="1" filter="url(#shadow)"/>
+<text x="1368" y="260" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="16" fill="#71827B" font-weight="600" text-anchor="start" letter-spacing="0" opacity="1">模型请求</text>
+<text x="1368" y="320" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="42" fill="#00856A" font-weight="800" text-anchor="start" letter-spacing="0" opacity="1">5</text>
+<text x="1368" y="365" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="16" fill="#71827B" font-weight="400" text-anchor="start" letter-spacing="0" opacity="1">优化前 7</text>
+<rect x="1598" y="250" width="102" height="34" rx="17" fill="#DCEFE8" stroke="none" stroke-width="1" opacity="1"/>
+<text x="1649" y="273" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="15" fill="#00856A" font-weight="700" text-anchor="middle" letter-spacing="0" opacity="1">−29%</text>
+<rect x="80" y="445" width="1640" height="305" rx="24" fill="#FFFDF8" stroke="none" stroke-width="1" opacity="1" filter="url(#shadow)"/>
+<text x="115" y="490" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#00856A" font-weight="700" text-anchor="start" letter-spacing="2" opacity="1">OPTIMIZATION JOURNEY</text>
+<text x="115" y="524" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="28" fill="#17372E" font-weight="700" text-anchor="start" letter-spacing="0" opacity="1">优化不是一次改 Prompt，而是五层系统工程</text>
+<line x1="175" y1="625" x2="1610" y2="625" stroke="#D8DED9" stroke-width="5"/>
+<circle cx="175" cy="625" r="26" fill="#FFFFFF" stroke="#00856A" stroke-width="4"/>
+<text x="175" y="631" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#00856A" font-weight="800" text-anchor="middle" letter-spacing="0" opacity="1">01</text>
+<text x="175" y="687" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="19" fill="#17372E" font-weight="700" text-anchor="middle" letter-spacing="0" opacity="1">会话连续性</text>
+<text x="175" y="717" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#71827B" font-weight="400" text-anchor="middle">
+<tspan x="175" dy="0">修复持久化顺序</tspan>
+<tspan x="175" dy="20.3">工具事实进入模型记忆</tspan>
+</text>
+<circle cx="533" cy="625" r="26" fill="#FFFFFF" stroke="#00856A" stroke-width="4"/>
+<text x="533" y="631" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#00856A" font-weight="800" text-anchor="middle" letter-spacing="0" opacity="1">02</text>
+<text x="533" y="687" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="19" fill="#17372E" font-weight="700" text-anchor="middle" letter-spacing="0" opacity="1">决策账本</text>
+<text x="533" y="717" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#71827B" font-weight="400" text-anchor="middle">
+<tspan x="533" dy="0">显式约束可见</tspan>
+<tspan x="533" dy="20.3">新修订覆盖旧决策</tspan>
+</text>
+<circle cx="891" cy="625" r="26" fill="#FFFFFF" stroke="#00856A" stroke-width="4"/>
+<text x="891" y="631" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#00856A" font-weight="800" text-anchor="middle" letter-spacing="0" opacity="1">03</text>
+<text x="891" y="687" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="19" fill="#17372E" font-weight="700" text-anchor="middle" letter-spacing="0" opacity="1">工具契约</text>
+<text x="891" y="717" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#71827B" font-weight="400" text-anchor="middle">
+<tspan x="891" dy="0">读写任务 5→3 请求</tspan>
+<tspan x="891" dy="20.3">停止无意义探索</tspan>
+</text>
+<circle cx="1249" cy="625" r="26" fill="#FFFFFF" stroke="#00856A" stroke-width="4"/>
+<text x="1249" y="631" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#00856A" font-weight="800" text-anchor="middle" letter-spacing="0" opacity="1">04</text>
+<text x="1249" y="687" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="19" fill="#17372E" font-weight="700" text-anchor="middle" letter-spacing="0" opacity="1">缓存稳定</text>
+<text x="1249" y="717" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#71827B" font-weight="400" text-anchor="middle">
+<tspan x="1249" dy="0">固定 system prefix</tspan>
+<tspan x="1249" dy="20.3">动态上下文移到尾部</tspan>
+</text>
+<circle cx="1607" cy="625" r="26" fill="#00856A" stroke="#00856A" stroke-width="4"/>
+<text x="1607" y="631" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#FFFFFF" font-weight="800" text-anchor="middle" letter-spacing="0" opacity="1">05</text>
+<text x="1607" y="687" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="19" fill="#17372E" font-weight="700" text-anchor="middle" letter-spacing="0" opacity="1">推理调度</text>
+<text x="1607" y="717" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#71827B" font-weight="400" text-anchor="middle">
+<tspan x="1607" dy="0">Flash 低思考默认</tspan>
+<tspan x="1607" dy="20.3">Pro 快速通道 + 预算</tspan>
+</text>
+<rect x="80" y="790" width="800" height="520" rx="24" fill="#FFFDF8" stroke="none" stroke-width="1" opacity="1" filter="url(#shadow)"/>
+<text x="115" y="835" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#00856A" font-weight="700" text-anchor="start" letter-spacing="2" opacity="1">LATENCY</text>
+<text x="115" y="869" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="28" fill="#17372E" font-weight="700" text-anchor="start" letter-spacing="0" opacity="1">三轮任务耗时：低思考减少最昂贵的生成轮</text>
+<text x="115" y="897" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="15" fill="#71827B" font-weight="400" text-anchor="start" letter-spacing="0" opacity="1">单位：秒；同一 9/9 多轮探针</text>
+<text x="120" y="962" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="18" fill="#17372E" font-weight="800" text-anchor="start" letter-spacing="0" opacity="1">T1</text>
+<text x="165" y="957.28" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="16" fill="#71827B" font-weight="400" text-anchor="start" letter-spacing="0" opacity="1">高思考</text>
+<rect x="270" y="940" width="485" height="24" rx="12.0" fill="#E7EBE8" stroke="none" stroke-width="1" opacity="1"/>
+<rect x="270" y="940" width="485.0" height="24" rx="12.0" fill="#D96C4E" stroke="none" stroke-width="1" opacity="1"/>
+<text x="769" y="957.28" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="16" fill="#17372E" font-weight="700" text-anchor="start" letter-spacing="0" opacity="1">50.9s</text>
+<text x="165" y="995.28" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="16" fill="#71827B" font-weight="400" text-anchor="start" letter-spacing="0" opacity="1">优化后</text>
+<rect x="270" y="978" width="485" height="24" rx="12.0" fill="#E7EBE8" stroke="none" stroke-width="1" opacity="1"/>
+<rect x="270" y="978" width="219.0279577492441" height="24" rx="12.0" fill="#00856A" stroke="none" stroke-width="1" opacity="1"/>
+<text x="769" y="995.28" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="16" fill="#17372E" font-weight="700" text-anchor="start" letter-spacing="0" opacity="1">23.0s</text>
+<text x="120" y="1067" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="18" fill="#17372E" font-weight="800" text-anchor="start" letter-spacing="0" opacity="1">T2</text>
+<text x="165" y="1062.28" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="16" fill="#71827B" font-weight="400" text-anchor="start" letter-spacing="0" opacity="1">高思考</text>
+<rect x="270" y="1045" width="485" height="24" rx="12.0" fill="#E7EBE8" stroke="none" stroke-width="1" opacity="1"/>
+<rect x="270" y="1045" width="64.30292142773" height="24" rx="12.0" fill="#D96C4E" stroke="none" stroke-width="1" opacity="1"/>
+<text x="769" y="1062.28" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="16" fill="#17372E" font-weight="700" text-anchor="start" letter-spacing="0" opacity="1">6.8s</text>
+<text x="165" y="1100.28" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="16" fill="#71827B" font-weight="400" text-anchor="start" letter-spacing="0" opacity="1">优化后</text>
+<rect x="270" y="1083" width="485" height="24" rx="12.0" fill="#E7EBE8" stroke="none" stroke-width="1" opacity="1"/>
+<rect x="270" y="1083" width="51.64801507833667" height="24" rx="12.0" fill="#00856A" stroke="none" stroke-width="1" opacity="1"/>
+<text x="769" y="1100.28" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="16" fill="#17372E" font-weight="700" text-anchor="start" letter-spacing="0" opacity="1">5.4s</text>
+<text x="120" y="1172" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="18" fill="#17372E" font-weight="800" text-anchor="start" letter-spacing="0" opacity="1">T3</text>
+<text x="165" y="1167.28" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="16" fill="#71827B" font-weight="400" text-anchor="start" letter-spacing="0" opacity="1">高思考</text>
+<rect x="270" y="1150" width="485" height="24" rx="12.0" fill="#E7EBE8" stroke="none" stroke-width="1" opacity="1"/>
+<rect x="270" y="1150" width="321.88597007892565" height="24" rx="12.0" fill="#D96C4E" stroke="none" stroke-width="1" opacity="1"/>
+<text x="769" y="1167.28" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="16" fill="#17372E" font-weight="700" text-anchor="start" letter-spacing="0" opacity="1">33.8s</text>
+<text x="165" y="1205.28" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="16" fill="#71827B" font-weight="400" text-anchor="start" letter-spacing="0" opacity="1">优化后</text>
+<rect x="270" y="1188" width="485" height="24" rx="12.0" fill="#E7EBE8" stroke="none" stroke-width="1" opacity="1"/>
+<rect x="270" y="1188" width="230.91157183806496" height="24" rx="12.0" fill="#00856A" stroke="none" stroke-width="1" opacity="1"/>
+<text x="769" y="1205.28" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="16" fill="#17372E" font-weight="700" text-anchor="start" letter-spacing="0" opacity="1">24.2s</text>
+<rect x="595" y="850" width="18" height="18" rx="4" fill="#D96C4E" stroke="none" stroke-width="1" opacity="1"/>
+<text x="622" y="865" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#71827B" font-weight="400" text-anchor="start" letter-spacing="0" opacity="1">高思考压力路径</text>
+<rect x="730" y="850" width="18" height="18" rx="4" fill="#00856A" stroke="none" stroke-width="1" opacity="1"/>
+<text x="757" y="865" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#71827B" font-weight="400" text-anchor="start" letter-spacing="0" opacity="1">默认快速路径</text>
+<rect x="920" y="790" width="800" height="520" rx="24" fill="#FFFDF8" stroke="none" stroke-width="1" opacity="1" filter="url(#shadow)"/>
+<text x="955" y="835" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#00856A" font-weight="700" text-anchor="start" letter-spacing="2" opacity="1">TOKEN ECONOMY</text>
+<text x="955" y="869" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="28" fill="#17372E" font-weight="700" text-anchor="start" letter-spacing="0" opacity="1">少花 Token，同时保持全部质量断言</text>
+<text x="955" y="897" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="15" fill="#71827B" font-weight="400" text-anchor="start" letter-spacing="0" opacity="1">柱从零起；输入与输出分别比较</text>
+<rect x="1010" y="965.53125" width="72" height="249.46875" rx="10" fill="#D96C4E" stroke="none" stroke-width="1" opacity="1"/>
+<text x="1046" y="951.53125" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="16" fill="#17372E" font-weight="700" text-anchor="middle" letter-spacing="0" opacity="1">26,610</text>
+<text x="1046" y="1245" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#71827B" font-weight="400" text-anchor="middle" letter-spacing="0" opacity="1">优化前</text>
+<rect x="1115" y="1051.396875" width="72" height="163.603125" rx="10" fill="#00856A" stroke="none" stroke-width="1" opacity="1"/>
+<text x="1151" y="1037.396875" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="16" fill="#17372E" font-weight="700" text-anchor="middle" letter-spacing="0" opacity="1">17,451</text>
+<text x="1151" y="1245" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#71827B" font-weight="400" text-anchor="middle" letter-spacing="0" opacity="1">优化后</text>
+<text x="1098" y="1275" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="19" fill="#17372E" font-weight="800" text-anchor="middle" letter-spacing="0" opacity="1">输入</text>
+<rect x="1340" y="970.3666666666667" width="72" height="244.63333333333333" rx="10" fill="#D96C4E" stroke="none" stroke-width="1" opacity="1"/>
+<text x="1376" y="956.3666666666667" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="16" fill="#17372E" font-weight="700" text-anchor="middle" letter-spacing="0" opacity="1">7,339</text>
+<text x="1376" y="1245" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#71827B" font-weight="400" text-anchor="middle" letter-spacing="0" opacity="1">优化前</text>
+<rect x="1445" y="1065.2" width="72" height="149.8" rx="10" fill="#00856A" stroke="none" stroke-width="1" opacity="1"/>
+<text x="1481" y="1051.2" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="16" fill="#17372E" font-weight="700" text-anchor="middle" letter-spacing="0" opacity="1">4,494</text>
+<text x="1481" y="1245" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#71827B" font-weight="400" text-anchor="middle" letter-spacing="0" opacity="1">优化后</text>
+<text x="1428" y="1275" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="19" fill="#17372E" font-weight="800" text-anchor="middle" letter-spacing="0" opacity="1">输出</text>
+<line x1="980" y1="1215" x2="1660" y2="1215" stroke="#D8DED9" stroke-width="2"/>
+<rect x="80" y="1350" width="800" height="480" rx="24" fill="#FFFDF8" stroke="none" stroke-width="1" opacity="1" filter="url(#shadow)"/>
+<text x="115" y="1395" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#00856A" font-weight="700" text-anchor="start" letter-spacing="2" opacity="1">PREFIX CACHE</text>
+<text x="115" y="1429" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="28" fill="#17372E" font-weight="700" text-anchor="start" letter-spacing="0" opacity="1">缓存终于从“猜测”变成可观测指标</text>
+<text x="115" y="1457" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="15" fill="#71827B" font-weight="400" text-anchor="start" letter-spacing="0" opacity="1">每格 = Flash 优化后的一次模型请求；深色代表命中率更高</text>
+<rect x="120" y="1495" width="155" height="110" rx="16" fill="#F3E8CF" stroke="#C78B2A" stroke-width="2" opacity="1"/>
+<text x="136" y="1523" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#71827B" font-weight="700" text-anchor="start" letter-spacing="0" opacity="1">T1 · R1</text>
+<text x="136" y="1560" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="28" fill="#C78B2A" font-weight="800" text-anchor="start" letter-spacing="0" opacity="1">39%</text>
+<text x="136" y="1586" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="12" fill="#71827B" font-weight="400" text-anchor="start" letter-spacing="0" opacity="1">896 / 2,279</text>
+<rect x="298" y="1495" width="155" height="110" rx="16" fill="#F3E8CF" stroke="#C78B2A" stroke-width="2" opacity="1"/>
+<text x="314" y="1523" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#71827B" font-weight="700" text-anchor="start" letter-spacing="0" opacity="1">T2 · R1</text>
+<text x="314" y="1560" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="28" fill="#C78B2A" font-weight="800" text-anchor="start" letter-spacing="0" opacity="1">26%</text>
+<text x="314" y="1586" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="12" fill="#71827B" font-weight="400" text-anchor="start" letter-spacing="0" opacity="1">896 / 3,488</text>
+<rect x="476" y="1495" width="155" height="110" rx="16" fill="#DCEFE8" stroke="#00856A" stroke-width="2" opacity="1"/>
+<text x="492" y="1523" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#71827B" font-weight="700" text-anchor="start" letter-spacing="0" opacity="1">T2 · R2</text>
+<text x="492" y="1560" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="28" fill="#00856A" font-weight="800" text-anchor="start" letter-spacing="0" opacity="1">96%</text>
+<text x="492" y="1586" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="12" fill="#71827B" font-weight="400" text-anchor="start" letter-spacing="0" opacity="1">3,456 / 3,591</text>
+<rect x="654" y="1495" width="155" height="110" rx="16" fill="#F6DFD8" stroke="#D96C4E" stroke-width="2" opacity="1"/>
+<text x="670" y="1523" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#71827B" font-weight="700" text-anchor="start" letter-spacing="0" opacity="1">T2 · R3</text>
+<text x="670" y="1560" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="28" fill="#D96C4E" font-weight="800" text-anchor="start" letter-spacing="0" opacity="1">23%</text>
+<text x="670" y="1586" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="12" fill="#71827B" font-weight="400" text-anchor="start" letter-spacing="0" opacity="1">896 / 3,944</text>
+<rect x="120" y="1630" width="155" height="110" rx="16" fill="#F6DFD8" stroke="#D96C4E" stroke-width="2" opacity="1"/>
+<text x="136" y="1658" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#71827B" font-weight="700" text-anchor="start" letter-spacing="0" opacity="1">T3 · R1</text>
+<text x="136" y="1695" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="28" fill="#D96C4E" font-weight="800" text-anchor="start" letter-spacing="0" opacity="1">25%</text>
+<text x="136" y="1721" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="12" fill="#71827B" font-weight="400" text-anchor="start" letter-spacing="0" opacity="1">1,024 / 4,149</text>
+<rect x="920" y="1350" width="800" height="480" rx="24" fill="#FFFDF8" stroke="none" stroke-width="1" opacity="1" filter="url(#shadow)"/>
+<text x="955" y="1395" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#00856A" font-weight="700" text-anchor="start" letter-spacing="2" opacity="1">PERCEIVED SPEED</text>
+<text x="955" y="1429" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="28" fill="#17372E" font-weight="700" text-anchor="start" letter-spacing="0" opacity="1">模型何时开始想，用户何时看到正文</text>
+<text x="955" y="1457" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="15" fill="#71827B" font-weight="400" text-anchor="start" letter-spacing="0" opacity="1">Flash 低思考；首个模型请求；单位：秒</text>
+<line x1="1045.0" y1="1490" x2="1045.0" y2="1740" stroke="#D8DED9" stroke-width="1" stroke-dasharray="4 6"/>
+<text x="1045.0" y="1770" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="13" fill="#71827B" font-weight="400" text-anchor="middle" letter-spacing="0" opacity="1">0</text>
+<line x1="1132.142857142857" y1="1490" x2="1132.142857142857" y2="1740" stroke="#D8DED9" stroke-width="1" stroke-dasharray="4 6"/>
+<text x="1132.142857142857" y="1770" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="13" fill="#71827B" font-weight="400" text-anchor="middle" letter-spacing="0" opacity="1">2</text>
+<line x1="1219.2857142857142" y1="1490" x2="1219.2857142857142" y2="1740" stroke="#D8DED9" stroke-width="1" stroke-dasharray="4 6"/>
+<text x="1219.2857142857142" y="1770" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="13" fill="#71827B" font-weight="400" text-anchor="middle" letter-spacing="0" opacity="1">4</text>
+<line x1="1306.4285714285716" y1="1490" x2="1306.4285714285716" y2="1740" stroke="#D8DED9" stroke-width="1" stroke-dasharray="4 6"/>
+<text x="1306.4285714285716" y="1770" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="13" fill="#71827B" font-weight="400" text-anchor="middle" letter-spacing="0" opacity="1">6</text>
+<line x1="1393.5714285714284" y1="1490" x2="1393.5714285714284" y2="1740" stroke="#D8DED9" stroke-width="1" stroke-dasharray="4 6"/>
+<text x="1393.5714285714284" y="1770" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="13" fill="#71827B" font-weight="400" text-anchor="middle" letter-spacing="0" opacity="1">8</text>
+<line x1="1480.7142857142858" y1="1490" x2="1480.7142857142858" y2="1740" stroke="#D8DED9" stroke-width="1" stroke-dasharray="4 6"/>
+<text x="1480.7142857142858" y="1770" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="13" fill="#71827B" font-weight="400" text-anchor="middle" letter-spacing="0" opacity="1">10</text>
+<line x1="1567.857142857143" y1="1490" x2="1567.857142857143" y2="1740" stroke="#D8DED9" stroke-width="1" stroke-dasharray="4 6"/>
+<text x="1567.857142857143" y="1770" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="13" fill="#71827B" font-weight="400" text-anchor="middle" letter-spacing="0" opacity="1">12</text>
+<line x1="1655.0" y1="1490" x2="1655.0" y2="1740" stroke="#D8DED9" stroke-width="1" stroke-dasharray="4 6"/>
+<text x="1655.0" y="1770" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="13" fill="#71827B" font-weight="400" text-anchor="middle" letter-spacing="0" opacity="1">14</text>
+<text x="975" y="1540" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="17" fill="#17372E" font-weight="800" text-anchor="start" letter-spacing="0" opacity="1">T1</text>
+<circle cx="1088.7892857142856" cy="1535" r="8" fill="#C78B2A" stroke="none" stroke-width="1"/>
+<text x="1088.7892857142856" y="1519" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="12" fill="#C78B2A" font-weight="700" text-anchor="middle" letter-spacing="0" opacity="1">想 1.0s</text>
+<circle cx="1574.0007142857144" cy="1535" r="9" fill="#00856A" stroke="none" stroke-width="1"/>
+<text x="1574.0007142857144" y="1563" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="12" fill="#00856A" font-weight="700" text-anchor="middle" letter-spacing="0" opacity="1">见 12.1s</text>
+<text x="975" y="1618" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="17" fill="#17372E" font-weight="800" text-anchor="start" letter-spacing="0" opacity="1">T2</text>
+<text x="1065" y="1618" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="13" fill="#447C92" font-weight="600" text-anchor="start" letter-spacing="0" opacity="1">工具轮：先行动，最终文本在 R3</text>
+<text x="975" y="1696" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="17" fill="#17372E" font-weight="800" text-anchor="start" letter-spacing="0" opacity="1">T3</text>
+<circle cx="1095.4992857142856" cy="1691" r="8" fill="#C78B2A" stroke="none" stroke-width="1"/>
+<text x="1095.4992857142856" y="1675" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="12" fill="#C78B2A" font-weight="700" text-anchor="middle" letter-spacing="0" opacity="1">想 1.2s</text>
+<circle cx="1555.3957142857143" cy="1691" r="9" fill="#00856A" stroke="none" stroke-width="1"/>
+<text x="1555.3957142857143" y="1719" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="12" fill="#00856A" font-weight="700" text-anchor="middle" letter-spacing="0" opacity="1">见 11.7s</text>
+<circle cx="1000" cy="1448" r="7" fill="#C78B2A" stroke="none" stroke-width="1"/>
+<text x="1016" y="1453" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="13" fill="#71827B" font-weight="400" text-anchor="start" letter-spacing="0" opacity="1">首思考</text>
+<circle cx="1115" cy="1448" r="7" fill="#00856A" stroke="none" stroke-width="1"/>
+<text x="1131" y="1453" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="13" fill="#71827B" font-weight="400" text-anchor="start" letter-spacing="0" opacity="1">首正文</text>
+<rect x="80" y="1870" width="800" height="450" rx="24" fill="#FFFDF8" stroke="none" stroke-width="1" opacity="1" filter="url(#shadow)"/>
+<text x="115" y="1915" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#00856A" font-weight="700" text-anchor="start" letter-spacing="2" opacity="1">PRO FAST LANE</text>
+<text x="115" y="1949" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="28" fill="#17372E" font-weight="700" text-anchor="start" letter-spacing="0" opacity="1">关闭伪低思考 + 明确 1,200 Token 预算</text>
+<text x="115" y="1977" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="15" fill="#71827B" font-weight="400" text-anchor="start" letter-spacing="0" opacity="1">同一 Pro、同一任务、均为 9/9</text>
+<text x="120" y="2043" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="15" fill="#71827B" font-weight="600" text-anchor="start" letter-spacing="0" opacity="1">三轮总耗时</text>
+<rect x="265" y="2025" width="420" height="22" rx="11" fill="#E7EBE8" stroke="none" stroke-width="1" opacity="1"/>
+<rect x="265" y="2025" width="420.00000000000006" height="22" rx="11" fill="#D96C4E" stroke="none" stroke-width="1" opacity="0.8"/>
+<rect x="265" y="2055" width="292.671550197686" height="22" rx="11" fill="#00856A" stroke="none" stroke-width="1" opacity="1"/>
+<text x="705" y="2043" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#D96C4E" font-weight="700" text-anchor="start" letter-spacing="0" opacity="1">82.5s</text>
+<text x="705" y="2073" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#00856A" font-weight="700" text-anchor="start" letter-spacing="0" opacity="1">57.5s</text>
+<text x="120" y="2125" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="15" fill="#71827B" font-weight="600" text-anchor="start" letter-spacing="0" opacity="1">第一轮耗时</text>
+<rect x="265" y="2107" width="420" height="22" rx="11" fill="#E7EBE8" stroke="none" stroke-width="1" opacity="1"/>
+<rect x="265" y="2107" width="420.0" height="22" rx="11" fill="#D96C4E" stroke="none" stroke-width="1" opacity="0.8"/>
+<rect x="265" y="2137" width="191.40301899042365" height="22" rx="11" fill="#00856A" stroke="none" stroke-width="1" opacity="1"/>
+<text x="705" y="2125" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#D96C4E" font-weight="700" text-anchor="start" letter-spacing="0" opacity="1">61.6s</text>
+<text x="705" y="2155" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#00856A" font-weight="700" text-anchor="start" letter-spacing="0" opacity="1">28.1s</text>
+<text x="120" y="2207" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="15" fill="#71827B" font-weight="600" text-anchor="start" letter-spacing="0" opacity="1">输出 Token</text>
+<rect x="265" y="2189" width="420" height="22" rx="11" fill="#E7EBE8" stroke="none" stroke-width="1" opacity="1"/>
+<rect x="265" y="2189" width="420.0" height="22" rx="11" fill="#D96C4E" stroke="none" stroke-width="1" opacity="0.8"/>
+<rect x="265" y="2219" width="326.5766262403528" height="22" rx="11" fill="#00856A" stroke="none" stroke-width="1" opacity="1"/>
+<text x="705" y="2207" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#D96C4E" font-weight="700" text-anchor="start" letter-spacing="0" opacity="1">3628.0</text>
+<text x="705" y="2237" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#00856A" font-weight="700" text-anchor="start" letter-spacing="0" opacity="1">2821.0</text>
+<rect x="920" y="1870" width="800" height="450" rx="24" fill="#FFFDF8" stroke="none" stroke-width="1" opacity="1" filter="url(#shadow)"/>
+<text x="955" y="1915" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#00856A" font-weight="700" text-anchor="start" letter-spacing="2" opacity="1">RELIABILITY GATE</text>
+<text x="955" y="1949" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="28" fill="#17372E" font-weight="700" text-anchor="start" letter-spacing="0" opacity="1">速度提升不能用遗忘和错误换取</text>
+<text x="955" y="1977" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="15" fill="#71827B" font-weight="400" text-anchor="start" letter-spacing="0" opacity="1">Flash 与 Pro 优化后均通过所有断言</text>
+<rect x="970" y="2020" width="205" height="58" rx="14" fill="#DCEFE8" stroke="none" stroke-width="1" opacity="1"/>
+<circle cx="995" cy="2049" r="12" fill="#00856A" stroke="none" stroke-width="1"/>
+<text x="995" y="2054" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="15" fill="#FFFFFF" font-weight="800" text-anchor="middle" letter-spacing="0" opacity="1">✓</text>
+<text x="1018" y="2055" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#17372E" font-weight="650" text-anchor="start" letter-spacing="0" opacity="1">上一轮连续性</text>
+<rect x="1205" y="2020" width="205" height="58" rx="14" fill="#DCEFE8" stroke="none" stroke-width="1" opacity="1"/>
+<circle cx="1230" cy="2049" r="12" fill="#00856A" stroke="none" stroke-width="1"/>
+<text x="1230" y="2054" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="15" fill="#FFFFFF" font-weight="800" text-anchor="middle" letter-spacing="0" opacity="1">✓</text>
+<text x="1253" y="2055" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#17372E" font-weight="650" text-anchor="start" letter-spacing="0" opacity="1">两轮连续性</text>
+<rect x="1440" y="2020" width="205" height="58" rx="14" fill="#DCEFE8" stroke="none" stroke-width="1" opacity="1"/>
+<circle cx="1465" cy="2049" r="12" fill="#00856A" stroke="none" stroke-width="1"/>
+<text x="1465" y="2054" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="15" fill="#FFFFFF" font-weight="800" text-anchor="middle" letter-spacing="0" opacity="1">✓</text>
+<text x="1488" y="2055" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#17372E" font-weight="650" text-anchor="start" letter-spacing="0" opacity="1">读写工具</text>
+<rect x="970" y="2104" width="205" height="58" rx="14" fill="#DCEFE8" stroke="none" stroke-width="1" opacity="1"/>
+<circle cx="995" cy="2133" r="12" fill="#00856A" stroke="none" stroke-width="1"/>
+<text x="995" y="2138" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="15" fill="#FFFFFF" font-weight="800" text-anchor="middle" letter-spacing="0" opacity="1">✓</text>
+<text x="1018" y="2139" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#17372E" font-weight="650" text-anchor="start" letter-spacing="0" opacity="1">产物整合</text>
+<rect x="1205" y="2104" width="205" height="58" rx="14" fill="#DCEFE8" stroke="none" stroke-width="1" opacity="1"/>
+<circle cx="1230" cy="2133" r="12" fill="#00856A" stroke="none" stroke-width="1"/>
+<text x="1230" y="2138" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="15" fill="#FFFFFF" font-weight="800" text-anchor="middle" letter-spacing="0" opacity="1">✓</text>
+<text x="1253" y="2139" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#17372E" font-weight="650" text-anchor="start" letter-spacing="0" opacity="1">原约束</text>
+<rect x="1440" y="2104" width="205" height="58" rx="14" fill="#DCEFE8" stroke="none" stroke-width="1" opacity="1"/>
+<circle cx="1465" cy="2133" r="12" fill="#00856A" stroke="none" stroke-width="1"/>
+<text x="1465" y="2138" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="15" fill="#FFFFFF" font-weight="800" text-anchor="middle" letter-spacing="0" opacity="1">✓</text>
+<text x="1488" y="2139" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#17372E" font-weight="650" text-anchor="start" letter-spacing="0" opacity="1">新修订</text>
+<rect x="970" y="2188" width="205" height="58" rx="14" fill="#DCEFE8" stroke="none" stroke-width="1" opacity="1"/>
+<circle cx="995" cy="2217" r="12" fill="#00856A" stroke="none" stroke-width="1"/>
+<text x="995" y="2222" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="15" fill="#FFFFFF" font-weight="800" text-anchor="middle" letter-spacing="0" opacity="1">✓</text>
+<text x="1018" y="2223" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#17372E" font-weight="650" text-anchor="start" letter-spacing="0" opacity="1">工具事实</text>
+<rect x="1205" y="2188" width="205" height="58" rx="14" fill="#DCEFE8" stroke="none" stroke-width="1" opacity="1"/>
+<circle cx="1230" cy="2217" r="12" fill="#00856A" stroke="none" stroke-width="1"/>
+<text x="1230" y="2222" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="15" fill="#FFFFFF" font-weight="800" text-anchor="middle" letter-spacing="0" opacity="1">✓</text>
+<text x="1253" y="2223" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#17372E" font-weight="650" text-anchor="start" letter-spacing="0" opacity="1">完整收尾</text>
+<rect x="1440" y="2188" width="205" height="58" rx="14" fill="#DCEFE8" stroke="none" stroke-width="1" opacity="1"/>
+<circle cx="1465" cy="2217" r="12" fill="#00856A" stroke="none" stroke-width="1"/>
+<text x="1465" y="2222" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="15" fill="#FFFFFF" font-weight="800" text-anchor="middle" letter-spacing="0" opacity="1">✓</text>
+<text x="1488" y="2223" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#17372E" font-weight="650" text-anchor="start" letter-spacing="0" opacity="1">持久会话</text>
+<rect x="80" y="2360" width="1640" height="235" rx="24" fill="#17372E" stroke="none" stroke-width="1" opacity="1"/>
+<text x="115" y="2405" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#88CDBD" font-weight="700" text-anchor="start" letter-spacing="2" opacity="1">NEGATIVE OPTIMIZATION LESSON</text>
+<text x="115" y="2450" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="30" fill="#FFFFFF" font-weight="800" text-anchor="start" letter-spacing="0" opacity="1">工具更少 ≠ 整体更快</text>
+<text x="115" y="2492" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="17" fill="#D7E4DF" font-weight="400" text-anchor="start" letter-spacing="0" opacity="1">早期记忆基线 59.7s → 定点工具契约阶段 91.6s；工具轮改善，但高思考长输出吞噬了收益。</text>
+<text x="115" y="2532" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="17" fill="#D7E4DF" font-weight="400" text-anchor="start" letter-spacing="0" opacity="1">因此评测必须同时看：质量门、首正文、总耗时、请求数、Token、缓存命中，而不能只看单一指标。</text>
+<text x="115" y="2572" font-family="Inter, Segoe UI, Microsoft YaHei, sans-serif" font-size="13" fill="#9CB2AA" font-weight="400" text-anchor="start" letter-spacing="0" opacity="1">数据：6 份 context-memory probe JSON｜所有时间为端到端毫秒聚合｜生成于 2026-08-27（Asia/Shanghai）</text>
+</svg>

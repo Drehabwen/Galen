@@ -1,0 +1,54 @@
+schema_version = 1
+id = "rag-ais-scoliosis-v1"
+name = "青少年特发性脊柱侧弯本地证据检索黄金集"
+fixture = "fixtures/rag_ais_scoliosis"
+top_k = 3
+
+[thresholds]
+min_recall_at_k = 1.0
+min_mrr = 0.90
+min_ndcg_at_k = 0.90
+max_p95_ms = 100
+max_cold_index_ms = 2000
+min_negative_query_accuracy = 1.0
+require_zero_forbidden_hits = true
+
+[[queries]]
+id = "ais-schroth"
+query = "施罗斯 青少年特发性脊柱侧弯 Cobb角"
+relevant = ["ev-ais-schroth"]
+forbidden = ["ev-stroke-gait"]
+
+[[queries]]
+id = "ais-brace"
+query = "脊柱侧弯 支具 进展风险 生长期"
+relevant = ["ev-ais-brace"]
+forbidden = ["ev-low-back-pain"]
+
+[[queries]]
+id = "ais-quality-of-life"
+query = "脊柱侧弯 SRS-22 生活质量 量表"
+relevant = ["ev-ais-srs22"]
+forbidden = ["ev-stroke-gait"]
+
+[[queries]]
+id = "ais-respiratory"
+query = "脊柱侧弯 呼吸训练 肺功能 胸廓"
+relevant = ["ev-ais-respiratory"]
+forbidden = ["ev-low-back-pain"]
+
+[[queries]]
+id = "ais-monitoring"
+query = "脊柱侧弯 随访 Cobb角 进展监测"
+relevant = ["ev-ais-monitoring"]
+forbidden = ["ev-stroke-gait"]
+
+[[queries]]
+id = "ood-parkinson"
+query = "帕金森病 冻结步态 左旋多巴"
+expected_empty = true
+
+[[queries]]
+id = "ood-diabetic-foot"
+query = "糖尿病足 溃疡 换药 感染"
+expected_empty = true

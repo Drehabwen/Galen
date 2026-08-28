@@ -61,7 +61,10 @@ impl std::fmt::Display for ConfigError {
             Self::Io(e) => write!(f, "failed to read models.toml: {e}"),
             Self::Parse(e) => write!(f, "invalid models.toml: {e}"),
             Self::MissingDefaultModel => {
-                write!(f, "models.toml: [router].default model not found in [models]")
+                write!(
+                    f,
+                    "models.toml: [router].default model not found in [models]"
+                )
             }
         }
     }
@@ -149,7 +152,10 @@ api_key = "sk-ant-test"
         assert_eq!(config.router.default, "main");
         assert_eq!(config.models["main"].provider, "anthropic");
         assert_eq!(config.models["main"].model_id, "claude-sonnet-4-6");
-        assert_eq!(config.models["main"].api_key.as_deref(), Some("sk-ant-test"));
+        assert_eq!(
+            config.models["main"].api_key.as_deref(),
+            Some("sk-ant-test")
+        );
     }
 
     #[test]
@@ -227,15 +233,15 @@ max_tokens = 4096
 "#;
         let config: ModelsToml = toml::from_str(toml_str).unwrap();
         let model = &config.models["main"];
-        assert_eq!(model.description.as_deref(), Some("OpenAI GPT-4o via OpenRouter"));
+        assert_eq!(
+            model.description.as_deref(),
+            Some("OpenAI GPT-4o via OpenRouter")
+        );
         assert_eq!(model.max_tokens, Some(4096));
     }
 
     fn load_models_toml_from_str(s: &str) -> Result<ModelsToml, ConfigError> {
-        let mut tmp = tempfile::Builder::new()
-            .suffix(".toml")
-            .tempfile()
-            .unwrap();
+        let mut tmp = tempfile::Builder::new().suffix(".toml").tempfile().unwrap();
         write!(tmp, "{s}").unwrap();
         let path = tmp.path();
         let result = load_models_toml_from(path);

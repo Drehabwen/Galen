@@ -1,0 +1,53 @@
+{
+  "case_id": "AIS-C021",
+  "condition": {
+    "etiology": "idiopathic_scoliosis"
+  },
+  "demographics": {
+    "birth_year": 2009,
+    "sex": "female"
+  },
+  "events": [
+    {
+      "context": "out_of_brace",
+      "date": "2020-04",
+      "event_id": "baseline"
+    }
+  ],
+  "observations": [
+    {
+      "event_id": "baseline",
+      "metric": "cobb_deg",
+      "observation_id": "C021-B-T",
+      "region": "thoracic",
+      "source": {
+        "book_page": 66,
+        "channel": "text",
+        "figure": "4-83",
+        "pdf_page": 79
+      },
+      "unit": "deg",
+      "value": 10
+    },
+    {
+      "event_id": "baseline",
+      "metric": "cobb_deg",
+      "observation_id": "C021-B-L",
+      "region": "lumbar",
+      "source": {
+        "book_page": 66,
+        "channel": "text",
+        "figure": "4-83",
+        "pdf_page": 79
+      },
+      "unit": "deg",
+      "value": 20
+    }
+  ],
+  "schema_version": 1,
+  "task_id": "AIS-C021-T1",
+  "visible_event_ids": [
+    "baseline"
+  ],
+  "visible_source_conflicts": []
+}

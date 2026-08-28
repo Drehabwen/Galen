@@ -27,6 +27,7 @@ const TOOL_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub mod clinical;
 pub mod command;
+pub mod evidence_search;
 pub mod fs;
 pub mod medical;
 pub mod rehab;
@@ -179,6 +180,7 @@ impl ToolRegistry {
         self.register(rehab::RehabData);
         self.register(research::CreateResearchPlan);
         self.register(medical::SearchRehabLiterature);
+        self.register(evidence_search::SearchEvidence);
 
         // File operations
         self.register(fs::CreateDirectory);
@@ -377,7 +379,7 @@ mod tests {
     fn registry_has_all_builtin_definitions() {
         let registry = ToolRegistry::default();
         let defs = registry.definitions();
-        assert_eq!(defs.len(), 17);
+        assert_eq!(defs.len(), 18);
         let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
         for expected in &[
             "search_pubmed",
@@ -386,6 +388,7 @@ mod tests {
             "analyze_clinical_case",
             "rehab_data",
             "search_rehab_literature",
+            "search_evidence",
             "create_research_plan",
             "write_file",
             "read_file",

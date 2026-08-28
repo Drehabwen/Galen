@@ -32,7 +32,19 @@ rust/.sandbox-home/
 # Bundled runtimes (download/build artifacts, not source)
 rust/crates/galen/src-tauri/binaries/
 tmp/
+# Private/copyrighted evaluation sources. Keep only hashes and source locators in Git.
+evals/private/
+docs/脊柱侧弯保守治疗100例_14996973.pdf
 # Root-level scratch files
 progress.txt
 stderr.txt
 stdout.txt
+/.galen/
+/plan.json
+/output/docx_qa/
+/output/playwright/
+/output/e2e-new-user-workspace/
+/output/pdf/
+/rust/crates/galen/nul
+/rust/crates/galen/.playwright-cli/
+/rust/crates/galen/output/
