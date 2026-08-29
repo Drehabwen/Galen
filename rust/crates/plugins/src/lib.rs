@@ -306,7 +306,19 @@ impl PluginTool {
 
     pub fn execute(&self, input: &Value) -> Result<String, PluginError> {
         let input_json = input.to_string();
-        let mut process = Command::new(&self.command);
+        let is_windows_script = cfg!(windows)
+            && Path::new(&self.command)
+                .extension()
+                .is_some_and(|extension| {
+                    extension.eq_ignore_ascii_case("cmd") || extension.eq_ignore_ascii_case("bat")
+                });
+        let mut process = if is_windows_script {
+            let mut process = Command::new("cmd");
+            process.arg("/C").arg(&self.command);
+            process
+        } else {
+            Command::new(&self.command)
+        };
         process
             .args(&self.args)
             .stdin(Stdio::piped())
@@ -2449,11 +2461,19 @@ mod tests {
     }
 
     fn write_tool_plugin_with_name(root: &Path, name: &str, version: &str, tool_name: &str) {
-        let script_path = root.join("tools").join("echo-json.sh");
-        write_file(
-            &script_path,
-            "#!/bin/sh\nINPUT=$(cat)\nprintf '{\"plugin\":\"%s\",\"tool\":\"%s\",\"input\":%s}\\n' \"$CLAWD_PLUGIN_ID\" \"$CLAWD_TOOL_NAME\" \"$INPUT\"\n",
-        );
+        let (script_name, script_body) = if cfg!(windows) {
+            (
+                "echo-json.cmd",
+                "@echo off\r\npowershell -NoProfile -Command \"$raw = [Console]::In.ReadToEnd(); $inputValue = $raw | ConvertFrom-Json; [ordered]@{plugin=$env:CLAWD_PLUGIN_ID;tool=$env:CLAWD_TOOL_NAME;input=$inputValue} | ConvertTo-Json -Compress\"\r\n",
+            )
+        } else {
+            (
+                "echo-json.sh",
+                "#!/bin/sh\nINPUT=$(cat)\nprintf '{\"plugin\":\"%s\",\"tool\":\"%s\",\"input\":%s}\\n' \"$CLAWD_PLUGIN_ID\" \"$CLAWD_TOOL_NAME\" \"$INPUT\"\n",
+            )
+        };
+        let script_path = root.join("tools").join(script_name);
+        write_file(&script_path, script_body);
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -2465,7 +2485,7 @@ mod tests {
         write_file(
             root.join(MANIFEST_RELATIVE_PATH).as_path(),
             format!(
-                "{{\n  \"name\": \"{name}\",\n  \"version\": \"{version}\",\n  \"description\": \"tool plugin\",\n  \"tools\": [\n    {{\n      \"name\": \"{tool_name}\",\n      \"description\": \"Echo JSON input\",\n      \"inputSchema\": {{\"type\": \"object\", \"properties\": {{\"message\": {{\"type\": \"string\"}}}}, \"required\": [\"message\"], \"additionalProperties\": false}},\n      \"command\": \"./tools/echo-json.sh\",\n      \"requiredPermission\": \"workspace-write\"\n    }}\n  ]\n}}"
+                "{{\n  \"name\": \"{name}\",\n  \"version\": \"{version}\",\n  \"description\": \"tool plugin\",\n  \"tools\": [\n    {{\n      \"name\": \"{tool_name}\",\n      \"description\": \"Echo JSON input\",\n      \"inputSchema\": {{\"type\": \"object\", \"properties\": {{\"message\": {{\"type\": \"string\"}}}}, \"required\": [\"message\"], \"additionalProperties\": false}},\n      \"command\": \"./tools/{script_name}\",\n      \"requiredPermission\": \"workspace-write\"\n    }}\n  ]\n}}"
             )
             .as_str(),
         );
