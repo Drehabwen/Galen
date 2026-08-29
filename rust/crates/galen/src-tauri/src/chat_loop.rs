@@ -20,7 +20,9 @@ use crate::context_engine::{
     compact_trigger_bytes, normalize_workspace_tool_input, select_tools_for_contract,
     validate_tool_call_against_contract,
 };
-use crate::task_contract::{compile_task_contract, is_local_data_task, WorkingMemory};
+use crate::task_contract::{
+    compile_task_contract, is_local_data_task, TaskContract, WorkingMemory,
+};
 use crate::tools::{ToolContext, ToolRegistry};
 
 fn format_api_error(e: &dyn std::error::Error) -> String {
@@ -103,6 +105,40 @@ fn thinking_config_for_level(
     )
 }
 
+fn request_token_budget(
+    model_max_tokens: u32,
+    final_turn: bool,
+    has_tools: bool,
+    contract: &TaskContract,
+    output_continuation_count: u32,
+    fast_pro_lane: bool,
+) -> u32 {
+    let base = if final_turn {
+        model_max_tokens.min(8_192).max(4_096)
+    } else if has_tools && !contract.artifact_paths.is_empty() {
+        model_max_tokens.min(4_096)
+    } else if has_tools {
+        model_max_tokens.min(2_048)
+    } else {
+        model_max_tokens.min(4_096)
+    };
+    let mut budget = if has_tools {
+        base
+    } else {
+        contract
+            .response_token_cap
+            .map(|cap| base.min(cap))
+            .unwrap_or(base)
+    };
+    if output_continuation_count > 0 {
+        budget = budget.min(1_024);
+    }
+    if fast_pro_lane && !has_tools {
+        budget = budget.min(1_200);
+    }
+    budget
+}
+
 // ---------------------------------------------------------------------------
 // Main chat loop
 // ---------------------------------------------------------------------------
@@ -170,7 +206,7 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
         task_contract.response_token_cap.unwrap_or(3_072)
     };
     let first_user_text = format!(
-        "{turn_context}{consensus_tail}\n\n## 本轮回答预算\n请在约 {advertised_response_cap} 个输出 Token 内完整收敛，先给结论，删去重复铺垫；不得依赖达到长度上限后续写。\n\n---\n\n用户: {user_message}"
+        "{turn_context}{consensus_tail}\n\n## 本轮回答预算\n最终文字回复请在约 {advertised_response_cap} 个输出 Token 内完整收敛，先给结论，删去重复铺垫；不得依赖达到长度上限后续写。工具参数中的 Artifact 正文不受最终回复篇幅限制，必须保证 JSON 完整可解析。\n\n---\n\n用户: {user_message}"
     );
     history.push(InputMessage {
         role: "user".to_string(),
@@ -233,6 +269,49 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
         mcp_setup_ms,
         ..ChatRunSummary::default()
     };
+    // Exact-path read/write tasks are deterministic workflows, not open-ended
+    // exploration. Execute the declared reads in order so a model cannot infer
+    // a missing file from the workspace listing and falsely claim it ran the
+    // requested probe. The real results are replayed through normal tool-use
+    // messages and remain visible in the immutable trace.
+    for (index, path) in task_contract.ordered_read_paths.iter().enumerate() {
+        let tool_use_id = format!("contract-read-{}", index + 1);
+        let input = serde_json::json!({ "path": path });
+        let result = registry
+            .execute_dynamic("read_file", input.clone(), &ctx)
+            .await;
+        let (text, is_error) = match result {
+            Ok(value) => (value, false),
+            Err(error) => (error, true),
+        };
+        run_summary.tool_call_count = run_summary.tool_call_count.saturating_add(1);
+        record_trace(
+            &trace,
+            (index + 1) as u32,
+            "read_file".to_string(),
+            serde_json::to_string(&input).unwrap_or_default(),
+            text.clone(),
+            is_error,
+        );
+        history.push(InputMessage {
+            role: "assistant".to_string(),
+            content: vec![InputContentBlock::ToolUse {
+                id: tool_use_id.clone(),
+                name: "read_file".to_string(),
+                input,
+            }],
+        });
+        history.push(InputMessage {
+            role: "user".to_string(),
+            content: vec![InputContentBlock::ToolResult {
+                tool_use_id,
+                content: vec![ToolResultContentBlock::Text {
+                    text: compact_tool_result("read_file", &text, is_error),
+                }],
+                is_error,
+            }],
+        });
+    }
     // Input compaction has its own budget. `max_tokens` below is the response
     // budget and must not be used as a proxy for the provider context window.
     let max_tokens = router
@@ -341,6 +420,9 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
                 &task_contract,
             )
         };
+        if !task_contract.ordered_read_paths.is_empty() {
+            tools.retain(|tool| tool.name != "read_file");
+        }
         if working_memory.consecutive_no_gain_turns >= 2 && !task_contract.artifact_paths.is_empty()
         {
             tools.retain(|tool| tool.name == "write_file");
@@ -386,23 +468,17 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
         } else {
             (reasoning_effort.clone(), thinking.clone())
         };
-        let request_max_tokens = if final_turn {
-            max_tokens.min(8_192).max(4_096)
-        } else if !tools.is_empty() {
-            max_tokens.min(2_048)
-        } else {
-            max_tokens.min(4_096)
-        };
-        let mut request_max_tokens = task_contract
-            .response_token_cap
-            .map(|cap| request_max_tokens.min(cap))
-            .unwrap_or(request_max_tokens);
-        if output_continuation_count > 0 {
-            request_max_tokens = request_max_tokens.min(1_024);
-        }
-        if fast_pro_lane {
-            request_max_tokens = request_max_tokens.min(1_200);
-        }
+        // Tool payloads may contain the full Artifact and need a larger budget
+        // than the concise final response. Keeping them separate prevents
+        // truncated JSON and duplicate write retries.
+        let request_max_tokens = request_token_budget(
+            max_tokens,
+            final_turn,
+            !tools.is_empty(),
+            &task_contract,
+            output_continuation_count,
+            fast_pro_lane,
+        );
         let request = MessageRequest {
             model: model_id.clone(),
             messages: history.clone(),
@@ -926,6 +1002,23 @@ mod tests {
                 .0
                 .as_deref(),
             Some("max")
+        );
+    }
+
+    #[test]
+    fn artifact_tool_payload_is_not_capped_like_final_prose() {
+        let contract = compile_task_contract(
+            model_router::TaskKind::Chat,
+            "创建 output/delivery.md，包含研究问题、PICO、风险和下一步。",
+        );
+        assert_eq!(contract.response_token_cap, Some(1_200));
+        assert_eq!(
+            request_token_budget(64_000, false, true, &contract, 0, true),
+            4_096
+        );
+        assert_eq!(
+            request_token_budget(64_000, false, false, &contract, 0, true),
+            1_200
         );
     }
 }

@@ -14,6 +14,11 @@ max_human_interventions = 0
 facts = ["备用输入", "FMA-UE"]
 artifacts = ["output/recovery.md"]
 tools = ["read_file", "write_file"]
+tool_sequence = [
+  { tool = "read_file", input_contains = "inputs/missing.md", is_error = true },
+  { tool = "read_file", input_contains = "inputs/brief.md", is_error = false },
+  { tool = "write_file", input_contains = "output/recovery.md", is_error = false },
+]
 
 [forbidden]
 repeated_call_limit = 1

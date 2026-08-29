@@ -262,6 +262,8 @@ mod context_tests {
         assert!(policy.contains("不得因缺少非关键背景而停下询问"));
         assert!(policy.contains("合理假设"));
         assert!(policy.contains("直接调用 write_file"));
+        let contract = compile_task_contract(model_router::TaskKind::Chat, prompt);
+        assert_eq!(contract.allowed_tools, Some(WRITE_ONLY_TOOLS));
     }
 
     #[test]
@@ -318,7 +320,39 @@ mod context_tests {
         assert_eq!(contract.class, TaskClass::ArtifactCreation);
         assert_eq!(contract.allowed_tools, Some(READ_WRITE_TOOLS));
         assert_eq!(contract.max_tool_turns, 4);
+        assert_eq!(
+            contract.ordered_read_paths,
+            vec!["inputs/eligibility.md".to_string()]
+        );
         assert!(contract.execution_policy.contains("禁止 list_files"));
+
+        let recovery = compile_task_contract(
+            model_router::TaskKind::Chat,
+            "先读取 inputs/missing.md，失败后读取 inputs/brief.md，并写入 output/recovery.md。",
+        );
+        assert!(recovery.execution_policy.contains("不得重排或省略"));
+        assert!(recovery.execution_policy.contains("必须且只读取一次"));
+        assert_eq!(
+            recovery.ordered_read_paths,
+            vec![
+                "inputs/missing.md".to_string(),
+                "inputs/brief.md".to_string()
+            ]
+        );
+        let stable = build_system_prompt(
+            &crate::personas::find_persona("medical"),
+            crate::modes::ChatMode::Auto,
+        );
+        assert!(stable.contains("禁止根据工作区清单推断结果"));
+        let ws = tmp_ws("ordered_path_probe", &[("brief.md", "FMA-UE")]);
+        let dynamic = build_turn_context(
+            "先读取 inputs/missing.md，失败后读取 inputs/brief.md，并写入 output/recovery.md。",
+            crate::modes::ChatMode::Auto,
+            &ws,
+            true,
+        );
+        assert!(dynamic.contains("不展开工作区清单"));
+        assert!(!dynamic.contains("[FILE] brief.md"));
 
         let evidence_word_must_not_override_paths = compile_task_contract(
             model_router::TaskKind::DeepAnalysis,

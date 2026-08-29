@@ -129,3 +129,5 @@ T2 来源封闭任务还会检查带医学单位、Cobb/ATR/Risser 语境的数�
 `report` 命令不会修改原始运行记录，也拒绝覆盖已有报告。它汇总 Agent 可靠性、耗时、Token、证据检索/引用覆盖率、硬门失败，以及 RAG 逐查询排名和所有门禁，生成稳定的 Markdown 中间产物。正式对外 PDF 应由该 Markdown 和对应原始 JSON/JSONL 共同生成，避免图表与事实源脱节。
 
 单次通过只代表链路可运行，不代表候选版本优于基线。PR Gate 每个 case/model/config 至少需要 5 次；正式 Release 基线应积累 20～30 次，才使用 P90 作稳定结论。
+
+工具恢复案例可使用 `[required].tool_sequence` 把工具名、输入片段、错误状态和顺序设为硬门。明确输入路径的定点读写任务由宿主按序执行只读预检；没有显式输入路径的 Artifact 任务只暴露 `write_file`。最终文字回复的 Token 上限不得截断包含完整 Artifact 的工具 JSON 载荷。长尾专项结果见 `reports/long-tail-tool-eval-2026-08-29.md`。

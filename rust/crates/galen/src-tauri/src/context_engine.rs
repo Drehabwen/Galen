@@ -5,6 +5,7 @@ use api::ToolDefinition;
 
 use crate::task_contract::{
     compile_task_contract, normalize_contract_path, task_execution_policy, TaskClass, TaskContract,
+    READ_WRITE_TOOLS,
 };
 use crate::tools::ToolContext;
 
@@ -22,7 +23,9 @@ pub(crate) fn build_system_prompt(
     format!(
         "{}\n\n{}\n\n## 回复要求\n\
          优先行动并报告可验证结果。不要复述内部推理；需要说明决策时只给简短依据。\
-         达到当前任务的验收条件后立即收敛输出。",
+         达到当前任务的验收条件后立即收敛输出。\
+         如果用户明确要求验证工具失败或指定工具步骤顺序，必须实际执行且严格按序；\
+         禁止根据工作区清单推断结果后声称已经执行。",
         persona.system_prompt, taste,
     )
 }
@@ -68,7 +71,14 @@ pub(crate) fn build_turn_context(
     };
     let status = crate::runtime_manager::detect_all();
     let env_summary = crate::runtime_manager::status_summary(&status);
-    let workspace = workspace_summary(workspace_root);
+    let workspace = if contract.allowed_tools == Some(READ_WRITE_TOOLS) {
+        // The user already supplied exact paths. Listing which files exist lets
+        // a model infer a missing-path result and falsely claim it executed the
+        // requested failure probe. Keep the contract authoritative instead.
+        "定点路径任务：不展开工作区清单；必须通过实际 read_file 结果判断文件状态。".to_string()
+    } else {
+        workspace_summary(workspace_root)
+    };
     let wants_plan = matches!(mode, crate::modes::ChatMode::Plan)
         || user_message.contains("计划")
         || user_message.contains("方案")

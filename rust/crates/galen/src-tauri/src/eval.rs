@@ -138,9 +138,22 @@ pub struct RequiredOutcome {
     pub artifacts: Vec<String>,
     #[serde(default)]
     pub tools: Vec<String>,
+    /// Exact ordered sequence of ordinary tool calls. Use this for recovery
+    /// contracts where arguments, failures, and ordering are part of success.
+    #[serde(default)]
+    pub tool_sequence: Vec<ExpectedToolCall>,
     /// Evidence IDs that must be both retrieved and cited in the final output.
     #[serde(default)]
     pub evidence_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExpectedToolCall {
+    pub tool: String,
+    #[serde(default)]
+    pub input_contains: String,
+    #[serde(default)]
+    pub is_error: Option<bool>,
 }
 
 /// Machine-checkable content expectations. These assertions deliberately
@@ -248,6 +261,11 @@ impl EvalCase {
                     return Err(format!("案例 {} 的结构化观察文本不能为空", self.id));
                 }
                 _ => {}
+            }
+        }
+        for call in &self.required.tool_sequence {
+            if call.tool.trim().is_empty() {
+                return Err(format!("案例 {} 的工具序列包含空工具名", self.id));
             }
         }
         if self
@@ -451,6 +469,13 @@ impl RunRecord {
             .iter()
             .filter(|trace| trace.is_error)
             .count();
+        let expected_errors = case
+            .required
+            .tool_sequence
+            .iter()
+            .filter(|call| call.is_error == Some(true))
+            .count();
+        let unexpected_errors = errors.saturating_sub(expected_errors);
         let mut repeats: HashMap<(&str, &str), usize> = HashMap::new();
         let mut names = Vec::new();
         for trace in &ordinary_traces {
@@ -503,6 +528,29 @@ impl RunRecord {
                 format!("required_tool:{tool}"),
                 names.contains(tool),
                 format!("observed={}", names.join(",")),
+            );
+        }
+        if !case.required.tool_sequence.is_empty() {
+            let expected = &case.required.tool_sequence;
+            let exact = ordinary_traces.len() == expected.len()
+                && ordinary_traces
+                    .iter()
+                    .zip(expected)
+                    .all(|(actual, wanted)| {
+                        actual.tool == wanted.tool
+                            && (wanted.input_contains.is_empty()
+                                || actual.input.contains(&wanted.input_contains))
+                            && wanted.is_error.is_none_or(|value| actual.is_error == value)
+                    });
+            let observed = ordinary_traces
+                .iter()
+                .map(|trace| format!("{}:{}:{}", trace.tool, trace.is_error, trace.input))
+                .collect::<Vec<_>>()
+                .join(" -> ");
+            add(
+                "required_tool_sequence".to_string(),
+                exact,
+                format!("observed={observed}"),
             );
         }
         for tool in &case.forbidden.tools {
@@ -672,6 +720,7 @@ impl RunRecord {
                 || name.starts_with("structured_observation:")
                 || name == "causal_boundary"
                 || name.starts_with("required_tool:")
+                || name == "required_tool_sequence"
                 || name.starts_with("required_evidence_")
         });
         let repeatability = assertion_score(&assertions, |name| {
@@ -679,7 +728,7 @@ impl RunRecord {
                 name,
                 "model_request_budget" | "tool_call_budget" | "no_repeated_call_loop"
             )
-        }) * if errors == 0 { 1.0 } else { 0.8 };
+        }) * if unexpected_errors == 0 { 1.0 } else { 0.8 };
         let state_safety = assertion_score(&assertions, |name| {
             name == "run_completed"
                 || name.starts_with("forbidden_tool:")
@@ -2081,6 +2130,53 @@ mod tests {
         );
         assert!(!record.hard_gates_passed);
         assert_eq!(record.tools.max_repeat, 3);
+    }
+
+    #[test]
+    fn exact_tool_sequence_checks_arguments_errors_and_order() {
+        let workspace = std::env::temp_dir().join("galen-eval-tool-sequence-test");
+        std::fs::create_dir_all(&workspace).unwrap();
+        let mut value = case();
+        value.required.tool_sequence = vec![
+            ExpectedToolCall {
+                tool: "read_file".to_string(),
+                input_contains: "inputs/missing.md".to_string(),
+                is_error: Some(true),
+            },
+            ExpectedToolCall {
+                tool: "read_file".to_string(),
+                input_contains: "inputs/brief.md".to_string(),
+                is_error: Some(false),
+            },
+        ];
+        let traces = vec![ToolTrace {
+            turn: 1,
+            tool: "read_file".to_string(),
+            input: r#"{"path":"inputs/brief.md"}"#.to_string(),
+            output: "FMA-UE".to_string(),
+            is_error: false,
+        }];
+        let summary = summary();
+        let record = RunRecord::evaluate(
+            &value,
+            RunObservation {
+                commit: "abc",
+                model: "model",
+                run_index: 1,
+                run_ok: true,
+                response: "FMA-UE",
+                summary: &summary,
+                traces: &traces,
+                workspace: &workspace,
+                summary_field_coverage: None,
+            },
+        );
+        assert!(!record.hard_gates_passed);
+        assert!(record
+            .assertions
+            .iter()
+            .any(|assertion| { assertion.name == "required_tool_sequence" && !assertion.pass }));
+        let _ = std::fs::remove_dir_all(workspace);
     }
 
     #[test]

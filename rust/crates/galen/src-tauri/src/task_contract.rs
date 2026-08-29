@@ -33,6 +33,7 @@ const WORKSPACE_TOOLS: &[&str] = &[
     "write_file",
 ];
 pub(crate) const READ_WRITE_TOOLS: &[&str] = &["read_file", "write_file"];
+pub(crate) const WRITE_ONLY_TOOLS: &[&str] = &["write_file"];
 const LOOKUP_TOOLS: &[&str] = &[
     "search_evidence",
     "search_pubmed",
@@ -71,6 +72,7 @@ pub(crate) struct TaskContract {
     pub(crate) max_tool_turns: u32,
     pub(crate) execution_policy: &'static str,
     pub(crate) artifact_paths: Vec<String>,
+    pub(crate) ordered_read_paths: Vec<String>,
     pub(crate) disable_deep_reasoning: bool,
     pub(crate) response_token_cap: Option<u32>,
 }
@@ -164,6 +166,7 @@ pub(crate) fn compile_task_contract(
         .iter()
         .any(|needle| lower.contains(needle));
     let artifact_paths = extract_artifact_paths(user_message);
+    let ordered_read_paths = extract_read_paths(user_message);
     let (class, allowed_tools, max_tool_turns, execution_policy) = if is_discussion_only_task(
         &lower,
     ) {
@@ -185,7 +188,7 @@ pub(crate) fn compile_task_contract(
             TaskClass::ArtifactCreation,
             Some(READ_WRITE_TOOLS),
             4,
-            "\n\n## 定点读写契约\n用户已经给出输入与输出路径。只允许按已知路径调用 read_file，然后调用 write_file；禁止 list_files、search_files 或目录探索。写入成功后立即总结。",
+            "\n\n## 定点读写契约\n用户已经给出输入与输出路径。严格按照用户声明的顺序读取每个已知路径，不得重排或省略；若用户明确要求验证某个路径的读取失败，也必须且只读取一次，记录错误后继续后续路径。只允许调用 read_file 和 write_file，禁止 list_files、search_files 或目录探索。写入成功后立即总结。",
         )
     } else if is_explicit_rehab_query(&lower) {
         (
@@ -208,7 +211,7 @@ pub(crate) fn compile_task_contract(
     } else if is_explicit_artifact_creation_task(&lower) {
         (
             TaskClass::ArtifactCreation,
-            Some(WORKSPACE_TOOLS),
+            Some(WRITE_ONLY_TOOLS),
             5,
             "\n\n## 本任务交付契约\n用户已经明确要求创建工作区 Artifact，因此不得因缺少非关键背景而停下询问。若研究主题或细节未给出，使用中性占位内容或明确标注的合理假设，并在文档中列出待确认项；先直接调用 write_file 生成用户指定路径，再依据写入结果确认非空并立即总结。不要在写入前反复列目录、读取不存在的记忆文件或要求用户回复“用示例”。",
         )
@@ -238,6 +241,7 @@ pub(crate) fn compile_task_contract(
         max_tool_turns,
         execution_policy,
         artifact_paths,
+        ordered_read_paths,
         disable_deep_reasoning,
         response_token_cap,
     }
@@ -378,6 +382,24 @@ fn extract_path_mentions(text: &str) -> Vec<&str> {
                     .any(|extension| token.contains(extension))
         })
         .collect()
+}
+
+fn extract_read_paths(text: &str) -> Vec<String> {
+    let mut paths = Vec::new();
+    for token in extract_path_mentions(text) {
+        let Some(end) = [".md", ".json", ".csv", ".toml", ".txt"]
+            .iter()
+            .filter_map(|extension| token.find(extension).map(|index| index + extension.len()))
+            .min()
+        else {
+            continue;
+        };
+        let path = normalize_contract_path(&token[..end]);
+        if !path.starts_with("output/") && !paths.contains(&path) {
+            paths.push(path);
+        }
+    }
+    paths
 }
 
 fn extract_artifact_paths(text: &str) -> Vec<String> {
