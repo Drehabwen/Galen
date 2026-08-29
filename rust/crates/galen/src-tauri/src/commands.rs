@@ -350,6 +350,8 @@ pub async fn send_message(
             // Completion is the UI's hand-off point. Emitting it only after
             // persistence guarantees that the very next turn can load this
             // exchange from the authoritative session.
+            let metrics_name = format!("chat-run-metrics{suffix}");
+            let _ = window_clone.emit(&metrics_name, &metrics);
             let done_name = format!("chat-done{suffix}");
             let _ = window_clone.emit(&done_name, &assistant_text);
         }
@@ -368,6 +370,11 @@ pub fn get_chat_session(
         return Ok(Vec::new());
     };
     crate::chat_session::load_messages(&root, tag.as_deref())
+}
+
+#[tauri::command]
+pub fn get_capabilities() -> Vec<crate::capability::CapabilityStatus> {
+    crate::capability::official_statuses(&crate::capability::CapabilityConfig::load())
 }
 
 #[tauri::command]
@@ -399,10 +406,7 @@ pub fn revise_conversation_decision(
 }
 
 #[tauri::command]
-pub fn dismiss_conversation_decision(
-    state: State<AppState>,
-    id: String,
-) -> Result<(), String> {
+pub fn dismiss_conversation_decision(state: State<AppState>, id: String) -> Result<(), String> {
     let backend = lock_mutex(&state.backend)?;
     let root = backend
         .get_workspace_root()
@@ -749,6 +753,65 @@ pub fn get_artifacts(
         None => return Ok(Vec::new()),
     };
     crate::artifact::list_artifacts(&root)
+}
+
+// ---------------------------------------------------------------------------
+// Rehabilitation context — host-authoritative case evidence and review state
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn import_rehab_case(
+    state: State<AppState>,
+    source_path: String,
+    case_id: String,
+) -> Result<crate::rehab_context::RehabCaseBundle, String> {
+    let backend = lock_mutex(&state.backend)?;
+    let root = backend.get_workspace_root().ok_or("请先选择工作区")?;
+    crate::rehab_context::import_ais_case(&root, &source_path, &case_id)
+}
+
+#[tauri::command]
+pub fn get_rehab_case(
+    state: State<AppState>,
+    case_id: String,
+) -> Result<crate::rehab_context::RehabCaseBundle, String> {
+    let backend = lock_mutex(&state.backend)?;
+    let root = backend.get_workspace_root().ok_or("请先选择工作区")?;
+    crate::rehab_context::load_case_bundle(&root, &case_id)
+}
+
+#[tauri::command]
+pub fn list_rehab_cases(
+    state: State<AppState>,
+) -> Result<Vec<crate::rehab_context::RehabCaseSummary>, String> {
+    let backend = lock_mutex(&state.backend)?;
+    let Some(root) = backend.get_workspace_root() else {
+        return Ok(Vec::new());
+    };
+    crate::rehab_context::list_case_summaries(&root)
+}
+
+#[tauri::command]
+pub fn resolve_rehab_review(
+    state: State<AppState>,
+    case_id: String,
+    decision_id: String,
+    option_id: String,
+    reviewer: String,
+) -> Result<crate::rehab_context::RehabCaseBundle, String> {
+    let backend = lock_mutex(&state.backend)?;
+    let root = backend.get_workspace_root().ok_or("请先选择工作区")?;
+    crate::rehab_context::resolve_review(&root, &case_id, &decision_id, &option_id, &reviewer)
+}
+
+#[tauri::command]
+pub fn run_rehab_golden_journeys(
+    state: State<AppState>,
+    source_path: String,
+) -> Result<crate::rehab_eval::RehabGoldenEvalReport, String> {
+    let backend = lock_mutex(&state.backend)?;
+    let root = backend.get_workspace_root().ok_or("请先选择工作区")?;
+    crate::rehab_eval::run_golden_journeys(&root, &source_path)
 }
 
 // ---------------------------------------------------------------------------

@@ -1,5 +1,6 @@
 pub mod artifact;
 pub mod backend;
+pub mod capability;
 mod chat_loop;
 pub mod chat_session;
 mod commands;
@@ -17,6 +18,8 @@ pub mod modes;
 pub mod personas;
 pub mod probe;
 pub mod rag_eval;
+pub mod rehab_context;
+pub mod rehab_eval;
 pub mod research_task;
 pub mod runtime_manager;
 pub mod skills;
@@ -61,6 +64,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_models,
+            commands::get_capabilities,
             commands::get_modes,
             commands::get_mode,
             commands::set_mode,
@@ -91,6 +95,11 @@ pub fn run() {
             commands::create_research_task,
             commands::get_active_research_task,
             commands::save_research_task_nodes,
+            commands::import_rehab_case,
+            commands::get_rehab_case,
+            commands::list_rehab_cases,
+            commands::resolve_rehab_review,
+            commands::run_rehab_golden_journeys,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Galen");

@@ -31,6 +31,7 @@ pub mod evidence_search;
 pub mod fs;
 pub mod medical;
 pub mod rehab;
+pub mod report;
 pub mod research;
 pub mod search;
 pub mod workspace_path;
@@ -170,19 +171,8 @@ impl ToolRegistry {
         self.tools.insert(def.name.clone(), Box::new(tool));
     }
 
-    /// Register all built-in tools (medical, file ops, command, search).
-    pub fn register_builtin(&mut self) {
-        // Medical domain tools
-        self.register(medical::SearchPubMed);
-        self.register(medical::FetchArticle);
-        self.register(medical::FormatCitation);
-        self.register(clinical::AnalyzeClinicalCase);
-        self.register(rehab::RehabData);
-        self.register(research::CreateResearchPlan);
-        self.register(medical::SearchRehabLiterature);
-        self.register(evidence_search::SearchEvidence);
-
-        // File operations
+    /// Register domain-neutral kernel tools.
+    pub fn register_kernel(&mut self) {
         self.register(fs::CreateDirectory);
         self.register(fs::WriteFile);
         self.register(fs::ReadFile);
@@ -195,6 +185,23 @@ impl ToolRegistry {
         // Search & command
         self.register(search::SearchFiles);
         self.register(command::ExecuteCommand);
+    }
+
+    /// Assemble the official workbench from a thin kernel and capability packs.
+    pub fn register_builtin(&mut self) {
+        self.register_kernel();
+        crate::capability::register_official(&crate::capability::CapabilityConfig::default(), self);
+    }
+
+    /// Assemble the workbench using ~/.galen/capabilities.toml.
+    pub fn configured() -> Self {
+        let mut registry = Self::new();
+        registry.register_kernel();
+        crate::capability::register_official(
+            &crate::capability::CapabilityConfig::load(),
+            &mut registry,
+        );
+        registry
     }
 
     /// Tool definitions for the model.
@@ -379,7 +386,7 @@ mod tests {
     fn registry_has_all_builtin_definitions() {
         let registry = ToolRegistry::default();
         let defs = registry.definitions();
-        assert_eq!(defs.len(), 18);
+        assert_eq!(defs.len(), 19);
         let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
         for expected in &[
             "search_pubmed",
@@ -395,6 +402,7 @@ mod tests {
             "delete_file",
             "execute_command",
             "search_files",
+            "compile_pdf_report",
         ] {
             assert!(names.contains(expected), "missing: {expected}");
         }

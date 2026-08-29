@@ -3,7 +3,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { StatusDot, Tag, ApprovalCard } from "./ui/primitives";
 import { TokenRing } from "./TokenRing";
-import type { ChatMessage, ModelConfig } from "../types";
+import type { ChatMessage, ChatRunSummary, ModelConfig } from "../types";
 
 // ---------------------------------------------------------------------------
 // Block type detection from message content
@@ -47,6 +47,7 @@ interface ResearchExecutionThreadProps {
   streaming: string;
   thinking: string;
   sending: boolean;
+  latestRunMetrics: ChatRunSummary | null;
   error: string | null;
   backendAvailable: boolean;
   input: string;
@@ -220,6 +221,7 @@ export function ResearchExecutionThread({
   streaming,
   thinking,
   sending,
+  latestRunMetrics,
   error,
   backendAvailable,
   input,
@@ -235,6 +237,20 @@ export function ResearchExecutionThread({
   onViewEvidence,
 }: ResearchExecutionThreadProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  useEffect(() => {
+    if (!sending) {
+      setElapsedSeconds(0);
+      return;
+    }
+    const startedAt = Date.now();
+    const update = () =>
+      setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    update();
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [sending]);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -247,6 +263,29 @@ export function ResearchExecutionThread({
       if (input.trim() && !sending) onSend();
     }
   };
+
+  const activityLabel = !backendAvailable
+    ? "离线"
+    : !sending
+      ? "等待研究问题"
+      : streaming
+        ? `正在生成回答 · ${elapsedSeconds}s`
+        : thinking
+          ? `模型推理中 · ${elapsedSeconds}s`
+          : elapsedSeconds < 2
+            ? "正在组装上下文"
+            : `等待模型响应 · ${elapsedSeconds}s`;
+
+  const cacheTotal = latestRunMetrics
+    ? latestRunMetrics.cacheReadInputTokens +
+      latestRunMetrics.cacheCreationInputTokens
+    : 0;
+  const cacheHitRate =
+    latestRunMetrics && cacheTotal > 0
+      ? Math.round(
+          (latestRunMetrics.cacheReadInputTokens / cacheTotal) * 100,
+        )
+      : null;
 
   // -------------------------------------------------------------------
   // Render a single thread block
@@ -405,9 +444,35 @@ export function ResearchExecutionThread({
           <h2>研究委托</h2>
         </div>
         <StatusDot tone={sending ? "active" : "idle"}>
-          {sending ? "正在推进任务" : backendAvailable ? "等待研究问题" : "离线"}
+          {activityLabel}
         </StatusDot>
       </div>
+
+      {!sending && latestRunMetrics && (
+        <div className="thread-run-metrics" aria-label="上一轮模型性能">
+          <span>上一轮</span>
+          <strong>{(latestRunMetrics.totalMs / 1000).toFixed(1)}s</strong>
+          <span>首个可见响应</span>
+          <strong>
+            {latestRunMetrics.ttftMs == null
+              ? "—"
+              : `${(latestRunMetrics.ttftMs / 1000).toFixed(1)}s`}
+          </strong>
+          <span>Token</span>
+          <strong>
+            {latestRunMetrics.inputTokens.toLocaleString()} →{" "}
+            {latestRunMetrics.outputTokens.toLocaleString()}
+          </strong>
+          <span>缓存命中</span>
+          <strong>{cacheHitRate == null ? "—" : `${cacheHitRate}%`}</strong>
+          {latestRunMetrics.toolCallCount > 0 && (
+            <>
+              <span>工具</span>
+              <strong>{latestRunMetrics.toolCallCount} 次</strong>
+            </>
+          )}
+        </div>
+      )}
 
       {/* ── Thread messages ── */}
       <div className="thread-messages">

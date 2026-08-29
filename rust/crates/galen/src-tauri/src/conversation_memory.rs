@@ -397,7 +397,9 @@ mod tests {
     #[test]
     fn revised_and_dismissed_decisions_change_active_context() {
         let root = workspace("manual-revision");
-        let original = capture_user_decisions(&root, "样本量定为 48。", 1).unwrap().remove(0);
+        let original = capture_user_decisions(&root, "样本量定为 48。", 1)
+            .unwrap()
+            .remove(0);
         let revised = revise_decision(&root, &original.id, "样本量定为 56", 2).unwrap();
         let context = render_decision_context(&root).unwrap().unwrap();
         assert!(context.contains("56"));

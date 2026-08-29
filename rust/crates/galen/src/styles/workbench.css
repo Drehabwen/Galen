@@ -342,6 +342,25 @@
 }
 .thread-header h2 { font-family: var(--font-display); font-size: var(--text-xl); }
 .thread-messages { padding: var(--space-5); }
+
+.thread-run-metrics {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 34px;
+  padding: 0 var(--space-5);
+  border-bottom: 1px solid var(--border-muted);
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  overflow-x: auto;
+}
+
+.thread-run-metrics strong {
+  color: var(--text-secondary);
+  font-weight: 600;
+  margin-right: var(--space-2);
+}
 .thread-empty {
   align-items: flex-start;
   justify-content: center;

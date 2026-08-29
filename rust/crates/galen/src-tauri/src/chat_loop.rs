@@ -180,7 +180,7 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
     });
 
     // Build tool registry and shared context
-    let mut registry = ToolRegistry::default();
+    let mut registry = ToolRegistry::configured();
     let mcp_started = Instant::now();
     // Cache MCP connections globally — connect once, reuse across turns.
     {

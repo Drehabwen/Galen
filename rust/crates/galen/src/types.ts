@@ -48,6 +48,39 @@ export interface ChatMessage {
   model?: string;
 }
 
+export interface ModelRequestTiming {
+  turn: number;
+  attemptCount?: number;
+  streamConnectMs: number;
+  firstReasoningTokenMs?: number;
+  firstVisibleTokenMs?: number;
+  totalMs: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheHitTokens: number;
+  cacheMissTokens: number;
+  stopReason?: string;
+}
+
+export interface ChatRunSummary {
+  iterations: number;
+  toolCallCount: number;
+  modelRequestCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationInputTokens: number;
+  cacheReadInputTokens: number;
+  contextAssemblyMs: number;
+  mcpSetupMs: number;
+  ttftMs?: number;
+  ttfrMs?: number;
+  totalMs: number;
+  compactionCount: number;
+  streamRetryCount: number;
+  outputContinuationCount: number;
+  requests: ModelRequestTiming[];
+}
+
 export type LibraryTab = "papers" | "notes" | "files";
 
 export interface DocumentState {

@@ -24,6 +24,18 @@ export interface McpServerStatus {
   tool_count: number;
 }
 
+export interface CapabilityManifest {
+  id: string;
+  name: string;
+  version: string;
+  layer: "kernel" | "workbench" | "domain";
+  description: string;
+  toolNames: string[];
+  uiSlots: Array<"top_bar" | "resource_bar" | "inspector" | "settings">;
+  contextModules: string[];
+  enabled: boolean;
+}
+
 const DEFAULT_STATUS: RuntimeStatus = {
   python: { installed: false, version: null, path: null, install_guide: null },
   r: { installed: false, version: null, path: null, install_guide: null },
@@ -36,6 +48,7 @@ export function useEnvironment() {
   const backendAvailable = isTauriRuntime();
   const [status, setStatus] = useState<RuntimeStatus>(DEFAULT_STATUS);
   const [mcpServers, setMcpServers] = useState<McpServerStatus[]>([]);
+  const [capabilities, setCapabilities] = useState<CapabilityManifest[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -47,15 +60,20 @@ export function useEnvironment() {
     Promise.all([
       invoke<RuntimeStatus>("get_runtime_status"),
       invoke<McpServerStatus[]>("get_mcp_status"),
+      invoke<CapabilityManifest[]>("get_capabilities"),
     ])
-      .then(([s, m]) => { setStatus(s); setMcpServers(m); })
+      .then(([s, m, c]) => {
+        setStatus(s);
+        setMcpServers(m);
+        setCapabilities(c);
+      })
       .catch((e) => {
         console.error("Failed to detect environment:", e);
       })
       .finally(() => setLoading(false));
   }, [backendAvailable]);
 
-  return { status, mcpServers, loading };
+  return { status, mcpServers, capabilities, loading };
 }
 
 export function statusLine(status: RuntimeStatus): string {

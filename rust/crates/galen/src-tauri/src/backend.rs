@@ -358,6 +358,23 @@ mod tests {
     }
 
     #[test]
+    fn run_summary_serializes_for_the_frontend_contract() {
+        let summary = ChatRunSummary {
+            total_ms: 1_250,
+            input_tokens: 800,
+            output_tokens: 120,
+            cache_read_input_tokens: 600,
+            ..ChatRunSummary::default()
+        };
+        let value = serde_json::to_value(summary).unwrap();
+
+        assert_eq!(value["totalMs"], 1_250);
+        assert_eq!(value["inputTokens"], 800);
+        assert_eq!(value["outputTokens"], 120);
+        assert_eq!(value["cacheReadInputTokens"], 600);
+    }
+
+    #[test]
     fn model_list_places_configured_default_first() {
         let root = std::env::temp_dir().join(format!(
             "galen-default-model-order-{}-{}",

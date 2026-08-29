@@ -1,8 +1,10 @@
 import type { CSSProperties, ReactNode } from "react";
 
+export type WorkbenchView = "execution-thread" | "daily-workbench" | "rehab-context";
+
 interface WorkbenchRailProps {
-  activeView: "execution-thread" | "daily-workbench";
-  onViewChange: (view: "execution-thread" | "daily-workbench") => void;
+  activeView: WorkbenchView;
+  onViewChange: (view: WorkbenchView) => void;
   canvasTab: "plan" | "doc";
   onCanvasTabChange: (tab: "plan" | "doc") => void;
   completedNodes: number;
@@ -52,6 +54,18 @@ export function WorkbenchRail({
             <svg viewBox="0 0 24 24"><path d="M4.5 7.5h6l1.5 2h7.5v9h-15z"/><path d="M4.5 7.5v-2h6l1.5 2"/></svg>
           </RailIcon>
           <span>资料</span>
+        </button>
+        <button
+          type="button"
+          className={`workbench-rail-action ${activeView === "rehab-context" ? "active" : ""}`}
+          onClick={() => onViewChange("rehab-context")}
+          title="病例证据"
+          aria-label="病例证据"
+        >
+          <RailIcon>
+            <svg viewBox="0 0 24 24"><path d="M5 5.5h14v13H5z"/><path d="M8 12h2l1.2-3 2 6 1.3-3H17"/></svg>
+          </RailIcon>
+          <span>病例</span>
         </button>
       </div>
 
