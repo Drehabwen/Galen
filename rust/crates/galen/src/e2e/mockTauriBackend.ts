@@ -3,6 +3,7 @@ import type {
   RehabCaseSummary,
   RehabGoldenEvalReport,
 } from "../domain/rehabContext";
+import type { ArtifactRecord } from "../domain/artifact";
 
 type Callback = (payload: unknown) => void;
 
@@ -78,6 +79,41 @@ const goldenReport: RehabGoldenEvalReport = {
   recommendations: ["未检测到负优化；下一轮提高病例歧义与跨轮干扰强度。"],
 };
 
+const deliveryArtifact: ArtifactRecord = {
+  id: "artifact-e09-release",
+  path: "output/E09-scoliosis-evidence-brief.md",
+  kind: "document",
+  mimeType: "text/markdown",
+  size: 1038,
+  contentHash: "e09-release-preview-fixture",
+  taskId: "E09",
+  nodeId: null,
+  createdAt: "2026-08-29T10:05:00+08:00",
+  source: "agent",
+};
+
+const deliveryMarkdown = `# 青少年特发性脊柱侧弯证据简报
+
+> 交付状态：已完成，关键结论仍需临床人员复核。
+
+## 核心结论
+
+支具联合脊柱侧弯特异性运动可能改善部分患者的 Cobb 角进展风险，但疗效取决于依从性、骨成熟度与随访窗口。
+
+## 可核验结果
+
+| 指标 | 基线 | 12 周 | 解释 |
+| --- | ---: | ---: | --- |
+| 胸弯 Cobb 角 | 31° | 25° | 改善 6°，来源已复核 |
+| 开放争议 | 1 | 0 | 已完成人工裁决 |
+
+## 下一步行动
+
+1. 核验支具每日佩戴时长。
+2. 在 24 周节点重复站立位全脊柱影像。
+3. 保留原始影像与量角记录，支持审计追溯。
+`;
+
 function summary(bundle: RehabCaseBundle): RehabCaseSummary {
   return {
     case_id: bundle.case_record.case_id,
@@ -125,7 +161,11 @@ export function installE2eTauriBackend(): void {
         ];
         case "get_mode": return "discuss";
         case "get_chat_session": return [];
-        case "get_artifacts": return [];
+        case "get_artifacts": return [deliveryArtifact];
+        case "read_workspace_file": {
+          if (String(args.path ?? "") !== deliveryArtifact.path) throw new Error("artifact not found");
+          return deliveryMarkdown;
+        }
         case "get_memory_status": return { exists: true, size: 3, preview: "AIS cohort context" };
         case "get_conversation_decisions": return [];
         case "get_active_research_task": return null;

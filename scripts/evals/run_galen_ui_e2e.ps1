@@ -5,6 +5,7 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $appRoot = Join-Path $repoRoot "rust\crates\galen"
 $artifactRoot = Join-Path $appRoot "output\playwright"
 $journeyPath = Join-Path $PSScriptRoot "galen_ui_journey.js"
+$artifactJourneyPath = Join-Path $PSScriptRoot "galen_artifact_preview_journey.js"
 $sessionName = "galen-e2e"
 New-Item -ItemType Directory -Force -Path $artifactRoot | Out-Null
 
@@ -35,6 +36,7 @@ try {
     Invoke-PlaywrightCli open $BaseUrl
     Invoke-PlaywrightCli tracing-start
     Invoke-PlaywrightCli run-code --filename $journeyPath
+    Invoke-PlaywrightCli run-code --filename $artifactJourneyPath
     Invoke-PlaywrightCli console error
     Invoke-PlaywrightCli tracing-stop
 } finally {

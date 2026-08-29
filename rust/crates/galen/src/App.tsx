@@ -272,7 +272,10 @@ export default function App() {
       )}
       <GlobalResourceBar
         artifacts={delivery.artifacts}
-        onOpenArtifact={delivery.openRegisteredArtifact}
+        onOpenArtifact={(artifact) => {
+          setActiveView("execution-thread");
+          void delivery.openRegisteredArtifact(artifact);
+        }}
       />
 
       {/* ════ Welcome Wizard ════ */}

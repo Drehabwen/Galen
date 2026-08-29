@@ -1,4 +1,6 @@
 import { useEffect, useMemo } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface ResearchDocumentCanvasProps {
   artifact?: { path: string; content: string; nodeTitle?: string } | null;
@@ -39,7 +41,9 @@ export function ResearchDocumentCanvas({ artifact, loading, error, onBackToPlan 
             <span className="artifact-path">{artifact.path}</span>
           </header>
           <div className="artifact-preview-scroll">
-            <pre className="artifact-preview-content">{artifact.content}</pre>
+            <article className="artifact-preview-content" data-testid="artifact-rendered-preview">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{artifact.content}</ReactMarkdown>
+            </article>
           </div>
           <footer className="doc-footer">
             <span className="doc-footer-stat">{artifact.content.length} 字符 · 工作区内预览</span>
