@@ -2,6 +2,10 @@
 
 这套评测直接调用 Galen 的 Rust Agent Loop，检查模型输出、工具轨迹、工作区状态和 Artifact。真实运行记录默认写入 `evals/runs/`，该目录中的 JSONL/HTML 被 Git 忽略，避免提交用户数据或模型输出。
 
+`evals/agent/` 进一步提供 Inspect AI 外部编排层。它采用 τ³-bench 风格的
+模拟用户私有目标和 Letta 风格的记忆探针，但最终仍读取 Galen Rust evaluator
+产生的文件、工具、Token、延迟和硬门记录。该层不进入桌面应用运行时。
+
 ## 命令
 
 在 `rust/` 目录运行：
@@ -36,6 +40,22 @@ cargo run -p galen --bin eval -- rag-compare --baseline ../evals/baselines/rag-a
 
 # 汇总 Agent JSONL 与 RAG JSON，生成可在 Galen 内预览、可继续转 PDF 的 Markdown 报告
 cargo run -p galen --bin eval -- report --agent ../evals/runs/m02.jsonl --rag ../evals/runs/rag-ais-candidate.json --output ../evals/reports/galen-eval.md --title "Galen AIS 测评报告"
+```
+
+## 外部 Agent 框架适配器
+
+```powershell
+cd evals/agent
+python -m venv .venv
+.venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\python -m pip install -e . --no-deps
+
+# 不调用模型，验证五条模拟用户契约
+.venv\Scripts\python -m galen_agent_eval.validate
+.venv\Scripts\inspect eval galen_agent_eval/tasks.py@galen_contracts --model mockllm/model
+
+# Inspect 编排 Galen 原生 Rust Agent Loop；先用 --limit 1 做 smoke
+.venv\Scripts\inspect eval galen_agent_eval/tasks.py@galen_foundation --model mockllm/model --limit 1
 ```
 
 ## 四层测评架构

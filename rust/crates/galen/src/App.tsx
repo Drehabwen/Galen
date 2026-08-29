@@ -251,6 +251,7 @@ export default function App() {
             loading={rehabContext.loading}
             error={rehabContext.error}
             evalReport={rehabContext.evalReport}
+            agentBenchmark={rehabContext.agentBenchmark}
             onOpenCase={(caseId) => void rehabContext.openCase(caseId)}
             onImportCase={(sourcePath, caseId) => void rehabContext.importCase(sourcePath, caseId)}
             onResolveReview={(decisionId, optionId) => void rehabContext.resolveReview(decisionId, optionId)}

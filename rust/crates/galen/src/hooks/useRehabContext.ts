@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { RehabCaseBundle, RehabCaseSummary, RehabGoldenEvalReport } from "../domain/rehabContext";
+import type { AgentBenchmarkReport, RehabCaseBundle, RehabCaseSummary, RehabGoldenEvalReport } from "../domain/rehabContext";
 
 export function useRehabContext(backendAvailable: boolean, workspaceRoot: string | null) {
   const [cases, setCases] = useState<RehabCaseSummary[]>([]);
@@ -8,6 +8,7 @@ export function useRehabContext(backendAvailable: boolean, workspaceRoot: string
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [evalReport, setEvalReport] = useState<RehabGoldenEvalReport | null>(null);
+  const [agentBenchmark, setAgentBenchmark] = useState<AgentBenchmarkReport | null>(null);
 
   const refresh = useCallback(async () => {
     if (!backendAvailable || !workspaceRoot) {
@@ -34,6 +35,11 @@ export function useRehabContext(backendAvailable: boolean, workspaceRoot: string
 
   useEffect(() => {
     void refresh();
+    if (backendAvailable && workspaceRoot) {
+      invoke<AgentBenchmarkReport>("get_agent_benchmark_report")
+        .then(setAgentBenchmark)
+        .catch(() => setAgentBenchmark(null));
+    }
     // Active case is deliberately excluded: refresh itself selects it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [backendAvailable, workspaceRoot]);
@@ -97,5 +103,5 @@ export function useRehabContext(backendAvailable: boolean, workspaceRoot: string
     }
   };
 
-  return { cases, activeCase, loading, error, evalReport, openCase, importCase, resolveReview, runGoldenJourneys };
+  return { cases, activeCase, loading, error, evalReport, agentBenchmark, openCase, importCase, resolveReview, runGoldenJourneys };
 }

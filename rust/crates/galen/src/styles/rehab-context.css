@@ -13,7 +13,7 @@
 .rehab-eval-heading h2 { margin: var(--space-1) 0 0; font: var(--font-semibold) var(--text-xl)/1.2 var(--font-display); }
 .rehab-eval-heading > strong { font: var(--font-semibold) var(--text-3xl)/1 var(--font-mono); color: var(--success); }
 .rehab-eval.failed .rehab-eval-heading > strong { color: var(--error); }
-.rehab-eval-metrics { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px; margin-top: var(--space-4); background: var(--border); border: 1px solid var(--border); }
+.rehab-eval-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1px; margin-top: var(--space-4); background: var(--border); border: 1px solid var(--border); }
 .rehab-eval-metrics > div { display: flex; flex-direction: column; padding: var(--space-3); background: var(--bg-root); }
 .rehab-eval-metrics span, .rehab-eval-metrics small { color: var(--text-tertiary); font-size: var(--text-xs); }
 .rehab-eval-metrics strong { margin: var(--space-1) 0; font: var(--font-semibold) var(--text-xl)/1 var(--font-mono); color: var(--success); }

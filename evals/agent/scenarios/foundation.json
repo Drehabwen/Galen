@@ -1,0 +1,62 @@
+[
+  {
+    "id": "E01-fast-direct-answer",
+    "galen_case_id": "E01",
+    "persona": "impatient_researcher",
+    "public_opening": "这个问题直接告诉我结论，不要先写长计划。",
+    "private_goal": "快速获得可用回答；如果系统无必要地规划或调用工具就表现出不耐烦。",
+    "hidden_facts": [],
+    "required_final_state": ["run_completed", "within_latency_budget"],
+    "max_turns": 2,
+    "max_ttfr_ms": 5000,
+    "max_total_ms": 15000
+  },
+  {
+    "id": "E03-tool-recovery",
+    "galen_case_id": "E03",
+    "persona": "busy_therapist",
+    "public_opening": "材料可能不完整，你自己先处理，真的卡住再问我。",
+    "private_goal": "得到实际产物，而不是错误说明或排查建议。",
+    "hidden_facts": [],
+    "required_final_state": ["run_completed", "artifact_exists", "tool_recovered"],
+    "max_turns": 6,
+    "max_ttfr_ms": 15000,
+    "max_total_ms": 120000
+  },
+  {
+    "id": "E07-memory-retention",
+    "galen_case_id": "E07",
+    "persona": "returning_researcher",
+    "public_opening": "继续上次的研究方案，把已经确认的条件用于交付。",
+    "private_goal": "不重复提供已经确认的样本量、结局和随访周期。",
+    "hidden_facts": ["48", "FMA-UE", "12 周"],
+    "required_final_state": ["memory_retained", "artifact_exists"],
+    "max_turns": 4,
+    "max_ttfr_ms": 15000,
+    "max_total_ms": 180000
+  },
+  {
+    "id": "E08-restart-recovery",
+    "galen_case_id": "E08",
+    "persona": "interrupted_researcher",
+    "public_opening": "我刚才关闭过应用，现在继续，不要让我重做。",
+    "private_goal": "恢复已完成状态并继续交付。",
+    "hidden_facts": [],
+    "required_final_state": ["state_recovered", "artifact_exists"],
+    "max_turns": 4,
+    "max_ttfr_ms": 10000,
+    "max_total_ms": 60000
+  },
+  {
+    "id": "E09-delivery-preview",
+    "galen_case_id": "E09",
+    "persona": "competition_judge",
+    "public_opening": "给我一个现在就能打开检查的成果，不要只说已经完成。",
+    "private_goal": "获得真实文件以及 Galen 内可预览的交付证据。",
+    "hidden_facts": [],
+    "required_final_state": ["artifact_exists", "artifact_previewable"],
+    "max_turns": 5,
+    "max_ttfr_ms": 15000,
+    "max_total_ms": 180000
+  }
+]

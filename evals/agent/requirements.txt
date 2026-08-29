@@ -1,0 +1,3 @@
+# Keep this direct dependency aligned with pyproject.toml. Use an isolated
+# virtual environment; Galen's Rust/Tauri runtime does not depend on Inspect.
+inspect-ai==0.3.260

@@ -1,4 +1,8 @@
 __pycache__/
+.venv/
+*.egg-info/
+evals/agent/logs/
+.playwright-cli/
 archive/
 .omx/
 .clawd-agents/

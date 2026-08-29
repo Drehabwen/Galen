@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { RehabCaseBundle, RehabCaseSummary, RehabGoldenEvalReport } from "../domain/rehabContext";
+import type { AgentBenchmarkReport, RehabCaseBundle, RehabCaseSummary, RehabGoldenEvalReport } from "../domain/rehabContext";
 
 interface RehabContextPanelProps {
   workspaceSelected: boolean;
@@ -8,6 +8,7 @@ interface RehabContextPanelProps {
   loading: boolean;
   error: string | null;
   evalReport: RehabGoldenEvalReport | null;
+  agentBenchmark: AgentBenchmarkReport | null;
   onOpenCase: (caseId: string) => void;
   onImportCase: (sourcePath: string, caseId: string) => void;
   onResolveReview: (decisionId: string, optionId: string) => void;
@@ -77,6 +78,22 @@ export function RehabContextPanel(props: RehabContextPanelProps) {
             ))}
           </div>
           <p className="rehab-eval-next">{props.evalReport.recommendations[0]}</p>
+        </section>
+      )}
+      {props.agentBenchmark && props.agentBenchmark.runs.length > 0 && (
+        <section className="rehab-eval passed agent-benchmark">
+          <div className="rehab-eval-heading">
+            <div><span className="rehab-kicker">AGENT FOUNDATION · {props.agentBenchmark.case_id} · K=5</span><h2>响应速度与可靠性交叉验证</h2></div>
+          </div>
+          <div className="rehab-eval-metrics">
+            {props.agentBenchmark.runs.map((run) => (
+              <div key={run.profile} className={run.pass_rate === 1 ? "passed" : "failed"}>
+                <span>{run.profile} · {run.model}</span>
+                <strong>{run.mean_total_ms} ms</strong>
+                <small>TTFR {run.mean_ttfr_ms} ms · P95 {run.p95_total_ms} ms · {Math.round(run.pass_rate * 100)}%</small>
+              </div>
+            ))}
+          </div>
         </section>
       )}
       {props.cases.length > 1 && (

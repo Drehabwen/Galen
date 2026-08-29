@@ -1,3 +1,4 @@
+pub mod agent_benchmark;
 pub mod artifact;
 pub mod backend;
 pub mod capability;
@@ -100,6 +101,7 @@ pub fn run() {
             commands::list_rehab_cases,
             commands::resolve_rehab_review,
             commands::run_rehab_golden_journeys,
+            commands::get_agent_benchmark_report,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Galen");

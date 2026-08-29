@@ -98,3 +98,19 @@ export interface RehabGoldenEvalReport {
   }>;
   recommendations: string[];
 }
+
+export interface AgentBenchmarkReport {
+  case_id: string;
+  runs: Array<{
+    profile: string;
+    model: string;
+    samples: number;
+    pass_rate: number;
+    mean_ttfr_ms: number;
+    p95_ttfr_ms: number;
+    mean_total_ms: number;
+    p95_total_ms: number;
+    mean_input_tokens: number;
+    mean_output_tokens: number;
+  }>;
+}

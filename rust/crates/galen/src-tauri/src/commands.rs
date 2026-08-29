@@ -814,6 +814,15 @@ pub fn run_rehab_golden_journeys(
     crate::rehab_eval::run_golden_journeys(&root, &source_path)
 }
 
+#[tauri::command]
+pub fn get_agent_benchmark_report(
+    state: State<AppState>,
+) -> Result<crate::agent_benchmark::AgentBenchmarkReport, String> {
+    let backend = lock_mutex(&state.backend)?;
+    let root = backend.get_workspace_root().ok_or("请先选择工作区")?;
+    crate::agent_benchmark::load_latest(&root)
+}
+
 // ---------------------------------------------------------------------------
 // Model / API key status
 // ---------------------------------------------------------------------------
