@@ -30,7 +30,7 @@ from reportlab.platypus import (
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "docs" / "GALEN_ALPHA_EXPLORATION_GUIDE.md"
-OUTPUT = ROOT / "output" / "pdf" / "galen-alpha-exploration-guide-v0.1.0.pdf"
+OUTPUT = ROOT / "output" / "pdf" / "galen-alpha-exploration-guide-v0.1.2.pdf"
 
 FONT_REGULAR = Path(r"C:\Windows\Fonts\msyh.ttc")
 FONT_BOLD = Path(r"C:\Windows\Fonts\msyhbd.ttc")
@@ -143,7 +143,7 @@ def header_footer(c, doc) -> None:
     c.drawString(LEFT, PAGE_H - 9.5 * mm, "GALEN / ALPHA EXPLORATION GUIDE")
     c.setFont("GalenSans", 7.2)
     c.setFillColor(MUTED)
-    c.drawRightString(PAGE_W - RIGHT, PAGE_H - 9.5 * mm, "v0.1.0 · 2026-08-22")
+    c.drawRightString(PAGE_W - RIGHT, PAGE_H - 9.5 * mm, "v0.1.2 · 2026-08-29")
     c.line(LEFT, 12.5 * mm, PAGE_W - RIGHT, 12.5 * mm)
     c.drawString(LEFT, 8.5 * mm, "仅限受邀 Alpha 体验 · 不输入可识别患者信息")
     c.drawRightString(PAGE_W - RIGHT, 8.5 * mm, f"PAGE {doc.page}")
@@ -210,8 +210,8 @@ def cover_story(s: dict[str, ParagraphStyle]) -> list:
         s["callout"], color=HexColor("#FFF4E8"), accent=ORANGE,
     ))
     story.append(Spacer(1, 24 * mm))
-    story.append(Paragraph("适用版本  v0.1.0  ·  Windows 10 / 11 64 位", s["small"]))
-    story.append(Paragraph("更新日期  2026-08-22  ·  面向受邀体验者", s["small"]))
+    story.append(Paragraph("适用版本  v0.1.2  ·  Windows 10 / 11 64 位", s["small"]))
+    story.append(Paragraph("更新日期  2026-08-29  ·  面向受邀体验者", s["small"]))
     story.append(PageBreak())
     return story
 
@@ -222,7 +222,7 @@ def toc_story(s: dict[str, ParagraphStyle]) -> list:
         ("02", "安全边界", "隐私、密钥、工作区与医学责任"),
         ("03", "安装与首次配置", "安装包、模型连接与测试工作区"),
         ("04", "界面与工作模式", "讨论、计划、自动、证据与预览"),
-        ("05", "开始探索", "七条可任选的自由探索路线"),
+        ("05", "开始探索", "九条可任选的自由探索路线"),
         ("06", "什么算问题", "从阻塞和循环到信任与科研错误"),
         ("07", "出现问题时", "先保存现场，再做最小恢复"),
         ("08", "反馈模板", "提交一个可复现、无敏感信息的问题"),

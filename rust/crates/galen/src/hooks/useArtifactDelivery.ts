@@ -6,6 +6,8 @@ import {
   resolveArtifactNodeTitle,
 } from "../domain/deliveryLoop";
 import type { SessionNode } from "../domain/sessionTypes";
+import { BINARY_PREVIEW_KINDS, classifyPreviewKind } from "../domain/preview";
+import type { ArtifactPreview } from "../domain/preview";
 import type { useChat } from "./useChat";
 import type { useResearchTask } from "./useResearchTask";
 
@@ -20,11 +22,7 @@ export function useArtifactDelivery(
   research: ResearchController,
 ) {
   const [canvasTab, setCanvasTab] = useState<CanvasTab>("plan");
-  const [preview, setPreview] = useState<{
-    path: string;
-    content: string;
-    nodeTitle?: string;
-  } | null>(null);
+  const [preview, setPreview] = useState<ArtifactPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [artifacts, setArtifacts] = useState<ArtifactRecord[]>([]);
@@ -53,9 +51,17 @@ export function useArtifactDelivery(
       setError(null);
       setCanvasTab("doc");
       try {
-        const content = await invoke<string>("read_workspace_file", { path });
-        if (revision === readRevisionRef.current) {
-          setPreview({ path, content, nodeTitle });
+        const kind = classifyPreviewKind(path);
+        if (BINARY_PREVIEW_KINDS.has(kind)) {
+          const buffer = await invoke<ArrayBuffer>("read_artifact_bytes", { path });
+          if (revision === readRevisionRef.current) {
+            setPreview({ path, kind, blob: new Blob([buffer]), nodeTitle });
+          }
+        } else {
+          const content = await invoke<string>("read_workspace_file", { path });
+          if (revision === readRevisionRef.current) {
+            setPreview({ path, kind, content, nodeTitle });
+          }
         }
       } catch (cause) {
         if (revision === readRevisionRef.current) {

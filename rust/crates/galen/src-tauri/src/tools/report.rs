@@ -64,12 +64,18 @@ impl GalenTool for CompilePdfReport {
         let output_for_process = output.clone();
         let workspace_for_process = workspace.clone();
         let result = tokio::task::spawn_blocking(move || {
-            std::process::Command::new(typst)
-                .arg("compile")
+            let mut cmd = std::process::Command::new(typst);
+            cmd.arg("compile")
                 .arg(&source_for_process)
                 .arg(&output_for_process)
-                .current_dir(&workspace_for_process)
-                .output()
+                .current_dir(&workspace_for_process);
+            // Do not flash a console window when compiling reports from the GUI.
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+            }
+            cmd.output()
         })
         .await
         .map_err(|error| format!("Typst process join error: {error}"))?

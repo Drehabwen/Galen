@@ -3,13 +3,16 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use tauri::{Emitter, State, Window};
 
-use crate::backend::{self, ChatBackend, ChatEvent, FileEntry, ModelConfig};
+use crate::backend::{self, ChatBackend, ChatEvent, ModelConfig};
 use crate::modes::ChatMode;
 use crate::research_task::{ResearchNode, ResearchTask};
 use crate::runtime_manager::{self, McpServerStatus, RuntimeStatus};
 use crate::workspace::WorkspaceConfig;
 use api::{InputContentBlock, InputMessage, MessageRequest};
 use medical_core::clinical::ClinicalCaseInput;
+
+pub mod workspace;
+pub mod rehab;
 
 pub struct AppState {
     pub backend: Mutex<ChatBackend>,
@@ -19,7 +22,7 @@ pub struct AppState {
 }
 
 /// Lock a std::sync::Mutex and map the poison error to a String.
-fn lock_mutex<T>(m: &Mutex<T>) -> Result<std::sync::MutexGuard<'_, T>, String> {
+pub(super) fn lock_mutex<T>(m: &Mutex<T>) -> Result<std::sync::MutexGuard<'_, T>, String> {
     m.lock().map_err(|e| format!("Internal state error: {e}"))
 }
 
@@ -65,80 +68,6 @@ pub fn set_persona(
     let mut guard = lock_mutex(&state.persona)?;
     *guard = persona.clone();
     Ok(persona)
-}
-
-#[tauri::command]
-pub fn get_workspace_root(state: State<AppState>) -> Result<Option<String>, String> {
-    Ok(lock_mutex(&state.backend)?
-        .get_workspace_root()
-        .map(|p| p.to_string_lossy().to_string()))
-}
-
-// ---------------------------------------------------------------------------
-// Simple query commands (no async work)
-// ---------------------------------------------------------------------------
-
-#[tauri::command]
-pub fn set_workspace(state: State<AppState>, path: String) -> Result<(), String> {
-    let pb = std::path::PathBuf::from(&path);
-    if !pb.exists() || !pb.is_dir() {
-        return Err("Path does not exist or is not a directory".into());
-    }
-    let backend = lock_mutex(&state.backend)?;
-    backend.set_workspace_root(Some(pb));
-    let mut config = lock_mutex(&state.ws_config)?;
-    config.set_workspace(&path);
-    Ok(())
-}
-
-#[tauri::command]
-pub fn list_workspace_files(
-    state: State<AppState>,
-    path: Option<String>,
-) -> Result<Vec<FileEntry>, String> {
-    let backend = lock_mutex(&state.backend)?;
-    let root = backend
-        .get_workspace_root()
-        .ok_or("No workspace selected")?;
-    let target = crate::tools::workspace_path::resolve_workspace_path_from_root(
-        &root,
-        path.as_deref().unwrap_or(""),
-    )?;
-
-    let mut entries = Vec::new();
-    let dir_iter =
-        std::fs::read_dir(&target).map_err(|e| format!("Failed to read directory: {e}"))?;
-    for entry in dir_iter {
-        let entry = entry.map_err(|e| format!("Failed: {e}"))?;
-        let name = entry.file_name().to_string_lossy().to_string();
-        let meta = entry.metadata().ok();
-        let is_dir = meta.as_ref().map(|m| m.is_dir()).unwrap_or(false);
-        let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
-        let ep = entry.path();
-        let rel = ep
-            .strip_prefix(&target)
-            .unwrap_or(&ep)
-            .to_string_lossy()
-            .to_string();
-        entries.push(FileEntry {
-            name,
-            path: rel,
-            is_dir,
-            size,
-        });
-    }
-    entries.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| a.name.cmp(&b.name)));
-    Ok(entries)
-}
-
-#[tauri::command]
-pub fn read_workspace_file(state: State<AppState>, path: String) -> Result<String, String> {
-    let backend = lock_mutex(&state.backend)?;
-    let root = backend
-        .get_workspace_root()
-        .ok_or("No workspace selected")?;
-    let target = crate::tools::workspace_path::resolve_workspace_path_from_root(&root, &path)?;
-    std::fs::read_to_string(&target).map_err(|e| format!("Failed to read file: {e}"))
 }
 
 // ---------------------------------------------------------------------------
@@ -753,74 +682,6 @@ pub fn get_artifacts(
         None => return Ok(Vec::new()),
     };
     crate::artifact::list_artifacts(&root)
-}
-
-// ---------------------------------------------------------------------------
-// Rehabilitation context — host-authoritative case evidence and review state
-// ---------------------------------------------------------------------------
-
-#[tauri::command]
-pub fn import_rehab_case(
-    state: State<AppState>,
-    source_path: String,
-    case_id: String,
-) -> Result<crate::rehab_context::RehabCaseBundle, String> {
-    let backend = lock_mutex(&state.backend)?;
-    let root = backend.get_workspace_root().ok_or("请先选择工作区")?;
-    crate::rehab_context::import_ais_case(&root, &source_path, &case_id)
-}
-
-#[tauri::command]
-pub fn get_rehab_case(
-    state: State<AppState>,
-    case_id: String,
-) -> Result<crate::rehab_context::RehabCaseBundle, String> {
-    let backend = lock_mutex(&state.backend)?;
-    let root = backend.get_workspace_root().ok_or("请先选择工作区")?;
-    crate::rehab_context::load_case_bundle(&root, &case_id)
-}
-
-#[tauri::command]
-pub fn list_rehab_cases(
-    state: State<AppState>,
-) -> Result<Vec<crate::rehab_context::RehabCaseSummary>, String> {
-    let backend = lock_mutex(&state.backend)?;
-    let Some(root) = backend.get_workspace_root() else {
-        return Ok(Vec::new());
-    };
-    crate::rehab_context::list_case_summaries(&root)
-}
-
-#[tauri::command]
-pub fn resolve_rehab_review(
-    state: State<AppState>,
-    case_id: String,
-    decision_id: String,
-    option_id: String,
-    reviewer: String,
-) -> Result<crate::rehab_context::RehabCaseBundle, String> {
-    let backend = lock_mutex(&state.backend)?;
-    let root = backend.get_workspace_root().ok_or("请先选择工作区")?;
-    crate::rehab_context::resolve_review(&root, &case_id, &decision_id, &option_id, &reviewer)
-}
-
-#[tauri::command]
-pub fn run_rehab_golden_journeys(
-    state: State<AppState>,
-    source_path: String,
-) -> Result<crate::rehab_eval::RehabGoldenEvalReport, String> {
-    let backend = lock_mutex(&state.backend)?;
-    let root = backend.get_workspace_root().ok_or("请先选择工作区")?;
-    crate::rehab_eval::run_golden_journeys(&root, &source_path)
-}
-
-#[tauri::command]
-pub fn get_agent_benchmark_report(
-    state: State<AppState>,
-) -> Result<crate::agent_benchmark::AgentBenchmarkReport, String> {
-    let backend = lock_mutex(&state.backend)?;
-    let root = backend.get_workspace_root().ok_or("请先选择工作区")?;
-    crate::agent_benchmark::load_latest(&root)
 }
 
 // ---------------------------------------------------------------------------

@@ -5,6 +5,17 @@ on:
   push:
     tags:
       - "v*"
+    branches:
+      - galen-research-workbench
+    paths:
+      - .github/workflows/galen-windows-release.yml
+      - rust/Cargo.lock
+      - rust/Cargo.toml
+      - rust/crates/galen/**
+      - rust/crates/api/**
+      - rust/crates/medical-core/**
+      - rust/crates/model-router/**
+      - rust/crates/runtime/**
 
 permissions:
   contents: write
@@ -14,7 +25,27 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  warm-rust-cache:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/galen-research-workbench'
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust -> target
+          shared-key: galen-windows-release
+
+      - name: Warm Galen release cache
+        run: cargo build --release -p galen
+
   publish:
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -44,7 +75,8 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: rust -> rust/target
+          workspaces: rust -> target
+          shared-key: galen-windows-release
 
       - uses: actions/setup-node@v5
         with:
@@ -59,11 +91,9 @@ jobs:
       - name: Download bundled runtimes
         run: python rust/scripts/download_sidecars.py
 
-      - name: Verify Galen before release
+      - name: Run frontend tests
         working-directory: rust/crates/galen
-        run: |
-          npm test
-          npm run build
+        run: npm test
 
       - name: Build, sign and publish Galen
         uses: tauri-apps/tauri-action@v1

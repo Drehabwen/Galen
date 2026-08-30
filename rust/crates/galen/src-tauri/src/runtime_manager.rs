@@ -48,9 +48,15 @@ impl RuntimeInfo {
 
 /// Get version string by running `<binary> --version` and parsing the first line.
 fn get_version(binary: &str) -> Option<String> {
-    std::process::Command::new(binary)
-        .arg("--version")
-        .output()
+    let mut cmd = std::process::Command::new(binary);
+    cmd.arg("--version");
+    // Do not flash a console window when probing runtimes from the GUI.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    cmd.output()
         .ok()
         .and_then(|o| {
             if o.status.success() {

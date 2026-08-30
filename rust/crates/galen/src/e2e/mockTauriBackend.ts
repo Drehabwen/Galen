@@ -166,6 +166,10 @@ export function installE2eTauriBackend(): void {
           if (String(args.path ?? "") !== deliveryArtifact.path) throw new Error("artifact not found");
           return deliveryMarkdown;
         }
+        case "read_artifact_bytes": {
+          if (String(args.path ?? "") !== deliveryArtifact.path) throw new Error("artifact not found");
+          return new TextEncoder().encode(deliveryMarkdown).buffer;
+        }
         case "get_memory_status": return { exists: true, size: 3, preview: "AIS cohort context" };
         case "get_conversation_decisions": return [];
         case "get_active_research_task": return null;
