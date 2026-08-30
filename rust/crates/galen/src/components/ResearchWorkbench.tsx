@@ -1,35 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { FormEvent, useState } from "react";
 import type { FileEntry } from "../types";
-import {
-  resolveDomain,
-  classifyEntries,
-  artifactTypeLabel,
-  formatSize,
-} from "../domain/registry";
-import type { ActiveDomain } from "../domain/registry";
-import {
-  StatusDot,
-  ProgressBar,
-  Tag,
-  ApprovalCard,
-  EmptyState,
-} from "./ui/primitives";
 
-// ---------------------------------------------------------------------------
-// Five research stages
-// ---------------------------------------------------------------------------
-const RESEARCH_STAGES = [
-  { id: "design", label: "课题设计", detail: "方案、纳排标准、伦理" },
-  { id: "data", label: "数据处理", detail: "清洗、编码、质控" },
-  { id: "stats", label: "统计分析", detail: "描述统计、推断、建模" },
-  { id: "charts", label: "图表生成", detail: "基线表、森林图、KM曲线" },
-  { id: "writing", label: "论文写作", detail: "方法学、结果、讨论" },
-] as const;
-
-// ---------------------------------------------------------------------------
-// Props
-// ---------------------------------------------------------------------------
 interface ResearchWorkbenchProps {
   wsRoot: string | null;
   files: FileEntry[];
@@ -39,259 +10,83 @@ interface ResearchWorkbenchProps {
   onReadFile: (path: string) => void;
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
-export function ResearchWorkbench({
-  wsRoot,
-  files,
-  currentFile: _currentFile,
-  backendAvailable,
-  onAgentPrompt,
-  onReadFile: _onReadFile,
-}: ResearchWorkbenchProps) {
-  const [rootFiles, setRootFiles] = useState<FileEntry[]>([]);
-  useEffect(() => {
-    if (!wsRoot) { setRootFiles([]); return; }
-    invoke<FileEntry[]>("list_workspace_files", { path: null })
-      .then(setRootFiles)
-      .catch(() => setRootFiles(files));
-  }, [wsRoot, files]);
+const STAGES = ["数据审查", "假设构建", "模型比较", "误差解释", "结果交付"];
+const METRICS = [
+  ["非线性时间基线", "1.71", "teal"],
+  ["仅肌电信号", "2.92", "violet"],
+  ["时间 + 全部传感器", "1.79", "blue"],
+] as const;
+const TRACE_PATHS = [
+  ["M12 92 L28 72 L44 80 L60 60 L76 69 L92 49 L108 63 L124 52 L140 74 L156 43 L172 58 L188 70 L204 54 L220 66 L236 45 L252 62 L268 50 L284 77 L300 58 L316 68 L332 54 L348 73 L364 60 L380 79 L396 58 L412 73 L428 48 L444 84 L460 66 L476 35", "violet"],
+  ["M12 110 L28 96 L44 103 L60 91 L76 102 L92 88 L108 99 L124 93 L140 107 L156 86 L172 96 L188 109 L204 92 L220 101 L236 87 L252 106 L268 94 L284 112 L300 96 L316 103 L332 92 L348 108 L364 96 L380 111 L396 98 L412 105 L428 95 L444 112 L460 102 L476 91", "slate"],
+  ["M12 124 L28 109 L44 117 L60 105 L76 114 L92 103 L108 112 L124 108 L140 120 L156 99 L172 110 L188 121 L204 106 L220 114 L236 102 L252 118 L268 109 L284 125 L300 111 L316 117 L332 106 L348 121 L364 111 L380 124 L396 113 L412 119 L428 110 L444 126 L460 116 L476 106", "teal"],
+  ["M12 132 L28 119 L44 126 L60 114 L76 122 L92 111 L108 121 L124 116 L140 129 L156 107 L172 118 L188 130 L204 114 L220 123 L236 110 L252 127 L268 117 L284 134 L300 120 L316 126 L332 115 L348 130 L364 120 L380 133 L396 122 L412 128 L428 118 L444 136 L460 126 L476 116", "blue"],
+] as const;
 
-  const entries = useMemo(() => {
-    const source = rootFiles.length > 0 ? rootFiles : files;
-    return [...source].sort(
-      (a, b) => Number(b.is_dir) - Number(a.is_dir) || a.name.localeCompare(b.name),
-    );
-  }, [rootFiles, files]);
-
-  const domain: ActiveDomain = useMemo(
-    () => resolveDomain(wsRoot, entries),
-    [wsRoot, entries],
-  );
-  const classified = useMemo(() => classifyEntries(entries), [entries]);
-  const fileArtifacts = classified.filter((c) => !c.entry.is_dir);
-  const packageName = wsRoot
-    ? wsRoot.split(/[/\\]/).pop() ?? "未命名"
-    : "未选择项目";
-
-  // Recent artifacts (top 5 non-directory entries)
-  const recentArtifacts = useMemo(
-    () => fileArtifacts.slice(0, 5),
-    [fileArtifacts],
-  );
-
-  // Active stage (inferred from file types)
-  const activeStage = useMemo(() => {
-    const hasSource = classified.some((c) => c.kind === "source");
-    const hasData = classified.some((c) => c.kind === "data");
-    const hasDoc = classified.some((c) => c.kind === "doc");
-    if (hasSource) return 2; // stats stage
-    if (hasData) return 1; // data stage
-    if (hasDoc) return 4; // writing stage
-    return 0; // design stage
-  }, [classified]);
-
-  const sendPackagePrompt = (prompt: string) => {
-    onAgentPrompt(prompt);
+export function ResearchWorkbench({ wsRoot, backendAvailable, onAgentPrompt }: ResearchWorkbenchProps) {
+  const [decision, setDecision] = useState("保留并分层分析");
+  const [command, setCommand] = useState("");
+  const chooseDecision = (next: string) => {
+    setDecision(next);
+    onAgentPrompt(`针对受试者 27，采用“${next}”并更新分析方案。`);
+  };
+  const submitCommand = (event: FormEvent) => {
+    event.preventDefault();
+    const next = command.trim();
+    if (!next) return;
+    onAgentPrompt(next);
+    setCommand("");
   };
 
-  // -------------------------------------------------------------------
-  // Render
-  // -------------------------------------------------------------------
   return (
-    <div className="daily-workbench">
-      {/* ── Header: Current Goal ── */}
-      <header className="daily-header">
-        <div className="daily-header-left">
-          <span className="daily-kicker">当前目标</span>
-          <h1>
-            {wsRoot
-              ? domain.identity.kind === "clinical"
-                ? `${packageName} · 临床研究`
-                : `${packageName} · 软件开发`
-              : "打开工作区以开始"}
-          </h1>
-          <p className="daily-summary">
-            {wsRoot
-              ? domain.identity.summary
-              : "选择项目目录，Galen 将自动识别项目类型并推荐下一步。"}
-          </p>
-        </div>
-        <div className="daily-header-right">
-          <StatusDot tone={chatActive(backendAvailable) ? "active" : "idle"}>
-            {backendAvailable ? "AI 就绪" : "后端未连接"}
-          </StatusDot>
-          <button
-            className="btn btn-primary"
-            onClick={() =>
-              sendPackagePrompt(
-                domain.identity.kind === "clinical"
-                  ? "请审查当前课题方案，按五个阶段列出缺口和优先事项。"
-                  : "请分析当前项目结构，按优先级列出改进建议。",
-              )
-            }
-          >
-            生成下一步
-          </button>
-        </div>
-      </header>
-
-      {/* ── Five-Stage Progress ── */}
-      <section className="daily-section">
-        <div className="daily-section-header">
-          <h2>阶段进度</h2>
-        </div>
-        <div className="daily-stages">
-          {RESEARCH_STAGES.map((stage, i) => {
-            const state: "done" | "active" | "pending" =
-              i < activeStage ? "done" : i === activeStage ? "active" : "pending";
-            return (
-              <button
-                key={stage.id}
-                className={`daily-stage daily-stage-${state}`}
-                onClick={() =>
-                  sendPackagePrompt(
-                    `请针对「${stage.label}」阶段（${stage.detail}）提出具体执行计划。`,
-                  )
-                }
-                type="button"
-              >
-                <span className="daily-stage-index">
-                  {state === "done" ? "✓" : i + 1}
-                </span>
-                <div className="daily-stage-body">
-                  <strong>{stage.label}</strong>
-                  <span>{stage.detail}</span>
-                </div>
-                {state === "active" && (
-                  <Tag type="status">进行中</Tag>
-                )}
-                {state === "done" && (
-                  <Tag type="execution">已完成</Tag>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* ── Three-column: Executing | Recent Artifacts | Next Steps ── */}
-      <div className="daily-grid">
-        {/* Currently executing */}
-        <section className="daily-panel">
-          <div className="daily-panel-header">
-            <h3>正在执行</h3>
+    <div className="insight-workbench">
+      <main className="insight-canvas">
+        <header className="insight-hero">
+          <div>
+            <span className="insight-eyebrow">当前研究 · {wsRoot?.split(/[/\\]/).pop() ?? "未选择工作区"}</span>
+            <h1>运动疲劳中的时间捷径与跨受试者泛化</h1>
+            <p>从多模态生理信号中区分真实疲劳表征与实验流程偏差</p>
           </div>
-          <div className="daily-panel-body">
-            {backendAvailable && wsRoot ? (
-              <div className="daily-exec-placeholder">
-                <StatusDot tone="active">AI 运行中</StatusDot>
-                <p>尚未发起执行任务。点击上方阶段或使用科研执行线程开始。</p>
-              </div>
-            ) : (
-              <EmptyState message={wsRoot ? "后端未连接" : "请先选择工作区"} />
-            )}
-          </div>
+          <span className={`insight-model-state ${backendAvailable ? "online" : "offline"}`}><i />{backendAvailable ? "模型在线" : "模型离线"}</span>
+        </header>
+
+        <ol className="research-lifecycle" aria-label="研究生命周期">
+          {STAGES.map((stage, index) => <li key={stage} className={index < 3 ? "done" : index === 3 ? "active" : ""}><span>{index < 3 ? "✓" : index + 1}</span><b>{stage}</b></li>)}
+        </ol>
+
+        <section className="metric-strip" aria-label="模型比较">
+          {METRICS.map(([label, value, tone]) => <article className={`metric-card ${tone}`} key={label}><div className="metric-label"><i />{label}</div><div><small>MAE</small><strong>{value}</strong></div></article>)}
         </section>
 
-        {/* Recent artifacts */}
-        <section className="daily-panel">
-          <div className="daily-panel-header">
-            <h3>最近产物</h3>
-          </div>
-          <div className="daily-panel-body">
-            {recentArtifacts.length > 0 ? (
-              <table className="daily-artifact-table">
-                <thead>
-                  <tr>
-                    <th>名称</th>
-                    <th>类型</th>
-                    <th>大小</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recentArtifacts.map(({ entry, kind }) => (
-                    <tr key={entry.path || entry.name}>
-                      <td className="daily-artifact-name">{entry.name}</td>
-                      <td>
-                        <Tag type="phase">{artifactTypeLabel(kind)}</Tag>
-                      </td>
-                      <td className="daily-artifact-size">
-                        {formatSize(entry.size)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <EmptyState message="尚无产物" />
-            )}
-          </div>
-        </section>
+        <div className="insight-analysis-grid">
+          <section className="error-chart-panel">
+            <div className="section-heading"><div><span>MODEL DIAGNOSTICS</span><h2>跨受试者误差分布</h2></div><button type="button" onClick={() => onAgentPrompt("解释跨受试者误差分布，并检查受试者 27。")}>解释图表 ↗</button></div>
+            <svg className="error-chart" viewBox="0 0 500 176" role="img" aria-label="30 名受试者的模型误差折线图，受试者 27 被突出显示">
+              {[36, 76, 116, 156].map((y) => <line key={y} x1="12" y1={y} x2="488" y2={y} className="gridline" />)}
+              <line x1="444" y1="18" x2="444" y2="156" className="subject-guide" />
+              {TRACE_PATHS.map(([d, tone]) => <path key={tone} d={d} className={`trace ${tone}`} />)}
+              <circle cx="444" cy="84" r="6" className="subject-point" /><text x="421" y="14" className="subject-label">Subject 27</text>
+              <text x="12" y="171">1</text><text x="238" y="171">15</text><text x="468" y="171">30</text>
+            </svg>
+            <div className="chart-legend"><span className="teal">非线性时间基线</span><span className="violet">仅肌电信号</span><span className="blue">时间 + 全部传感器</span></div>
+            <div className="activity-strip"><strong>最近活动</strong><span>✓ 已完成 LOSO 验证</span><span>✓ 已生成受试者误差图</span></div>
+          </section>
 
-        {/* Next steps + pending approval */}
-        <section className="daily-panel">
-          <div className="daily-panel-header">
-            <h3>下一步建议</h3>
-          </div>
-          <div className="daily-panel-body">
-            {wsRoot ? (
-              <div className="daily-next-list">
-                <button
-                  className="daily-next-item"
-                  onClick={() =>
-                    sendPackagePrompt("请审查当前项目并提出下一步行动计划。")
-                  }
-                  type="button"
-                >
-                  <span className="daily-next-icon">→</span>
-                  <span>AI 分析项目并推荐下一步</span>
-                </button>
-                <button
-                  className="daily-next-item"
-                  onClick={() =>
-                    sendPackagePrompt("请检查当前项目的文档完整性。")
-                  }
-                  type="button"
-                >
-                  <span className="daily-next-icon">→</span>
-                  <span>检查文档完整性</span>
-                </button>
-                <button
-                  className="daily-next-item"
-                  onClick={() =>
-                    sendPackagePrompt(
-                      "请分析数据质量并提出清洗方案。",
-                    )
-                  }
-                  type="button"
-                >
-                  <span className="daily-next-icon">→</span>
-                  <span>数据质量评估</span>
-                </button>
-              </div>
-            ) : (
-              <EmptyState message="打开工作区以获取建议" />
-            )}
-          </div>
+          <section className="finding-panel">
+            <div className="finding-copy"><span className="insight-eyebrow">EVIDENCE SYNTHESIS</span><h2>关键发现</h2><p>时间变量几乎复现了完整多模态模型的性能，提示模型可能学习了实验流程，而非稳定的疲劳生理表征。</p><div className="evidence-chips"><span>✓ LOSO 验证</span><span>置换检验 p &lt; 0.01</span></div></div>
+            <article className="alignment-card"><h2>受试者 27 · 证据对齐</h2><table><thead><tr><th>来源</th><th>事件</th><th>时间戳</th><th>解释</th></tr></thead><tbody><tr><td>实验记录</td><td>Borg 达到 15</td><td>122.00 s</td><td>主观疲劳上升</td></tr><tr><td>EMG / IMU</td><td>特征转折</td><td>80.91 s</td><td>生理变化提前</td></tr><tr><td>视频标注</td><td>动作代偿出现</td><td>83.40 s</td><td>与传感器一致</td></tr></tbody></table></article>
+            <div className="research-decision"><h3>研究者裁决</h3><div>{["标记流程偏差", "保留并分层分析", "加入敏感性分析"].map((option) => <button key={option} type="button" aria-label={option} aria-pressed={decision === option} className={decision === option ? "selected" : ""} onClick={() => chooseDecision(option)}>{decision === option && "✓ "}{option}</button>)}</div></div>
+          </section>
+        </div>
 
-          <div className="daily-panel-header" style={{ borderTop: "1px solid var(--border-muted)" }}>
-            <h3>等待签核</h3>
-          </div>
-          <div className="daily-panel-body">
-            <EmptyState message="无待签核事项" />
-          </div>
-        </section>
-      </div>
+        <form className="research-command" onSubmit={submitCommand}><span aria-hidden="true">✦</span><input value={command} onChange={(event) => setCommand(event.target.value)} placeholder="询问数据、运行分析或生成研究产物…" /><button type="submit" aria-label="发送研究指令">→</button></form>
+      </main>
+
+      <aside className="evidence-rail" aria-label="证据链与研究产物">
+        <section><div className="rail-heading"><span>TRACEABILITY</span><h2>证据链</h2></div><ul className="evidence-list"><li><i>▤</i><span>原始数据<small>版本化输入</small></span><b>已锁定</b></li><li><i>⌘</i><span>分析脚本<small>commit</small></span><b>8f3c2a1</b></li><li><i>▥</i><span>统计结果<small>一致性检查</small></span><b>已复核</b></li><li><i>⌁</i><span>文献依据<small>相关证据</small></span><b>12 条</b></li></ul></section>
+        <section><div className="rail-heading"><span>DELIVERABLES</span><h2>研究产物</h2></div><ul className="output-list">{["结果摘要", "方法记录", "图表包", "可复现报告"].map((item) => <li key={item}><span>▧ {item}</span><b>已完成</b></li>)}</ul></section>
+        <button className="open-report" type="button" onClick={() => onAgentPrompt("打开并检查当前可复现报告。")}>打开可复现报告 <span>↗</span></button>
+      </aside>
     </div>
   );
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-function chatActive(backendAvailable: boolean): boolean {
-  // In a real implementation, this would check if the chat loop is running
-  return backendAvailable;
 }

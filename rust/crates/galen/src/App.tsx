@@ -82,7 +82,7 @@ export default function App() {
   );
   const rehabContext = useRehabContext(chat.backendAvailable, wsRoot);
 
-  const [activeView, setActiveView] = useState<WorkbenchView>("execution-thread");
+  const [activeView, setActiveView] = useState<WorkbenchView>("daily-workbench");
 
   const packageName = workspace.name;
   const completedNodes = planNodes.filter((node) => node.status === "completed").length;

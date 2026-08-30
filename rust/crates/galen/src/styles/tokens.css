@@ -15,17 +15,17 @@
   --bg-hover:            rgba(0 107 90 / 0.06);  /* brand-tinted hover */
   --bg-active:           rgba(0 107 90 / 0.10);
   --bg-panel-subtle:     #f8faf9;    /* input backgrounds */
-  --bg-rail:             #15382f;    /* research navigation rail */
-  --bg-rail-active:      #285b4d;
+  --bg-rail:             #14243f;    /* research navigation rail */
+  --bg-rail-active:      #234a86;
 
   /* ── Colors: Brand (medical green — deeper + brighter accent) ── */
-  --accent:              #007a65;    /* primary action — brighter */
-  --accent-hover:        #005f4f;    /* hover */
-  --accent-bright:       #009177;    /* highlights, focus rings, glow */
-  --accent-muted:        #e5f3ef;    /* soft brand background */
-  --accent-subtle:       #f0f8f5;    /* even softer brand tint */
-  --accent-text:         #006653;    /* brand text, links — slightly warmer */
-  --border-accent:       #b3d9ce;    /* brand borders */
+  --accent:              #1f63d7;    /* primary research action */
+  --accent-hover:        #174ca8;    /* hover */
+  --accent-bright:       #3478ea;    /* highlights, focus rings, glow */
+  --accent-muted:        #e8f0ff;    /* soft brand background */
+  --accent-subtle:       #f3f7ff;    /* even softer brand tint */
+  --accent-text:         #1c55b5;    /* brand text and links */
+  --border-accent:       #b8cdf3;    /* brand borders */
 
   /* ── Colors: Text — warmer, less harsh ── */
   --text-primary:        #1a2e27;
@@ -109,7 +109,7 @@
   --shadow-sm:       0 2px 4px rgba(26 46 39 / 0.06);
   --shadow-md:       0 4px 12px rgba(26 46 39 / 0.08);
   --shadow-lg:       0 8px 24px rgba(26 46 39 / 0.12);
-  --shadow-glow:     0 0 0 3px rgba(0 122 101 / 0.15);  /* focus ring glow */
+  --shadow-glow:     0 0 0 3px rgba(31 99 215 / 0.15);  /* focus ring glow */
 
   /* ── Transitions ── */
   --transition-fast:    120ms ease;
@@ -144,4 +144,7 @@
   --tag-owner-text:     var(--color-neutral-tag);
   --tag-execution-bg:   var(--success-soft);
   --tag-execution-text: var(--success);
+  --chart-teal:         #0f8f83;
+  --chart-violet:       #6f63d9;
+  --chart-slate:        #73849b;
 }
