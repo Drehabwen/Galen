@@ -52,3 +52,4 @@ stdout.txt
 /rust/crates/galen/nul
 /rust/crates/galen/.playwright-cli/
 /rust/crates/galen/output/
+/.worktrees/
