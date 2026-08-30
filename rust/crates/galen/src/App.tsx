@@ -86,6 +86,9 @@ export default function App() {
 
   const packageName = workspace.name;
   const completedNodes = planNodes.filter((node) => node.status === "completed").length;
+  const latestPdfArtifact = [...delivery.artifacts]
+    .filter((artifact) => artifact.mimeType === "application/pdf" || artifact.path.toLowerCase().endsWith(".pdf"))
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
 
   useAppShortcuts(modeState.modes, modeState.switchMode, chat.clear);
 
@@ -232,6 +235,12 @@ export default function App() {
             files={[]}
             currentFile={null}
             backendAvailable={chat.backendAvailable}
+            reportAvailable={Boolean(latestPdfArtifact)}
+            onOpenReport={() => {
+              if (!latestPdfArtifact) return;
+              setActiveView("execution-thread");
+              void delivery.openRegisteredArtifact(latestPdfArtifact);
+            }}
             onAgentPrompt={(prompt: string) => {
               setActiveView("execution-thread");
               chat.send(

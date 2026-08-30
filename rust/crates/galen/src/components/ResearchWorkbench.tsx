@@ -6,6 +6,8 @@ interface ResearchWorkbenchProps {
   files: FileEntry[];
   currentFile: { path: string; content: string } | null;
   backendAvailable: boolean;
+  reportAvailable?: boolean;
+  onOpenReport?: () => void;
   onAgentPrompt: (prompt: string) => void;
   onReadFile: (path: string) => void;
 }
@@ -23,7 +25,7 @@ const TRACE_PATHS = [
   ["M12 132 L28 119 L44 126 L60 114 L76 122 L92 111 L108 121 L124 116 L140 129 L156 107 L172 118 L188 130 L204 114 L220 123 L236 110 L252 127 L268 117 L284 134 L300 120 L316 126 L332 115 L348 130 L364 120 L380 133 L396 122 L412 128 L428 118 L444 136 L460 126 L476 116", "blue"],
 ] as const;
 
-export function ResearchWorkbench({ wsRoot, backendAvailable, onAgentPrompt }: ResearchWorkbenchProps) {
+export function ResearchWorkbench({ wsRoot, backendAvailable, reportAvailable = false, onOpenReport, onAgentPrompt }: ResearchWorkbenchProps) {
   const [decision, setDecision] = useState("保留并分层分析");
   const [command, setCommand] = useState("");
   const chooseDecision = (next: string) => {
@@ -84,8 +86,8 @@ export function ResearchWorkbench({ wsRoot, backendAvailable, onAgentPrompt }: R
 
       <aside className="evidence-rail" aria-label="证据链与研究产物">
         <section><div className="rail-heading"><span>TRACEABILITY</span><h2>证据链</h2></div><ul className="evidence-list"><li><i>▤</i><span>原始数据<small>版本化输入</small></span><b>已锁定</b></li><li><i>⌘</i><span>分析脚本<small>commit</small></span><b>8f3c2a1</b></li><li><i>▥</i><span>统计结果<small>一致性检查</small></span><b>已复核</b></li><li><i>⌁</i><span>文献依据<small>相关证据</small></span><b>12 条</b></li></ul></section>
-        <section><div className="rail-heading"><span>DELIVERABLES</span><h2>研究产物</h2></div><ul className="output-list">{["结果摘要", "方法记录", "图表包", "可复现报告"].map((item) => <li key={item}><span>▧ {item}</span><b>已完成</b></li>)}</ul></section>
-        <button className="open-report" type="button" onClick={() => onAgentPrompt("打开并检查当前可复现报告。")}>打开可复现报告 <span>↗</span></button>
+        <section><div className="rail-heading"><span>DELIVERABLES</span><h2>研究产物</h2></div><ul className="output-list">{["结果摘要", "方法记录", "图表包"].map((item) => <li key={item}><span>▧ {item}</span><b>已完成</b></li>)}<li><span>▧ 可复现报告</span><b>{reportAvailable ? "已生成" : "待生成"}</b></li></ul></section>
+        <button className="open-report" type="button" disabled={!reportAvailable} aria-label={reportAvailable ? "打开可复现报告" : "尚未生成 PDF 报告"} onClick={onOpenReport}>{reportAvailable ? "打开可复现报告" : "尚未生成 PDF 报告"} <span>{reportAvailable ? "↗" : "—"}</span></button>
       </aside>
     </div>
   );

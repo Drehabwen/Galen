@@ -53,4 +53,40 @@ describe("ResearchWorkbench", () => {
     fireEvent.click(screen.getByRole("button", { name: "发送研究指令" }));
     expect(onAgentPrompt).toHaveBeenLastCalledWith("重新运行 LOSO 验证");
   });
+
+  it("opens the latest registered PDF instead of sending a chat prompt", () => {
+    const onOpenReport = vi.fn();
+    render(
+      <ResearchWorkbench
+        wsRoot="D:\\DEV\\fatigue-shortcut-audit"
+        files={[]}
+        currentFile={null}
+        backendAvailable
+        reportAvailable
+        onOpenReport={onOpenReport}
+        onAgentPrompt={() => {}}
+        onReadFile={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "打开可复现报告" }));
+    expect(onOpenReport).toHaveBeenCalledOnce();
+  });
+
+  it("disables report opening when no PDF is registered", () => {
+    render(
+      <ResearchWorkbench
+        wsRoot="D:\\DEV\\fatigue-shortcut-audit"
+        files={[]}
+        currentFile={null}
+        backendAvailable
+        reportAvailable={false}
+        onOpenReport={() => {}}
+        onAgentPrompt={() => {}}
+        onReadFile={() => {}}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "尚未生成 PDF 报告" })).toHaveProperty("disabled", true);
+  });
 });
