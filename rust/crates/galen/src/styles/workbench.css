@@ -532,6 +532,15 @@
   border: 1px solid var(--border-muted);
 }
 
+.thread-block-artifacts {
+  background: var(--accent-subtle);
+  border: 1px solid var(--border-accent);
+}
+.artifact-delivery-links { display: flex; flex-direction: column; gap: var(--space-2); }
+.artifact-delivery-links p { margin: 0; }
+.artifact-preview-link { color: var(--accent-text); font-weight: var(--font-semibold); text-decoration: none; }
+.artifact-preview-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+
 /* ── Streaming indicator ── */
 .thread-streaming-dot {
   display: flex;

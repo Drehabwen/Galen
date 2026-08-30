@@ -167,6 +167,11 @@ export default function App() {
                 onModelChange={setModel}
                 thinkingLevel={thinkingLevel}
                 onThinkingLevelChange={handleThinkingLevelChange}
+                artifacts={delivery.artifacts}
+                onOpenArtifact={(artifactId) => {
+                  const artifact = delivery.artifacts.find((item) => item.id === artifactId);
+                  if (artifact) void delivery.openRegisteredArtifact(artifact);
+                }}
               />
             </div>
 
@@ -181,6 +186,13 @@ export default function App() {
                   thinkingLevel={thinkingLevel}
                   autoRun
                   onFlowBack={execution.flowBack}
+                  artifacts={delivery.artifacts}
+                  onOpenArtifact={(artifactId) => {
+                    const artifact = delivery.artifacts.find((item) => item.id === artifactId);
+                    if (!artifact) return;
+                    execution.closeSession();
+                    void delivery.openRegisteredArtifact(artifact);
+                  }}
                 />
               ) : selectedNode ? (
                 <SessionInspectorDrawer

@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { ArtifactMarkdown, artifactHref } from "./ArtifactMarkdown";
 import { StatusDot } from "./ui/primitives";
 import type { ChatMessage } from "../types";
 import type { SessionNode } from "../domain/sessionTypes";
+import type { ArtifactRecord } from "../domain/artifact";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -20,6 +20,8 @@ interface SessionChatProps {
   /** When true, the session starts autonomously: the node goal is sent
    *  automatically and [SESSION_DONE] triggers an automatic flow-back. */
   autoRun?: boolean;
+  artifacts?: ArtifactRecord[];
+  onOpenArtifact?: (artifactId: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -33,6 +35,8 @@ export function SessionChat({
   modelAlias,
   thinkingLevel,
   autoRun,
+  artifacts = [],
+  onOpenArtifact,
 }: SessionChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -237,7 +241,17 @@ export function SessionChat({
               {msg.role === "user" ? "你" : "Galen"}
             </div>
             <div className="session-msg-body">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+              <ArtifactMarkdown onOpenArtifact={onOpenArtifact}>{msg.content}</ArtifactMarkdown>
+            </div>
+          </div>
+        ))}
+        {artifacts.filter((artifact) => artifact.nodeId === node.id).map((artifact) => (
+          <div key={artifact.id} className="session-msg session-msg-assistant session-artifact-delivery">
+            <div className="session-msg-role">产物已生成</div>
+            <div className="session-msg-body">
+              <ArtifactMarkdown onOpenArtifact={onOpenArtifact}>
+                {`[预览 ${artifact.path.split(/[/\\]/).pop() ?? artifact.path}](${artifactHref(artifact.id)})`}
+              </ArtifactMarkdown>
             </div>
           </div>
         ))}
