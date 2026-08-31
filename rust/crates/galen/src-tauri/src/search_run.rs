@@ -6,12 +6,9 @@ use std::collections::BTreeMap;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::{Mutex, MutexGuard};
 
-pub const MAX_ERROR_LENGTH: usize = 1_000;
-
-static NEXT_RUN_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+static SEARCH_RUN_STORE_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -19,6 +16,95 @@ pub enum SearchRunStatus {
     Succeeded,
     Failed,
     Partial,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(transparent)]
+pub struct Sha256Hash(String);
+
+impl Sha256Hash {
+    pub fn new(value: impl Into<String>) -> Result<Self, String> {
+        let value = value.into();
+        if value.len() != 64 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Err("raw result hash must be exactly 64 hexadecimal SHA-256 characters".into());
+        }
+        Ok(Self(value.to_ascii_lowercase()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for Sha256Hash {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Self::new(value).map_err(serde::de::Error::custom)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchErrorClass {
+    Timeout,
+    Authentication,
+    RateLimited,
+    Unavailable,
+    Protocol,
+    InvalidResponse,
+    Other,
+}
+
+impl SearchErrorClass {
+    /// Classify a provider error without retaining its potentially sensitive text.
+    pub fn classify(error: &str) -> Self {
+        let error = error.to_ascii_lowercase();
+        if error.contains("timeout") || error.contains("timed out") {
+            Self::Timeout
+        } else if [
+            "auth",
+            "unauthor",
+            "forbidden",
+            "credential",
+            "login",
+            "api key",
+            "api_key",
+        ]
+        .iter()
+        .any(|marker| error.contains(marker))
+        {
+            Self::Authentication
+        } else if ["rate limit", "429", "quota"]
+            .iter()
+            .any(|marker| error.contains(marker))
+        {
+            Self::RateLimited
+        } else if [
+            "unavailable",
+            "not found",
+            "spawn",
+            "connection refused",
+            "executable",
+            "runtime",
+        ]
+        .iter()
+        .any(|marker| error.contains(marker))
+        {
+            Self::Unavailable
+        } else if ["parse", "deserialize", "malformed", "invalid response"]
+            .iter()
+            .any(|marker| error.contains(marker))
+        {
+            Self::InvalidResponse
+        } else if error.contains("protocol") || error.contains("rpc") {
+            Self::Protocol
+        } else {
+            Self::Other
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -30,15 +116,15 @@ pub struct SearchRun {
     pub tool_name: String,
     pub query: String,
     #[serde(default)]
-    pub arguments: Value,
+    arguments: Value,
     pub started_at: String,
     pub finished_at: String,
     pub status: SearchRunStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result_count: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-    pub raw_result_hash: String,
+    pub error_class: Option<SearchErrorClass>,
+    pub raw_result_hash: Sha256Hash,
 }
 
 impl SearchRun {
@@ -47,14 +133,20 @@ impl SearchRun {
         provider_id: impl Into<String>,
         tool_name: impl Into<String>,
         query: impl AsRef<str>,
+        arguments: Value,
+        started_at: impl Into<String>,
+        finished_at: impl Into<String>,
         result_count: usize,
         raw_result_hash: impl Into<String>,
-    ) -> Self {
+    ) -> Result<Self, String> {
         Self::terminal(
             task_id,
             provider_id,
             tool_name,
             query.as_ref(),
+            arguments,
+            started_at,
+            finished_at,
             SearchRunStatus::Succeeded,
             Some(result_count),
             None,
@@ -67,17 +159,23 @@ impl SearchRun {
         provider_id: impl Into<String>,
         tool_name: impl Into<String>,
         query: impl AsRef<str>,
-        error: impl AsRef<str>,
+        arguments: Value,
+        started_at: impl Into<String>,
+        finished_at: impl Into<String>,
+        error_class: SearchErrorClass,
         raw_result_hash: impl Into<String>,
-    ) -> Self {
+    ) -> Result<Self, String> {
         Self::terminal(
             task_id,
             provider_id,
             tool_name,
             query.as_ref(),
+            arguments,
+            started_at,
+            finished_at,
             SearchRunStatus::Failed,
             None,
-            Some(bound_error(error.as_ref())),
+            Some(error_class),
             raw_result_hash,
         )
     }
@@ -87,25 +185,30 @@ impl SearchRun {
         provider_id: impl Into<String>,
         tool_name: impl Into<String>,
         query: impl AsRef<str>,
+        arguments: Value,
+        started_at: impl Into<String>,
+        finished_at: impl Into<String>,
         result_count: Option<usize>,
-        error: impl AsRef<str>,
+        error_class: SearchErrorClass,
         raw_result_hash: impl Into<String>,
-    ) -> Self {
+    ) -> Result<Self, String> {
         Self::terminal(
             task_id,
             provider_id,
             tool_name,
             query.as_ref(),
+            arguments,
+            started_at,
+            finished_at,
             SearchRunStatus::Partial,
             result_count,
-            Some(bound_error(error.as_ref())),
+            Some(error_class),
             raw_result_hash,
         )
     }
 
-    pub fn with_arguments(mut self, arguments: Value) -> Self {
-        self.arguments = arguments;
-        self
+    pub fn arguments(&self) -> &Value {
+        &self.arguments
     }
 
     fn terminal(
@@ -113,26 +216,40 @@ impl SearchRun {
         provider_id: impl Into<String>,
         tool_name: impl Into<String>,
         query: &str,
+        arguments: Value,
+        started_at: impl Into<String>,
+        finished_at: impl Into<String>,
         status: SearchRunStatus,
         result_count: Option<usize>,
-        error: Option<String>,
+        error_class: Option<SearchErrorClass>,
         raw_result_hash: impl Into<String>,
-    ) -> Self {
-        let started_at = now_timestamp();
-        Self {
-            id: next_run_id(),
+    ) -> Result<Self, String> {
+        let started_at = started_at.into();
+        let finished_at = finished_at.into();
+        validate_timestamps(&started_at, &finished_at)?;
+        let run = Self {
+            id: uuid::Uuid::new_v4().to_string(),
             task_id: task_id.into(),
             provider_id: provider_id.into(),
             tool_name: tool_name.into(),
-            query: normalize_query(query),
-            arguments: Value::Null,
-            finished_at: now_timestamp(),
+            query: sanitize_query(query),
+            arguments: project_arguments(&arguments),
+            finished_at,
             started_at,
             status,
             result_count,
-            error,
-            raw_result_hash: raw_result_hash.into(),
-        }
+            error_class,
+            raw_result_hash: Sha256Hash::new(raw_result_hash.into())?,
+        };
+        run.validate()?;
+        Ok(run)
+    }
+
+    fn validate(&self) -> Result<(), String> {
+        validate_task_id(&self.task_id)?;
+        validate_timestamps(&self.started_at, &self.finished_at)?;
+        Sha256Hash::new(self.raw_result_hash.as_str())?;
+        Ok(())
     }
 }
 
@@ -182,27 +299,35 @@ pub struct ProviderCoverage {
     pub provider_id: String,
     pub state: CoverageState,
     pub has_successful_history: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub latest_run: Option<SearchRun>,
+    pub latest_query: Option<String>,
+    pub latest_finished_at: Option<String>,
+    pub result_count: Option<usize>,
+    pub error_class: Option<SearchErrorClass>,
 }
 
 /// Append one terminal search run to the active task's JSONL ledger.
 pub fn append_search_run(workspace: &Path, run: &SearchRun) -> Result<(), String> {
-    validate_task_id(&run.task_id)?;
+    let _guard = lock_search_run_store()?;
+    run.validate()?;
     let path = search_runs_path(workspace, &run.task_id);
     let parent = path
         .parent()
         .ok_or("search run path does not have a parent directory")?;
     std::fs::create_dir_all(parent)
         .map_err(|error| format!("create search run directory failed: {error}"))?;
-    let line = serde_json::to_string(run)
+    let mut safe_run = run.clone();
+    safe_run.arguments = project_arguments(&safe_run.arguments);
+    safe_run.query = sanitize_query(&safe_run.query);
+    let mut line = serde_json::to_string(&safe_run)
         .map_err(|error| format!("serialize search run failed: {error}"))?;
+    line.push('\n');
     let mut file = OpenOptions::new()
         .create(true)
         .append(true)
         .open(&path)
         .map_err(|error| format!("open search run ledger failed: {error}"))?;
-    writeln!(file, "{line}").map_err(|error| format!("append search run failed: {error}"))
+    file.write_all(line.as_bytes())
+        .map_err(|error| format!("append search run failed: {error}"))
 }
 
 /// Load every prior terminal search run for one task in append order.
@@ -218,8 +343,13 @@ pub fn load_search_runs(workspace: &Path, task_id: &str) -> Result<Vec<SearchRun
         .filter(|line| !line.trim().is_empty())
         .enumerate()
         .map(|(index, line)| {
-            serde_json::from_str(line)
-                .map_err(|error| format!("invalid search run at line {}: {error}", index + 1))
+            let mut run: SearchRun = serde_json::from_str(line)
+                .map_err(|error| format!("invalid search run at line {}: {error}", index + 1))?;
+            run.validate()
+                .map_err(|error| format!("invalid search run at line {}: {error}", index + 1))?;
+            run.arguments = project_arguments(&run.arguments);
+            run.query = sanitize_query(&run.query);
+            Ok(run)
         })
         .collect()
 }
@@ -251,7 +381,10 @@ pub fn derive_coverage(
                     provider_id: provider.provider_id.clone(),
                     state,
                     has_successful_history,
-                    latest_run,
+                    latest_query: latest_run.as_ref().map(|run| sanitize_query(&run.query)),
+                    latest_finished_at: latest_run.as_ref().map(|run| run.finished_at.clone()),
+                    result_count: latest_run.as_ref().and_then(|run| run.result_count),
+                    error_class: latest_run.and_then(|run| run.error_class),
                 },
             )
         })
@@ -300,25 +433,125 @@ fn normalize_query(query: &str) -> String {
     query.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-fn bound_error(error: &str) -> String {
-    error.chars().take(MAX_ERROR_LENGTH).collect()
+fn sanitize_query(query: &str) -> String {
+    let query = normalize_query(query);
+    if contains_sensitive_value(&query) {
+        "[redacted]".to_string()
+    } else {
+        query
+    }
 }
 
-fn now_timestamp() -> String {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
-        .to_string()
-}
-
-fn next_run_id() -> String {
-    let sequence = NEXT_RUN_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-    format!("run-{}-{}-{sequence}", now_timestamp(), std::process::id())
+fn lock_search_run_store() -> Result<MutexGuard<'static, ()>, String> {
+    SEARCH_RUN_STORE_LOCK
+        .lock()
+        .map_err(|error| format!("search run store lock poisoned: {error}"))
 }
 
 fn timestamp_key(value: &str) -> u128 {
     value.parse().unwrap_or_default()
+}
+
+fn validate_timestamps(started_at: &str, finished_at: &str) -> Result<(), String> {
+    let started = started_at
+        .parse::<u128>()
+        .map_err(|_| "search start timestamp must be Unix epoch milliseconds")?;
+    let finished = finished_at
+        .parse::<u128>()
+        .map_err(|_| "search finish timestamp must be Unix epoch milliseconds")?;
+    if finished < started {
+        return Err("search finish timestamp precedes start timestamp".into());
+    }
+    Ok(())
+}
+
+fn project_arguments(arguments: &Value) -> Value {
+    const ALLOWED_KEYS: &[&str] = &[
+        "query",
+        "search_term",
+        "search_terms",
+        "keyword",
+        "keywords",
+        "title",
+        "author",
+        "doi",
+        "year",
+        "from_year",
+        "to_year",
+        "date_from",
+        "date_to",
+        "limit",
+        "offset",
+        "page",
+        "page_size",
+        "sort",
+        "order",
+        "language",
+        "fields",
+    ];
+    let projected = arguments
+        .as_object()
+        .into_iter()
+        .flat_map(|object| object.iter())
+        .filter(|(key, _)| ALLOWED_KEYS.contains(&key.as_str()))
+        .filter_map(|(key, value)| safe_argument_value(value).map(|value| (key.clone(), value)))
+        .collect();
+    Value::Object(projected)
+}
+
+fn safe_argument_value(value: &Value) -> Option<Value> {
+    match value {
+        Value::Null | Value::Bool(_) | Value::Number(_) => Some(value.clone()),
+        Value::String(value) => Some(Value::String(sanitize_argument_text(value))),
+        Value::Array(values) => Some(Value::Array(
+            values
+                .iter()
+                .take(32)
+                .filter_map(|value| match value {
+                    Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {
+                        safe_argument_value(value)
+                    }
+                    _ => None,
+                })
+                .collect(),
+        )),
+        Value::Object(_) => None,
+    }
+}
+
+fn sanitize_argument_text(value: &str) -> String {
+    if contains_sensitive_value(value) {
+        "[redacted]".to_string()
+    } else {
+        value.chars().take(500).collect()
+    }
+}
+
+fn contains_sensitive_value(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    let markers = [
+        "api_key",
+        "api-key",
+        "apikey",
+        "access_token",
+        "refresh_token",
+        "token=",
+        "password",
+        "passwd",
+        "cookie=",
+        "session=",
+        "bearer ",
+        "credential",
+        "browser_profile",
+        "profile_path",
+    ];
+    let bytes = value.as_bytes();
+    let windows_absolute =
+        bytes.len() >= 3 && bytes[1] == b':' && (bytes[2] == b'\\' || bytes[2] == b'/');
+    markers.iter().any(|marker| lower.contains(marker))
+        || windows_absolute
+        || value.starts_with("\\\\")
+        || value.starts_with('/')
 }
 
 #[cfg(test)]
@@ -326,21 +559,72 @@ mod tests {
     use super::*;
     use std::collections::BTreeMap;
     use std::path::PathBuf;
+    use std::sync::{Arc, Barrier};
+    use std::thread;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    const HASH_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const HASH_B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
     fn temp_workspace(tag: &str) -> PathBuf {
         let path = std::env::temp_dir().join(format!(
-            "galen-search-run-test-{tag}-{}",
-            std::process::id()
+            "galen-search-run-test-{tag}-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
         ));
         std::fs::create_dir_all(&path).unwrap();
         path
+    }
+
+    fn success(provider_id: &str, started_at: &str, finished_at: &str) -> SearchRun {
+        SearchRun::succeeded(
+            "task-1",
+            provider_id,
+            "search",
+            "stroke",
+            serde_json::json!({"query": "stroke", "limit": 10}),
+            started_at,
+            finished_at,
+            0,
+            HASH_A,
+        )
+        .unwrap()
+    }
+
+    fn failure(provider_id: &str, started_at: &str, finished_at: &str) -> SearchRun {
+        SearchRun::failed(
+            "task-1",
+            provider_id,
+            "search",
+            "stroke",
+            serde_json::json!({"query": "stroke"}),
+            started_at,
+            finished_at,
+            SearchErrorClass::Timeout,
+            HASH_B,
+        )
+        .unwrap()
     }
 
     #[test]
     fn append_and_load_preserves_zero_result_success() {
         // Removing result_count or serializing zero as absent must fail this test.
         let root = temp_workspace("zero-result");
-        let run = SearchRun::succeeded("task-1", "pubmed", "search_pubmed", "stroke", 0, "abc");
+        let run = SearchRun::succeeded(
+            "task-1",
+            "pubmed",
+            "search_pubmed",
+            "stroke",
+            serde_json::json!({"query": "stroke"}),
+            "100",
+            "250",
+            0,
+            HASH_A,
+        )
+        .unwrap();
 
         append_search_run(&root, &run).unwrap();
         let loaded = load_search_runs(&root, "task-1").unwrap();
@@ -349,7 +633,9 @@ mod tests {
         assert_eq!(loaded[0].id, run.id);
         assert_eq!(loaded[0].status, SearchRunStatus::Succeeded);
         assert_eq!(loaded[0].result_count, Some(0));
-        assert_eq!(loaded[0].raw_result_hash, "abc");
+        assert_eq!(loaded[0].started_at, "100");
+        assert_eq!(loaded[0].finished_at, "250");
+        assert_eq!(loaded[0].raw_result_hash.as_str(), HASH_A);
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -357,7 +643,19 @@ mod tests {
     fn append_rejects_task_ids_that_escape_the_task_store() {
         // Removing task-ID validation could write a ledger outside .galen/tasks.
         let root = temp_workspace("task-id");
-        let run = SearchRun::succeeded("../escape", "pubmed", "search_pubmed", "stroke", 1, "abc");
+        let mut run = SearchRun::succeeded(
+            "task-1",
+            "pubmed",
+            "search_pubmed",
+            "stroke",
+            Value::Null,
+            "100",
+            "200",
+            1,
+            HASH_A,
+        )
+        .unwrap();
+        run.task_id = "../escape".to_string();
 
         assert!(append_search_run(&root, &run).is_err());
         assert!(!root.join(".galen/escape/search-runs.jsonl").exists());
@@ -368,18 +666,8 @@ mod tests {
     fn coverage_uses_latest_attempt_without_erasing_prior_search_history() {
         // Returning Searched whenever any past success exists would hide a later failure.
         let providers = vec![ProviderDescriptor::configured("pubmed", true, true)];
-        let mut success =
-            SearchRun::succeeded("task-1", "pubmed", "search_pubmed", "stroke", 0, "first");
-        success.finished_at = "100".to_string();
-        let mut later_failure = SearchRun::failed(
-            "task-1",
-            "pubmed",
-            "search_pubmed",
-            "stroke",
-            "timeout",
-            "second",
-        );
-        later_failure.finished_at = "200".to_string();
+        let success = success("pubmed", "10", "100");
+        let later_failure = failure("pubmed", "110", "200");
 
         let coverage = derive_coverage(&providers, &[success, later_failure]);
 
@@ -398,10 +686,8 @@ mod tests {
             ProviderDescriptor::configured("unavailable", true, false),
             ProviderDescriptor::not_configured("not-configured"),
         ];
-        let mut searched = SearchRun::succeeded("task-1", "searched", "search", "stroke", 0, "a");
-        searched.finished_at = "100".to_string();
-        let mut failed = SearchRun::failed("task-1", "failed", "search", "stroke", "timeout", "b");
-        failed.finished_at = "200".to_string();
+        let searched = success("searched", "10", "100");
+        let failed = failure("failed", "110", "200");
 
         let coverage = derive_coverage(&providers, &[searched, failed]);
 
@@ -423,20 +709,218 @@ mod tests {
     }
 
     #[test]
-    fn failed_runs_bound_error_text_and_normalize_the_query() {
-        // Removing either safeguard could persist unbounded diagnostics or inconsistent queries.
-        let long_error = "x".repeat(MAX_ERROR_LENGTH + 1);
+    fn ledger_projects_arguments_and_classifies_errors_without_persisting_secrets() {
+        // Persisting arbitrary arguments or raw errors would expose credentials and local paths.
+        let root = temp_workspace("secret-projection");
+        let raw_error = "auth failed api_key=top-secret C:\\Users\\alice\\cnki-profile";
         let run = SearchRun::failed(
             "task-1",
-            "pubmed",
-            "search_pubmed",
-            "  stroke\n  rehabilitation  ",
-            &long_error,
-            "abc",
-        );
+            "cnki",
+            "search_cnki",
+            "stroke rehabilitation",
+            serde_json::json!({
+                "query": "stroke rehabilitation",
+                "limit": 20,
+                "api_key": "top-secret",
+                "cookie": "session-secret",
+                "env": {"TOKEN": "env-secret"},
+                "browser_profile_path": "C:\\Users\\alice\\cnki-profile"
+            }),
+            "100",
+            "200",
+            SearchErrorClass::classify(raw_error),
+            HASH_A,
+        )
+        .unwrap();
 
-        assert_eq!(run.query, "stroke rehabilitation");
-        assert_eq!(run.error.as_deref().map(str::len), Some(MAX_ERROR_LENGTH));
+        append_search_run(&root, &run).unwrap();
+        let ledger = std::fs::read_to_string(search_runs_path(&root, "task-1")).unwrap();
+
+        assert!(ledger.contains("stroke rehabilitation"));
+        assert!(ledger.contains("authentication"));
+        assert!(ledger.contains("\"limit\":20"));
+        for secret in [
+            "top-secret",
+            "session-secret",
+            "env-secret",
+            "cnki-profile",
+            "api_key",
+            "cookie",
+            "browser_profile_path",
+            "auth failed",
+        ] {
+            assert!(!ledger.contains(secret), "ledger leaked {secret}");
+        }
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn coverage_serialization_exposes_summary_fields_not_full_runs() {
+        // Embedding SearchRun would leak task IDs, tool names, arguments, IDs, and hashes.
+        let providers = vec![ProviderDescriptor::configured("pubmed", true, true)];
+        let run = success("pubmed", "100", "250");
+
+        let json = serde_json::to_string(&derive_coverage(&providers, &[run])).unwrap();
+
+        assert!(json.contains("latestQuery"));
+        assert!(json.contains("latestFinishedAt"));
+        assert!(json.contains("resultCount"));
+        for forbidden in [
+            "arguments",
+            "taskId",
+            "toolName",
+            "rawResultHash",
+            "latestRun",
+        ] {
+            assert!(!json.contains(forbidden), "coverage leaked {forbidden}");
+        }
+    }
+
+    #[test]
+    fn allowlisted_fields_still_redact_secret_values_and_profile_paths() {
+        // An allowlisted key must not become a tunnel for credentials or local profile paths.
+        let root = temp_workspace("secret-values");
+        let run = SearchRun::succeeded(
+            "task-1",
+            "cnki",
+            "search_cnki",
+            "stroke token=top-secret",
+            serde_json::json!({
+                "query": "stroke token=top-secret",
+                "title": "C:\\Users\\alice\\cnki-profile",
+                "author": "cookie=session-secret",
+                "limit": 10
+            }),
+            "100",
+            "200",
+            0,
+            HASH_A,
+        )
+        .unwrap();
+
+        append_search_run(&root, &run).unwrap();
+        let ledger = std::fs::read_to_string(search_runs_path(&root, "task-1")).unwrap();
+
+        assert!(ledger.contains("[redacted]"));
+        assert!(ledger.contains("\"limit\":10"));
+        for secret in [
+            "top-secret",
+            "session-secret",
+            "cnki-profile",
+            "C:\\\\Users",
+        ] {
+            assert!(!ledger.contains(secret), "ledger leaked {secret}");
+        }
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn append_and_coverage_resanitize_mutated_query_text() {
+        // Public record fields must not bypass sanitization at persistence or DTO boundaries.
+        let root = temp_workspace("mutated-query");
+        let mut run = success("pubmed", "100", "200");
+        run.query = "stroke bearer top-secret".to_string();
+
+        append_search_run(&root, &run).unwrap();
+        let ledger = std::fs::read_to_string(search_runs_path(&root, "task-1")).unwrap();
+        let coverage = serde_json::to_string(&derive_coverage(
+            &[ProviderDescriptor::configured("pubmed", true, true)],
+            &[run],
+        ))
+        .unwrap();
+
+        assert!(!ledger.contains("top-secret"));
+        assert!(!coverage.contains("top-secret"));
+        assert!(ledger.contains("[redacted]"));
+        assert!(coverage.contains("[redacted]"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn hash_and_timestamp_boundaries_reject_invalid_provenance() {
+        // Accepting malformed digests or host-generated timestamps destroys provenance integrity.
+        assert!(SearchRun::succeeded(
+            "task-1",
+            "pubmed",
+            "search",
+            "stroke",
+            Value::Null,
+            "100",
+            "200",
+            1,
+            "abc",
+        )
+        .is_err());
+        assert!(SearchRun::succeeded(
+            "task-1",
+            "pubmed",
+            "search",
+            "stroke",
+            Value::Null,
+            "200",
+            "100",
+            1,
+            HASH_A,
+        )
+        .is_err());
+
+        let mut forged = success("pubmed", "100", "200");
+        forged.raw_result_hash = Sha256Hash("abc".to_string());
+        assert!(append_search_run(&temp_workspace("forged-hash"), &forged).is_err());
+    }
+
+    #[test]
+    fn concurrent_appenders_preserve_every_complete_json_line() {
+        // Removing the append lock may interleave JSON and newline writes.
+        let root = Arc::new(temp_workspace("concurrent"));
+        let barrier = Arc::new(Barrier::new(32));
+        let handles: Vec<_> = (0..32)
+            .map(|index| {
+                let root = Arc::clone(&root);
+                let barrier = Arc::clone(&barrier);
+                thread::spawn(move || {
+                    let run = SearchRun::succeeded(
+                        "task-1",
+                        "pubmed",
+                        "search_pubmed",
+                        format!("stroke {index}"),
+                        serde_json::json!({"query": format!("stroke {index}"), "limit": 10}),
+                        "100",
+                        "200",
+                        index,
+                        HASH_A,
+                    )
+                    .unwrap();
+                    barrier.wait();
+                    append_search_run(&root, &run).unwrap();
+                })
+            })
+            .collect();
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        let text = std::fs::read_to_string(search_runs_path(&root, "task-1")).unwrap();
+        assert!(text.ends_with('\n'));
+        assert_eq!(text.lines().count(), 32);
+        assert!(text
+            .lines()
+            .all(|line| serde_json::from_str::<SearchRun>(line).is_ok()));
+        assert_eq!(load_search_runs(&root, "task-1").unwrap().len(), 32);
+        let _ = std::fs::remove_dir_all(root.as_path());
+    }
+
+    #[test]
+    fn run_ids_are_uuid_v4_and_unique() {
+        // Timestamp/process/counter IDs can collide across application processes.
+        let first = success("pubmed", "100", "200");
+        let second = success("pubmed", "100", "200");
+
+        assert_ne!(first.id, second.id);
+        assert_eq!(
+            uuid::Uuid::parse_str(&first.id).unwrap().get_version_num(),
+            4
+        );
     }
 
     #[test]
@@ -452,7 +936,10 @@ mod tests {
                     provider_id: "pubmed".to_string(),
                     state: CoverageState::ConnectedNotSearched,
                     has_successful_history: false,
-                    latest_run: None,
+                    latest_query: None,
+                    latest_finished_at: None,
+                    result_count: None,
+                    error_class: None,
                 },
             )])
         );

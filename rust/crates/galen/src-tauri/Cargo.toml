@@ -38,3 +38,4 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 toml = "0.8"
 tantivy = { version = "0.26.1", default-features = false, features = ["mmap", "lz4-compression"] }
 tantivy-jieba = "0.20.0"
+uuid = { version = "1", features = ["v4"] }
