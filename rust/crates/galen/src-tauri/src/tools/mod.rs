@@ -248,9 +248,9 @@ impl ToolRegistry {
                     .unwrap_or(false)
             });
         } else {
-            for tool in self.mcp.mcp_tool_definitions() {
+            for (server_name, tool) in self.mcp.mcp_tool_definitions() {
                 defs.push(ToolDefinition {
-                    name: format!("mcp__{}", tool.name),
+                    name: crate::mcp_client::qualified_tool_name(&server_name, &tool.name),
                     description: tool.description,
                     input_schema: tool
                         .input_schema
@@ -294,19 +294,24 @@ impl ToolRegistry {
         }
 
         // Try MCP tools
-        if let Some(tool_name) = name.strip_prefix("mcp__") {
+        if name.starts_with("mcp__") {
+            let mut available = Vec::new();
             for server in self.mcp.servers() {
-                let s = server.lock().await;
-                if s.tools().iter().any(|t| t.name == tool_name) {
-                    let server_name = s.name.clone();
-                    drop(s);
-                    return self
-                        .mcp
-                        .call_tool(&server_name, tool_name, input)
-                        .await
-                        .map_err(|e| e.to_string());
-                }
+                let server = server.lock().await;
+                available.extend(
+                    server
+                        .tools()
+                        .into_iter()
+                        .map(|tool| (server.name.clone(), tool.name)),
+                );
             }
+            let (server_name, tool_name) = crate::mcp_client::resolve_tool_route(name, &available)
+                .map_err(|e| e.to_string())?;
+            return self
+                .mcp
+                .call_tool(&server_name, &tool_name, input)
+                .await
+                .map_err(|e| e.to_string());
         }
 
         Err(format!("Unknown tool: {name}"))

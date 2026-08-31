@@ -8,8 +8,8 @@ Turn Galen's existing generic stdio MCP client into a traceable literature-provi
 
 This slice integrates three international providers and one experimental Chinese provider:
 
-- Semantic Scholar via `s2-mcp-server`;
-- Crossref via `@cyanheads/crossref-mcp-server`;
+- Semantic Scholar via `s2-mcp-server`, built in and enabled by default;
+- Crossref via `@cyanheads/crossref-mcp-server`, built in and enabled by default;
 - PubMed remains the built-in authoritative biomedical provider and is represented in the same coverage model;
 - CNKI Enhanced MCP is present as an experimental, disabled connector and is never installed, logged in, or used automatically.
 
@@ -35,13 +35,13 @@ Galen owns a catalog of recommended MCP server entries. On startup it merges mis
 
 Recommended entries:
 
-- `semantic-scholar`: `uvx s2-mcp-server`, disabled by default;
-- `crossref`: `deno run --allow-net --allow-env npm:@cyanheads/crossref-mcp-server`, disabled by default;
+- `semantic-scholar`: `uv tool run s2-mcp-server`, enabled by default;
+- `crossref`: `deno run --allow-net --allow-env --allow-sys --allow-write npm:@cyanheads/crossref-mcp-server`, enabled by default;
 - `cnki-experimental`: placeholder local command, disabled and marked experimental.
 
 PubMed is built in and therefore does not require a child process.
 
-Enabling and installing providers remains an explicit user action. A missing runtime or executable is reported as unavailable, never as a zero-result search.
+Galen starts the two international providers automatically through its bundled runtimes. Users may explicitly disable or override either entry, and catalog migration preserves that choice. A missing runtime, executable, credential, or upstream quota is reported as unavailable or failed, never as a zero-result search.
 
 ### SearchRun ledger
 
@@ -125,9 +125,8 @@ SearchRun records retrieval provenance. Evidence records claims. They are intent
 
 1. Galen can connect two MCP servers that both expose `search_papers` and invoke each explicitly.
 2. API keys can be supplied through user-scoped MCP config without appearing in tool schemas, status responses, logs, or repository files.
-3. Semantic Scholar and Crossref appear as recommended disabled providers on a fresh configuration.
+3. Semantic Scholar and Crossref appear as built-in enabled providers on a fresh configuration and start without manual setup.
 4. Every recognized external literature search and built-in PubMed search creates one durable SearchRun.
 5. Coverage distinguishes searched-zero-results, failed, disabled, and never searched.
 6. A failed or disabled Chinese provider causes a coverage limitation, not a “no Chinese evidence” conclusion.
 7. Existing MCP configurations continue to load and are never overwritten during catalog migration.
-

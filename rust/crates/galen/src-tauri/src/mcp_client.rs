@@ -93,7 +93,8 @@ struct JsonRpcRequest {
 #[allow(dead_code)] // JSON-RPC protocol fields kept for response completeness
 #[derive(Debug, Clone, Deserialize)]
 struct JsonRpcResponse {
-    id: u64,
+    #[serde(default)]
+    id: Option<u64>,
     #[serde(default)]
     result: Option<Value>,
     #[serde(default)]
@@ -108,6 +109,7 @@ struct JsonRpcError {
 
 #[allow(dead_code)] // protocol_version/capabilities are deserialized but not read yet
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct InitializeResult {
     protocol_version: String,
     #[allow(dead_code)]
@@ -121,6 +123,7 @@ struct ListToolsResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct McpTool {
     pub name: String,
     #[serde(default)]
@@ -129,11 +132,99 @@ pub struct McpTool {
     pub input_schema: Option<Value>,
 }
 
+fn normalize_tool_segment(value: &str) -> String {
+    let mut normalized = String::with_capacity(value.len());
+    let mut last_was_separator = false;
+    for ch in value.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' {
+            normalized.push(ch.to_ascii_lowercase());
+            last_was_separator = false;
+        } else if ch == '-' || !last_was_separator {
+            normalized.push('-');
+            last_was_separator = true;
+        }
+    }
+    normalized.trim_matches('-').to_string()
+}
+
+pub fn qualified_tool_name(server_name: &str, tool_name: &str) -> String {
+    format!(
+        "mcp__{}__{}",
+        normalize_tool_segment(server_name),
+        normalize_tool_segment(tool_name)
+    )
+}
+
+pub fn parse_qualified_tool_name(name: &str) -> Option<(&str, &str)> {
+    let rest = name.strip_prefix("mcp__")?;
+    let (server, tool) = rest.split_once("__")?;
+    (!server.is_empty() && !tool.is_empty()).then_some((server, tool))
+}
+
+pub fn resolve_tool_route(
+    requested: &str,
+    available: &[(String, String)],
+) -> Result<(String, String), McpError> {
+    if let Some((server_segment, tool_segment)) = parse_qualified_tool_name(requested) {
+        return available
+            .iter()
+            .find(|(server, tool)| {
+                normalize_tool_segment(server) == server_segment
+                    && normalize_tool_segment(tool) == tool_segment
+            })
+            .cloned()
+            .ok_or_else(|| McpError::NotFound(format!("tool '{requested}' not found")));
+    }
+
+    let legacy_tool = requested
+        .strip_prefix("mcp__")
+        .ok_or_else(|| McpError::NotFound(format!("tool '{requested}' not found")))?;
+    let matches = available
+        .iter()
+        .filter(|(_, tool)| tool == legacy_tool)
+        .cloned()
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [route] => Ok(route.clone()),
+        [] => Err(McpError::NotFound(format!("tool '{requested}' not found"))),
+        _ => Err(McpError::NotFound(format!(
+            "legacy tool name '{requested}' is ambiguous; use mcp__<server>__<tool>"
+        ))),
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct CallToolResult {
     content: Vec<McpContent>,
     #[allow(dead_code)]
     is_error: Option<bool>,
+}
+
+impl CallToolResult {
+    fn into_text(self) -> Result<String, McpError> {
+        let text = self
+            .content
+            .iter()
+            .filter_map(|content| content.text.as_deref())
+            .collect::<Vec<_>>()
+            .join("\n");
+        if self.is_error.unwrap_or(false) {
+            return Err(McpError::Protocol(
+                -32000,
+                if text.is_empty() {
+                    "MCP tool returned an error".into()
+                } else {
+                    text
+                },
+            ));
+        }
+        if text.is_empty() {
+            Ok("(tool returned no text content)".to_string())
+        } else {
+            Ok(text)
+        }
+    }
 }
 
 #[allow(dead_code)] // content_type/resource are protocol fields kept for completeness
@@ -180,9 +271,15 @@ impl Drop for McpServer {
 
 impl McpServer {
     /// Spawn an MCP server process and complete the initialize handshake.
-    pub async fn connect(name: &str, command: &str, args: &[String]) -> Result<Self, McpError> {
+    pub async fn connect(
+        name: &str,
+        command: &str,
+        args: &[String],
+        env: &HashMap<String, String>,
+    ) -> Result<Self, McpError> {
         let mut cmd = Command::new(command);
         cmd.args(args)
+            .envs(env)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -286,21 +383,26 @@ impl McpServer {
 
         // Read with timeout
         let name = self.name.clone();
-        let response_json = timeout(Duration::from_secs(30), async {
+        let response = timeout(Duration::from_secs(30), async {
             let mut stdout = self.stdout.lock().await;
-            let mut line = String::new();
-            stdout
-                .read_line(&mut line)
-                .await
-                .map_err(|e| McpError::Io(format!("{name} read: {e}")))?;
-            Ok::<String, McpError>(line)
+            loop {
+                let mut line = String::new();
+                let bytes = stdout
+                    .read_line(&mut line)
+                    .await
+                    .map_err(|e| McpError::Io(format!("{name} read: {e}")))?;
+                if bytes == 0 {
+                    return Err(McpError::Io(format!("{name}: server closed stdout")));
+                }
+                let response: JsonRpcResponse = serde_json::from_str(&line)
+                    .map_err(|e| McpError::Deserialize(format!("{name}: {e}")))?;
+                if response.id == Some(id) {
+                    return Ok(response);
+                }
+            }
         })
         .await
         .map_err(|_| McpError::Timeout(format!("{name}: request timed out")))??;
-
-        // Parse
-        let response: JsonRpcResponse = serde_json::from_str(&response_json)
-            .map_err(|e| McpError::Deserialize(format!("{name}: {e}")))?;
 
         if let Some(error) = response.error {
             self.status = McpConnectionStatus::Error;
@@ -358,18 +460,7 @@ impl McpServer {
             )
             .await?;
 
-        let text = result
-            .content
-            .iter()
-            .filter_map(|c| c.text.as_deref())
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        if text.is_empty() {
-            Ok("(tool returned no text content)".to_string())
-        } else {
-            Ok(text)
-        }
+        result.into_text()
     }
 
     /// Return a copy of the discovered tools.
@@ -470,10 +561,21 @@ impl McpServerRegistry {
     }
 
     /// Get all tool definitions from all connected MCP servers.
-    pub fn mcp_tool_definitions(&self) -> Vec<McpTool> {
+    pub fn mcp_tool_definitions(&self) -> Vec<(String, McpTool)> {
         self.servers
             .iter()
-            .flat_map(|s| s.try_lock().map(|guard| guard.tools()).unwrap_or_default())
+            .flat_map(|s| {
+                s.try_lock()
+                    .map(|guard| {
+                        let server_name = guard.name.clone();
+                        guard
+                            .tools()
+                            .into_iter()
+                            .map(|tool| (server_name.clone(), tool))
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default()
+            })
             .collect()
     }
 }
@@ -500,10 +602,12 @@ pub struct McpServerStatus {
 // Configuration
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct McpServerConfig {
     pub command: String,
     pub args: Vec<String>,
+    #[serde(default)]
+    pub env: HashMap<String, String>,
     #[serde(default)]
     pub enabled: bool,
 }
@@ -521,6 +625,63 @@ impl McpConfig {
         serde_json::from_str(&text).ok()
     }
 
+    pub fn with_builtin_catalog(mut config: Self) -> Self {
+        fn deno_cmd() -> String {
+            crate::tools::resolve_binary("deno")
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| "deno".to_string())
+        }
+        fn uv_cmd() -> String {
+            crate::tools::resolve_binary("uv")
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| "uv".to_string())
+        }
+        fn deno_run(pkg: &str) -> Vec<String> {
+            vec![
+                "run".to_string(),
+                "--allow-net".to_string(),
+                "--allow-env".to_string(),
+                "--allow-sys".to_string(),
+                "--allow-write".to_string(),
+                pkg.to_string(),
+            ]
+        }
+
+        let defaults = [
+            (
+                "semantic-scholar",
+                McpServerConfig {
+                    command: uv_cmd(),
+                    args: vec!["tool".into(), "run".into(), "s2-mcp-server".into()],
+                    env: HashMap::new(),
+                    enabled: true,
+                },
+            ),
+            (
+                "crossref",
+                McpServerConfig {
+                    command: deno_cmd(),
+                    args: deno_run("npm:@cyanheads/crossref-mcp-server"),
+                    env: HashMap::new(),
+                    enabled: true,
+                },
+            ),
+            (
+                "cnki-experimental",
+                McpServerConfig {
+                    command: "cnki-mcp-server".into(),
+                    args: Vec::new(),
+                    env: HashMap::new(),
+                    enabled: false,
+                },
+            ),
+        ];
+        for (name, server) in defaults {
+            config.mcp_servers.entry(name.into()).or_insert(server);
+        }
+        config
+    }
+
     pub fn write_default() -> Option<Self> {
         let dir = dirs::config_dir()?.join("galen");
         if let Err(e) = std::fs::create_dir_all(&dir) {
@@ -528,10 +689,6 @@ impl McpConfig {
             return None;
         }
         let path = dir.join("mcp_servers.json");
-        if path.exists() {
-            return Self::load();
-        }
-
         fn deno_cmd() -> String {
             crate::tools::resolve_binary("deno")
                 .map(|p| p.to_string_lossy().to_string())
@@ -550,55 +707,72 @@ impl McpConfig {
             ]
         }
 
-        let config = Self {
-            mcp_servers: HashMap::from([
-                (
-                    "fetch".to_string(),
-                    McpServerConfig {
-                        command: uvx_cmd(),
-                        args: vec!["mcp-server-fetch".to_string()],
-                        enabled: false,
-                    },
-                ),
-                (
-                    "memory".to_string(),
-                    McpServerConfig {
-                        command: deno_cmd(),
-                        args: deno_run("npm:@modelcontextprotocol/server-memory"),
-                        enabled: false,
-                    },
-                ),
-                (
-                    "sequential-thinking".to_string(),
-                    McpServerConfig {
-                        command: deno_cmd(),
-                        args: deno_run("npm:@modelcontextprotocol/server-sequential-thinking"),
-                        enabled: false,
-                    },
-                ),
-                (
-                    "filesystem".to_string(),
-                    McpServerConfig {
-                        command: deno_cmd(),
-                        args: deno_run("npm:@modelcontextprotocol/server-filesystem"),
-                        enabled: false,
-                    },
-                ),
-                (
-                    "git".to_string(),
-                    McpServerConfig {
-                        command: uvx_cmd(),
-                        args: vec![
-                            "mcp-server-git".to_string(),
-                            "--repository".to_string(),
-                            ".".to_string(),
-                        ],
-                        enabled: false,
-                    },
-                ),
-            ]),
+        let base = if path.exists() {
+            Self::load()?
+        } else {
+            Self {
+                mcp_servers: HashMap::from([
+                    (
+                        "fetch".to_string(),
+                        McpServerConfig {
+                            command: uvx_cmd(),
+                            args: vec!["mcp-server-fetch".to_string()],
+                            env: HashMap::new(),
+                            enabled: false,
+                        },
+                    ),
+                    (
+                        "memory".to_string(),
+                        McpServerConfig {
+                            command: deno_cmd(),
+                            args: deno_run("npm:@modelcontextprotocol/server-memory"),
+                            env: HashMap::new(),
+                            enabled: false,
+                        },
+                    ),
+                    (
+                        "sequential-thinking".to_string(),
+                        McpServerConfig {
+                            command: deno_cmd(),
+                            args: deno_run("npm:@modelcontextprotocol/server-sequential-thinking"),
+                            env: HashMap::new(),
+                            enabled: false,
+                        },
+                    ),
+                    (
+                        "filesystem".to_string(),
+                        McpServerConfig {
+                            command: deno_cmd(),
+                            args: deno_run("npm:@modelcontextprotocol/server-filesystem"),
+                            env: HashMap::new(),
+                            enabled: false,
+                        },
+                    ),
+                    (
+                        "git".to_string(),
+                        McpServerConfig {
+                            command: uvx_cmd(),
+                            args: vec![
+                                "mcp-server-git".to_string(),
+                                "--repository".to_string(),
+                                ".".to_string(),
+                            ],
+                            env: HashMap::new(),
+                            enabled: false,
+                        },
+                    ),
+                ]),
+            }
         };
+        let config = Self::with_builtin_catalog(base);
         let text = serde_json::to_string_pretty(&config).ok()?;
+        if path.exists() {
+            let backup = path.with_extension("json.bak");
+            if let Err(e) = std::fs::copy(&path, backup) {
+                eprintln!("[galen] mcp: backup failed: {e}");
+                return None;
+            }
+        }
         if let Err(e) = std::fs::write(&path, text) {
             eprintln!("[galen] mcp: write_default failed: {e}");
         }
@@ -608,14 +782,21 @@ impl McpConfig {
 
 /// Discover and connect to all configured, enabled MCP servers.
 pub async fn connect_configured_servers() -> McpServerRegistry {
-    let config = McpConfig::load().unwrap_or_default();
+    let config = McpConfig::write_default().unwrap_or_default();
     let mut servers = Vec::new();
 
     for (name, server_config) in &config.mcp_servers {
         if !server_config.enabled {
             continue;
         }
-        match McpServer::connect(name, &server_config.command, &server_config.args).await {
+        match McpServer::connect(
+            name,
+            &server_config.command,
+            &server_config.args,
+            &server_config.env,
+        )
+        .await
+        {
             Ok(server) => servers.push(server),
             Err(e) => eprintln!("MCP {name}: {e}"),
         }
@@ -680,6 +861,141 @@ mod tests {
     fn mcp_config_default_is_empty() {
         let config = McpConfig::default();
         assert!(config.mcp_servers.is_empty());
+    }
+
+    #[test]
+    fn builtin_literature_catalog_is_enabled_on_fresh_config() {
+        let config = McpConfig::with_builtin_catalog(McpConfig::default());
+
+        assert!(config.mcp_servers["semantic-scholar"].enabled);
+        assert!(config.mcp_servers["crossref"].enabled);
+        assert!(!config.mcp_servers["cnki-experimental"].enabled);
+    }
+
+    #[test]
+    fn builtin_catalog_preserves_existing_user_override() {
+        let custom = McpServerConfig {
+            command: "custom-runner".into(),
+            args: vec!["custom-package".into()],
+            env: HashMap::from([("S2_API_KEY".into(), "secret".into())]),
+            enabled: false,
+        };
+        let existing = McpConfig {
+            mcp_servers: HashMap::from([("semantic-scholar".into(), custom.clone())]),
+        };
+
+        let config = McpConfig::with_builtin_catalog(existing);
+
+        let merged = &config.mcp_servers["semantic-scholar"];
+        assert_eq!(merged.command, custom.command);
+        assert_eq!(merged.args, custom.args);
+        assert_eq!(merged.env, custom.env);
+        assert!(!merged.enabled);
+        assert!(config.mcp_servers["crossref"].enabled);
+    }
+
+    #[test]
+    fn server_config_accepts_private_child_environment() {
+        let config: McpServerConfig = serde_json::from_value(serde_json::json!({
+            "command": "provider",
+            "args": [],
+            "env": {"API_KEY": "secret"},
+            "enabled": true
+        }))
+        .unwrap();
+
+        assert_eq!(
+            config.env.get("API_KEY").map(String::as_str),
+            Some("secret")
+        );
+    }
+
+    #[test]
+    fn qualified_tool_names_include_normalized_server_and_tool() {
+        assert_eq!(
+            qualified_tool_name("Semantic Scholar", "search papers"),
+            "mcp__semantic-scholar__search-papers"
+        );
+        assert_eq!(
+            parse_qualified_tool_name("mcp__semantic-scholar__search-papers"),
+            Some(("semantic-scholar", "search-papers"))
+        );
+    }
+
+    #[test]
+    fn legacy_tool_route_rejects_ambiguous_matches() {
+        let available = vec![
+            ("semantic-scholar".to_string(), "search_papers".to_string()),
+            ("crossref".to_string(), "search_papers".to_string()),
+        ];
+
+        let error = resolve_tool_route("mcp__search_papers", &available).unwrap_err();
+
+        assert!(error.to_string().contains("ambiguous"));
+    }
+
+    #[test]
+    fn qualified_tool_route_selects_exact_server() {
+        let available = vec![
+            ("semantic-scholar".to_string(), "search_papers".to_string()),
+            ("crossref".to_string(), "search_papers".to_string()),
+        ];
+
+        let route = resolve_tool_route("mcp__crossref__search_papers", &available).unwrap();
+
+        assert_eq!(route, ("crossref".to_string(), "search_papers".to_string()));
+    }
+
+    #[test]
+    fn standard_mcp_camel_case_initialize_and_tool_schema_deserialize() {
+        let init: InitializeResult = serde_json::from_value(serde_json::json!({
+            "protocolVersion": "2024-11-05",
+            "serverInfo": {"name": "fixture", "version": "1.0"},
+            "capabilities": {"tools": {}}
+        }))
+        .unwrap();
+        assert_eq!(init.protocol_version, "2024-11-05");
+
+        let tool: McpTool = serde_json::from_value(serde_json::json!({
+            "name": "search_papers",
+            "inputSchema": {"type": "object", "required": ["query"]}
+        }))
+        .unwrap();
+        assert_eq!(tool.input_schema.unwrap()["required"][0], "query");
+    }
+
+    #[test]
+    fn crossref_builtin_has_required_deno_runtime_permissions() {
+        let config = McpConfig::with_builtin_catalog(McpConfig::default());
+        let crossref = &config.mcp_servers["crossref"];
+
+        assert!(crossref.args.iter().any(|arg| arg == "--allow-sys"));
+        assert!(crossref.args.iter().any(|arg| arg == "--allow-write"));
+    }
+
+    #[test]
+    fn json_rpc_notification_without_id_is_deserializable() {
+        let notification: JsonRpcResponse = serde_json::from_value(serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/message",
+            "params": {"level": "info", "data": "searching"}
+        }))
+        .unwrap();
+
+        assert_eq!(notification.id, None);
+    }
+
+    #[test]
+    fn mcp_tool_error_content_is_not_returned_as_success() {
+        let result: CallToolResult = serde_json::from_value(serde_json::json!({
+            "content": [{"type": "text", "text": "rate limited"}],
+            "isError": true
+        }))
+        .unwrap();
+
+        let error = result.into_text().unwrap_err();
+
+        assert!(error.to_string().contains("rate limited"));
     }
 
     #[test]
