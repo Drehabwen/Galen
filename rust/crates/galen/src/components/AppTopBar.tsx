@@ -20,10 +20,6 @@ interface AppTopBarProps {
 }
 
 const MODE_FALLBACK: Record<ChatMode, { label: string; description: string }> = {
-  discuss: {
-    label: "讨论",
-    description: "只读顾问：检索文献、查询康复数据、追问分析",
-  },
   plan: { label: "计划", description: "制定方案，列出步骤，确认后执行" },
   auto: { label: "自动", description: "自主分解目标，并行执行，汇总产出" },
 };
@@ -57,7 +53,7 @@ export function AppTopBar({
       <div className="galen-topbar-spacer" />
 
       <div className="galen-mode-switch" role="group" aria-label="工作模式">
-        {(["discuss", "plan", "auto"] as ChatMode[]).map((id) => {
+        {(["auto", "plan"] as ChatMode[]).map((id) => {
           const meta = modes.find((item) => item.id === id);
           const fallback = MODE_FALLBACK[id];
           return (

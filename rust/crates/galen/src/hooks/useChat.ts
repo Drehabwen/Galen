@@ -170,7 +170,7 @@ export function useChat(workspaceRoot: string | null) {
           message: text,
           modelAlias: modelAlias,
           historyJson: historyJson,
-          mode: mode || "discuss",
+          mode: mode || "auto",
           personaId: personaId || "medical",
           thinkingLevel: thinkingLevel || "low",
         });

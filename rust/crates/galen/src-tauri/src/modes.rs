@@ -229,19 +229,14 @@ pub struct ModeMeta {
 pub fn all_modes() -> Vec<ModeMeta> {
     vec![
         ModeMeta {
-            id: "discuss".into(),
-            label: ChatMode::Discuss.label().into(),
-            description: ChatMode::Discuss.description().into(),
+            id: "auto".into(),
+            label: ChatMode::Auto.label().into(),
+            description: ChatMode::Auto.description().into(),
         },
         ModeMeta {
             id: "plan".into(),
             label: ChatMode::Plan.label().into(),
             description: ChatMode::Plan.description().into(),
-        },
-        ModeMeta {
-            id: "auto".into(),
-            label: ChatMode::Auto.label().into(),
-            description: ChatMode::Auto.description().into(),
         },
     ]
 }
@@ -272,7 +267,7 @@ fn load_mode_from(path: &std::path::Path) -> ChatMode {
             }
             let value = value.trim().trim_matches('"');
             match value {
-                "discuss" => Some(ChatMode::Discuss),
+                "discuss" => Some(ChatMode::Auto),
                 "plan" => Some(ChatMode::Plan),
                 "auto" => Some(ChatMode::Auto),
                 _ => None,
@@ -291,7 +286,7 @@ fn save_mode_to(path: &std::path::Path, mode: ChatMode) {
         let _ = std::fs::create_dir_all(dir);
     }
     let key = match mode {
-        ChatMode::Discuss => "discuss",
+        ChatMode::Discuss => "auto",
         ChatMode::Plan => "plan",
         ChatMode::Auto => "auto",
     };
@@ -387,14 +382,36 @@ mod tests {
         save_mode_to(&path, ChatMode::Plan);
         assert_eq!(load_mode_from(&path), ChatMode::Plan);
 
-        // Save discuss -> replaces the existing line
+        // Legacy internal callers are normalized to the unified auto mode.
         save_mode_to(&path, ChatMode::Discuss);
-        assert_eq!(load_mode_from(&path), ChatMode::Discuss);
+        assert_eq!(load_mode_from(&path), ChatMode::Auto);
 
         // File keeps no duplicate mode keys
         let content = std::fs::read_to_string(&path).unwrap();
         assert_eq!(content.matches("mode =").count(), 1);
 
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn public_modes_only_expose_auto_and_plan() {
+        let ids = all_modes()
+            .into_iter()
+            .map(|mode| mode.id)
+            .collect::<Vec<_>>();
+        assert_eq!(ids, vec!["auto", "plan"]);
+    }
+
+    #[test]
+    fn legacy_discuss_setting_migrates_to_auto() {
+        let dir = std::env::temp_dir().join(format!(
+            "galen-legacy-discuss-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.toml");
+        std::fs::write(&path, "mode = \"discuss\"\n").unwrap();
+        assert_eq!(load_mode_from(&path), ChatMode::Auto);
         std::fs::remove_dir_all(&dir).ok();
     }
 }

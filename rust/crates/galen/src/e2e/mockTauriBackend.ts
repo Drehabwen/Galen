@@ -155,11 +155,10 @@ export function installE2eTauriBackend(): void {
         case "get_mcp_status": return [];
         case "get_capabilities": return [];
         case "get_modes": return [
-          { id: "discuss", label: "讨论", description: "澄清与推理" },
+          { id: "auto", label: "自动", description: "自主执行并交付结果" },
           { id: "plan", label: "规划", description: "形成研究计划" },
-          { id: "auto", label: "自动", description: "执行并交付" },
         ];
-        case "get_mode": return "discuss";
+        case "get_mode": return "auto";
         case "get_chat_session": return [];
         case "get_artifacts": return [deliveryArtifact];
         case "read_workspace_file": {

@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 
-export type WizardMode = "discuss" | "plan" | "auto";
+export type WizardMode = "plan" | "auto";
 
 interface WelcomeWizardProps {
   initialStep?: number;
@@ -69,7 +69,7 @@ export function WelcomeWizard({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const keyConfigured = hasApiKey || apiKeySaved;
-  const currentMode = mode ?? "discuss";
+  const currentMode = mode ?? "auto";
 
   const stepStatus = useMemo(() => {
     const status: Record<StepKey, "done" | "warn" | "todo"> = {
@@ -331,19 +331,17 @@ export function WelcomeWizard({
                         </button>
                       ))
                     : (
-                        (["discuss", "plan", "auto"] as const).map((id) => (
+                        (["auto", "plan"] as const).map((id) => (
                           <button
                             key={id}
                             className={`welcome-mode-option ${currentMode === id ? "active" : ""}`}
                             onClick={() => onSwitchMode?.(id)}
                           >
                             <strong>
-                              {id === "discuss" ? "讨论" : id === "plan" ? "计划" : "自动"}
+                              {id === "plan" ? "计划" : "自动"}
                             </strong>
                             <span>
-                              {id === "discuss"
-                                ? "只读探讨：检索文献、查询康复数据、追问分析，不写文件"
-                                : id === "plan"
+                              {id === "plan"
                                   ? "制定方案：列出步骤，确认后执行"
                                   : "自主执行：自动拆解目标，并行执行，汇总产出"}
                             </span>
@@ -354,7 +352,6 @@ export function WelcomeWizard({
 
                 <p className="welcome-note">
                   当前模式：<strong>{currentMode}</strong>。
-                  {currentMode === "discuss" && " 讨论模式为只读，需要写文件时切换到计划或自动。"}
                 </p>
               </div>
             )}
