@@ -383,7 +383,7 @@ impl McpServer {
 
         // Read with timeout
         let name = self.name.clone();
-        let response = timeout(Duration::from_secs(30), async {
+        let response = timeout(Duration::from_secs(120), async {
             let mut stdout = self.stdout.lock().await;
             loop {
                 let mut line = String::new();
@@ -667,15 +667,22 @@ impl McpConfig {
                 },
             ),
             (
-                "cnki-experimental",
+                "cnki",
                 McpServerConfig {
-                    command: "cnki-mcp-server".into(),
+                    command: "cnki-enhanced-mcp".into(),
                     args: Vec::new(),
                     env: HashMap::new(),
-                    enabled: false,
+                    enabled: true,
                 },
             ),
         ];
+        let remove_placeholder = config
+            .mcp_servers
+            .get("cnki-experimental")
+            .is_some_and(|server| server.command == "cnki-mcp-server" && !server.enabled);
+        if remove_placeholder {
+            config.mcp_servers.remove("cnki-experimental");
+        }
         for (name, server) in defaults {
             config.mcp_servers.entry(name.into()).or_insert(server);
         }
@@ -864,12 +871,14 @@ mod tests {
     }
 
     #[test]
-    fn builtin_literature_catalog_is_enabled_on_fresh_config() {
+    fn builtin_literature_catalog_enables_all_installed_search_providers() {
         let config = McpConfig::with_builtin_catalog(McpConfig::default());
 
         assert!(config.mcp_servers["semantic-scholar"].enabled);
         assert!(config.mcp_servers["crossref"].enabled);
-        assert!(!config.mcp_servers["cnki-experimental"].enabled);
+        assert!(config.mcp_servers["cnki"].enabled);
+        assert_eq!(config.mcp_servers["cnki"].command, "cnki-enhanced-mcp");
+        assert!(!config.mcp_servers.contains_key("cnki-experimental"));
     }
 
     #[test]

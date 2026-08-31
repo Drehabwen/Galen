@@ -11,7 +11,7 @@ This slice integrates three international providers and one experimental Chinese
 - Semantic Scholar via `s2-mcp-server`, built in and enabled by default;
 - Crossref via `@cyanheads/crossref-mcp-server`, built in and enabled by default;
 - PubMed remains the built-in authoritative biomedical provider and is represented in the same coverage model;
-- CNKI Enhanced MCP is present as an experimental, disabled connector and is never installed, logged in, or used automatically.
+- CNKI Enhanced MCP is a built-in enabled connector when installed; login credentials are entered only in its visible browser and its coverage remains failed/unsearched until a real search succeeds.
 
 This slice does not implement systematic-review screening, PRISMA, full-text synthesis, Zotero synchronization, automatic CNKI downloads, or FMS/subject context.
 
@@ -37,7 +37,7 @@ Recommended entries:
 
 - `semantic-scholar`: `uv tool run s2-mcp-server`, enabled by default;
 - `crossref`: `deno run --allow-net --allow-env --allow-sys --allow-write npm:@cyanheads/crossref-mcp-server`, enabled by default;
-- `cnki-experimental`: placeholder local command, disabled and marked experimental.
+- `cnki`: `cnki-enhanced-mcp`, enabled by default; Galen preserves an installed absolute command and its Playwright/profile environment.
 
 PubMed is built in and therefore does not require a child process.
 
@@ -111,7 +111,7 @@ SearchRun records retrieval provenance. Evidence records claims. They are intent
 - Provider secrets remain in the user config and child-process environment.
 - Status APIs return environment variable names only, never values.
 - CNKI credentials are entered in its visible browser and never passed as model arguments.
-- CNKI remains disabled and experimental until a Windows end-to-end test confirms login, search, logout, and profile cleanup.
+- CNKI is enabled on Windows, while coverage remains failed/unsearched until an end-to-end search succeeds; credentials and profile data stay outside the repository.
 
 ## Testing
 
