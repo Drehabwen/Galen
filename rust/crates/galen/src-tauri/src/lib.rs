@@ -23,6 +23,7 @@ pub mod rehab_context;
 pub mod rehab_eval;
 pub mod research_task;
 pub mod runtime_manager;
+pub mod search_run;
 pub mod skills;
 mod task_contract;
 pub mod tools;
