@@ -80,6 +80,8 @@ describe("ResearchDocumentCanvas preview dispatch", () => {
     );
     const frame = screen.getByTestId("artifact-pdf-frame") as HTMLIFrameElement;
     expect(frame.src).toBe("blob:mock-object-url");
+    const pdfBlob = vi.mocked(URL.createObjectURL).mock.calls[0]?.[0] as Blob;
+    expect(pdfBlob.type).toBe("application/pdf");
   });
 
   it("renders images through an img tag", () => {

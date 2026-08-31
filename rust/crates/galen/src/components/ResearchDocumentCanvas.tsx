@@ -84,7 +84,11 @@ function useObjectUrl(blob?: Blob): string | null {
 }
 
 function PdfView({ blob }: { blob: Blob }) {
-  const url = useObjectUrl(blob);
+  const pdfBlob = useMemo(
+    () => blob.type === "application/pdf" ? blob : blob.slice(0, blob.size, "application/pdf"),
+    [blob],
+  );
+  const url = useObjectUrl(pdfBlob);
   return (
     <div className="artifact-preview-scroll artifact-embed-frame">
       {url ? (

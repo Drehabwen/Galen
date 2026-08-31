@@ -55,7 +55,14 @@ export function useArtifactDelivery(
         if (BINARY_PREVIEW_KINDS.has(kind)) {
           const buffer = await invoke<ArrayBuffer>("read_artifact_bytes", { path });
           if (revision === readRevisionRef.current) {
-            setPreview({ path, kind, blob: new Blob([buffer]), nodeTitle });
+            setPreview({
+              path,
+              kind,
+              blob: new Blob([buffer], {
+                type: kind === "pdf" ? "application/pdf" : "",
+              }),
+              nodeTitle,
+            });
           }
         } else {
           const content = await invoke<string>("read_workspace_file", { path });
