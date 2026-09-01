@@ -625,31 +625,52 @@ fn normalize_argument_key(key: &str) -> String {
 
 fn is_sensitive_argument_key(key: &str) -> bool {
     let key = normalize_argument_key(key);
-    key == "env"
-        || key == "auth"
-        || [
-            "credential",
-            "password",
-            "passwd",
-            "token",
-            "apikey",
-            "cookie",
-            "authorization",
-            "secret",
-            "environmentvariable",
-            "envvar",
-            "profile",
-            "browserdata",
-            "browserstorage",
-            "localstorage",
-            "sessionstorage",
-        ]
-        .iter()
-        .any(|marker| key.contains(marker))
+    let credential_marker = [
+        "credential",
+        "password",
+        "passwd",
+        "apikey",
+        "cookie",
+        "authorization",
+        "secret",
+        "privatekey",
+        "accesskey",
+        "profile",
+        "browserdata",
+        "browserstorage",
+        "localstorage",
+        "sessionstorage",
+    ]
+    .iter()
+    .any(|marker| key.contains(marker));
+    let token_key = key == "token"
+        || key.ends_with("token")
+        || ["tokenvalue", "tokenkey"]
+            .iter()
+            .any(|marker| key.contains(marker));
+    let environment_key = key == "env"
+        || key == "environment"
+        || key.contains("environmentvariable")
+        || key.contains("envvar");
+    let authentication_key =
+        key == "auth" || key.starts_with("authentication") || key.contains("authheader");
+    let session_key = [
+        "sessionid",
+        "sessionidentifier",
+        "sessiontoken",
+        "sessionkey",
+        "sessioncookie",
+        "sessionsecret",
+    ]
+    .iter()
+    .any(|marker| key.contains(marker));
+    credential_marker || token_key || environment_key || authentication_key || session_key
 }
 
 fn contains_sensitive_value(value: &str) -> bool {
     let lower = value.to_ascii_lowercase();
+    let trimmed = value.trim();
+    let lower_trimmed = lower.trim();
     let markers = [
         "api_key",
         "api-key",
@@ -674,11 +695,69 @@ fn contains_sensitive_value(value: &str) -> bool {
         && ["path=/", "httponly", "samesite=", "; secure"]
             .iter()
             .any(|marker| lower.contains(marker));
+    let auth_header = lower_trimmed.starts_with("basic ")
+        || lower_trimmed.starts_with("bearer ")
+        || lower_trimmed.starts_with("digest ");
+    let private_key = [
+        "-----begin private key-----",
+        "-----begin rsa private key-----",
+        "-----begin ec private key-----",
+        "-----begin openssh private key-----",
+    ]
+    .iter()
+    .any(|marker| lower.contains(marker));
     markers.iter().any(|marker| lower.contains(marker))
         || windows_absolute
         || cookie_like
+        || auth_header
+        || private_key
+        || looks_like_aws_access_key(trimmed)
+        || looks_like_aws_secret_key(trimmed)
+        || looks_like_jwt(trimmed)
+        || looks_like_prefixed_token(trimmed)
         || value.starts_with("\\\\")
         || value.starts_with('/')
+}
+
+fn looks_like_aws_access_key(value: &str) -> bool {
+    value.len() == 20
+        && ["AKIA", "ASIA", "AIDA", "AROA"]
+            .iter()
+            .any(|prefix| value.starts_with(prefix))
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit())
+}
+
+fn looks_like_aws_secret_key(value: &str) -> bool {
+    value.len() == 40
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'='))
+        && value.bytes().any(|byte| byte.is_ascii_uppercase())
+        && value.bytes().any(|byte| byte.is_ascii_lowercase())
+        && value.bytes().any(|byte| byte.is_ascii_digit())
+        && value.bytes().any(|byte| matches!(byte, b'+' | b'/'))
+}
+
+fn looks_like_jwt(value: &str) -> bool {
+    let segments: Vec<&str> = value.split('.').collect();
+    value.len() >= 32
+        && segments.len() == 3
+        && segments.iter().all(|segment| {
+            segment.len() >= 4
+                && segment
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'='))
+        })
+}
+
+fn looks_like_prefixed_token(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    value.len() >= 20
+        && ["ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_", "sk-"]
+            .iter()
+            .any(|prefix| lower.starts_with(prefix))
 }
 
 #[cfg(test)]
@@ -964,6 +1043,106 @@ mod tests {
                 },
                 "environment_variables": "[redacted]",
                 "page": 2
+            })
+        );
+    }
+
+    #[test]
+    fn normalized_sensitive_key_families_redact_their_complete_values() {
+        // Missing normalized aliases can persist credentials hidden in nested containers.
+        let run = SearchRun::succeeded(
+            "task-1",
+            "provider",
+            "search",
+            "stroke",
+            serde_json::json!({
+                "environment": {"HOME": "C:\\Users\\alice", "SAFE": "no"},
+                "environmentVariables": {"API_TOKEN": "env-secret"},
+                "auth-header": "Basic dXNlcjpwYXNz",
+                "authentication": {"scheme": "basic", "value": "auth-secret"},
+                "private_key": "private-secret",
+                "accessKey": "access-secret",
+                "secretKey": "secret-secret",
+                "session-id": "session-123",
+                "sessionSecret": "session-secret",
+                "providerSpecific": {
+                    "sessionMode": "stateless",
+                    "tokenizationStrategy": "bm25-window",
+                    "ranking": {"model": "citation-velocity", "weight": 0.75}
+                }
+            }),
+            "100",
+            "200",
+            1,
+            HASH_A,
+        )
+        .unwrap();
+
+        assert_eq!(
+            run.arguments(),
+            &serde_json::json!({
+                "environment": "[redacted]",
+                "environmentVariables": "[redacted]",
+                "auth-header": "[redacted]",
+                "authentication": "[redacted]",
+                "private_key": "[redacted]",
+                "accessKey": "[redacted]",
+                "secretKey": "[redacted]",
+                "session-id": "[redacted]",
+                "sessionSecret": "[redacted]",
+                "providerSpecific": {
+                    "sessionMode": "stateless",
+                    "tokenizationStrategy": "bm25-window",
+                    "ranking": {"model": "citation-velocity", "weight": 0.75}
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn credential_shaped_strings_are_redacted_under_innocuous_keys() {
+        // Secret values must not rely solely on a revealing field name.
+        let run = SearchRun::succeeded(
+            "task-1",
+            "provider",
+            "search",
+            "stroke",
+            serde_json::json!({
+                "samples": [
+                    "Basic dXNlcjpwYXNz",
+                    "Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature",
+                    "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BA\n-----END PRIVATE KEY-----",
+                    "AKIAIOSFODNN7EXAMPLE",
+                    "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+                    "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
+                    "ghp_1234567890abcdefghijklmnopqrstuvwxyz",
+                    "sk-proj-abcdefghijklmnopqrstuvwxyz0123456789"
+                ],
+                "ordinary": {
+                    "identifier": "S2-CORPUS-12345",
+                    "algorithm": "BM25",
+                    "filters": ["year:2024", "open-access"]
+                }
+            }),
+            "100",
+            "200",
+            1,
+            HASH_A,
+        )
+        .unwrap();
+
+        assert_eq!(
+            run.arguments(),
+            &serde_json::json!({
+                "samples": [
+                    "[redacted]", "[redacted]", "[redacted]", "[redacted]",
+                    "[redacted]", "[redacted]", "[redacted]", "[redacted]"
+                ],
+                "ordinary": {
+                    "identifier": "S2-CORPUS-12345",
+                    "algorithm": "BM25",
+                    "filters": ["year:2024", "open-access"]
+                }
             })
         );
     }
