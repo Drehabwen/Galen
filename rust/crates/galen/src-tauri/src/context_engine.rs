@@ -147,7 +147,7 @@ pub(crate) fn build_turn_context(
          写完 .typ 后立即用 typst compile 验证，报错则修复重试。")
     };
     format!(
-        "{mode_policy}\n\n{opening}{skills}{execution_policy}\n\n## 当前工作区\n{workspace}\n\n## 当前科研环境\n{env_summary}\n\n{plan}\n\n{memory}{evidence}\n\n{literature_coverage}\n\n## 证据引用纪律\n凡是推荐量表、纳排标准、统计方法、疗效判断或安全性判断，必须在同一条建议后给出已检索来源的可核验标识（PMID、DOI、数据库记录或明确标注“当前无直接来源”）。不得用未检索来源把推测写成事实。{resume}{plan_format}"
+        "{mode_policy}\n\n{opening}{skills}{execution_policy}\n\n## 当前工作区\n{workspace}\n\n## 当前科研环境\n{env_summary}\n\n{plan}\n\n{memory}{evidence}\n\n{literature_coverage}\n\n## 证据引用纪律\n凡是推荐量表、纳排标准、统计方法、疗效判断或安全性判断，必须在同一条建议后给出已检索来源的可点击 Markdown 链接：`[PMID: 12345678](https://pubmed.ncbi.nlm.nih.gov/12345678/)`、`[DOI: 10.xxxx/yyy](https://doi.org/10.xxxx/yyy)` 或数据库稳定链接。没有直接来源时明确写“当前无直接来源”，不得用未检索来源把推测写成事实。{resume}{plan_format}"
     )
 }
 

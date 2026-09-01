@@ -13,6 +13,21 @@ export function artifactHref(artifactId: string): string {
   return `${ARTIFACT_PROTOCOL}${encodeURIComponent(artifactId)}`;
 }
 
+// Model output and imported notes often contain conventional identifiers as
+// plain text. Normalize only explicit labels, so ordinary numbers and prose
+// remain untouched while every declared source becomes directly verifiable.
+export function linkifyEvidenceIdentifiers(markdown: string): string {
+  return markdown
+    .replace(
+      /\bPMID\s*[:：]?\s*(\d{5,9})\b/gi,
+      (_match, pmid: string) => `[PMID: ${pmid}](https://pubmed.ncbi.nlm.nih.gov/${pmid}/)`,
+    )
+    .replace(
+      /\bDOI\s*[:：]?\s*(10\.\d{4,9}\/[A-Za-z0-9._;()/:+-]+)(?!\])/gi,
+      (_match, doi: string) => `[DOI: ${doi}](https://doi.org/${doi})`,
+    );
+}
+
 export function ArtifactMarkdown({ children, onOpenArtifact }: ArtifactMarkdownProps) {
   return (
     <ReactMarkdown
@@ -37,7 +52,7 @@ export function ArtifactMarkdown({ children, onOpenArtifact }: ArtifactMarkdownP
         },
       }}
     >
-      {children}
+      {linkifyEvidenceIdentifiers(children)}
     </ReactMarkdown>
   );
 }
