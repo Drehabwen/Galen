@@ -77,6 +77,26 @@ pub(crate) struct TaskContract {
     pub(crate) response_token_cap: Option<u32>,
 }
 
+impl TaskContract {
+    pub(crate) fn allows_tool(&self, tool_name: &str) -> bool {
+        if self
+            .allowed_tools
+            .is_some_and(|allowed| allowed.contains(&tool_name))
+        {
+            return true;
+        }
+        if self.class != TaskClass::Literature {
+            return false;
+        }
+        let Some((server_name, mcp_tool_name)) =
+            crate::mcp_client::parse_qualified_tool_name(tool_name)
+        else {
+            return false;
+        };
+        crate::tools::research::recognized_mcp_search(server_name, mcp_tool_name).is_some()
+    }
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct WorkingMemory {
     observed_resources: HashSet<String>,
@@ -464,4 +484,21 @@ pub(crate) fn max_tool_turns_for_task(user_message: &str) -> u32 {
         user_message,
     )
     .max_tool_turns
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn literature_contract_allows_only_recognized_qualified_mcp_searches() {
+        let contract = compile_task_contract(
+            model_router::TaskKind::Chat,
+            "请检索脑卒中康复的中文文献",
+        );
+
+        assert_eq!(contract.class, TaskClass::Literature);
+        assert!(contract.allows_tool("mcp__cnki__cnki_structured_search"));
+        assert!(!contract.allows_tool("mcp__unrelated__search_papers"));
+    }
 }

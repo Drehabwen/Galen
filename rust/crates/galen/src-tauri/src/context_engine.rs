@@ -265,8 +265,8 @@ pub(crate) fn select_tools_for_contract(
     mut tools: Vec<ToolDefinition>,
     contract: &TaskContract,
 ) -> Vec<ToolDefinition> {
-    if let Some(allowed) = contract.allowed_tools {
-        tools.retain(|tool| allowed.contains(&tool.name.as_str()));
+    if contract.allowed_tools.is_some() {
+        tools.retain(|tool| contract.allows_tool(&tool.name));
     } else if contract.class != TaskClass::RehabQuery {
         // Patient/assessment database access is sensitive and highly specific.
         tools.retain(|tool| tool.name != "rehab_data");
