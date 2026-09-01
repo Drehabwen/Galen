@@ -468,6 +468,10 @@ pub async fn send_message(
                         ChatEvent::ThinkingDelta(text) => emit!("chat-thinking-delta", text),
                         ChatEvent::ThinkingDone(text) => emit!("chat-thinking-done", text),
                         ChatEvent::Error(e) => emit!("chat-error", e.as_str()),
+                        ChatEvent::ToolProgress { turn, max_turns, tool, phase } => emit!(
+                            "chat-tool-progress",
+                            serde_json::json!({ "turn": turn, "maxTurns": max_turns, "tool": tool, "phase": phase })
+                        ),
                         ChatEvent::SearchResults(papers) => emit!("search-results", papers),
                         ChatEvent::WorkspaceRoot(path) => emit!("workspace-root", path.as_str()),
                         ChatEvent::WorkspaceFileList(files) => emit!("workspace-file-list", files),

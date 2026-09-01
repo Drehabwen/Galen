@@ -4,6 +4,7 @@ import { StatusDot, Tag, ApprovalCard } from "./ui/primitives";
 import { TokenRing } from "./TokenRing";
 import type { ChatMessage, ChatRunSummary, ModelConfig } from "../types";
 import type { ArtifactRecord } from "../domain/artifact";
+import type { ToolProgress } from "../hooks/useChat";
 
 // ---------------------------------------------------------------------------
 // Block type detection from message content
@@ -48,6 +49,7 @@ interface ResearchExecutionThreadProps {
   thinking: string;
   sending: boolean;
   latestRunMetrics: ChatRunSummary | null;
+  toolProgress?: ToolProgress | null;
   error: string | null;
   backendAvailable: boolean;
   input: string;
@@ -224,6 +226,7 @@ export function ResearchExecutionThread({
   thinking,
   sending,
   latestRunMetrics,
+  toolProgress,
   error,
   backendAvailable,
   input,
@@ -451,6 +454,15 @@ export function ResearchExecutionThread({
           {activityLabel}
         </StatusDot>
       </div>
+
+      {sending && toolProgress && (
+        <div className="thread-run-metrics" aria-live="polite">
+          <span>执行中</span>
+          <strong>{toolProgress.tool}</strong>
+          <span>{toolProgress.phase === "running" ? "运行中" : toolProgress.phase === "failed" ? "失败，正在调整" : "已完成"}</span>
+          <span>步骤 {toolProgress.turn}/{toolProgress.maxTurns}</span>
+        </div>
+      )}
 
       {!sending && latestRunMetrics && (
         <div className="thread-run-metrics" aria-label="上一轮模型性能">

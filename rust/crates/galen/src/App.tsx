@@ -157,6 +157,7 @@ export default function App() {
                 thinking={chat.thinking}
                 sending={chat.sending}
                 latestRunMetrics={chat.latestRunMetrics}
+                toolProgress={chat.toolProgress}
                 error={chat.error}
                 backendAvailable={chat.backendAvailable}
                 input={input}
@@ -172,6 +173,7 @@ export default function App() {
                   const artifact = delivery.artifacts.find((item) => item.id === artifactId);
                   if (artifact) void delivery.openRegisteredArtifact(artifact);
                 }}
+                onViewEvidence={() => delivery.setCanvasTab("plan")}
               />
             </div>
 

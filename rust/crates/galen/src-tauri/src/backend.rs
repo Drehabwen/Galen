@@ -42,6 +42,12 @@ pub enum ChatEvent {
     ThinkingDone(String),
     Done(String),
     Error(String),
+    ToolProgress {
+        turn: u32,
+        max_turns: u32,
+        tool: String,
+        phase: String,
+    },
     SearchResults(Vec<Paper>),
     #[allow(dead_code)]
     WorkspaceRoot(String),

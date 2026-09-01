@@ -6,6 +6,13 @@ import type { ArtifactRecord } from "../domain/artifact";
 import type { ResearchTask } from "../domain/researchTask";
 import { isTauriRuntime } from "../tauriRuntime";
 
+export interface ToolProgress {
+  turn: number;
+  maxTurns: number;
+  tool: string;
+  phase: "running" | "completed" | "failed";
+}
+
 export function useChat(workspaceRoot: string | null) {
   const backendAvailable = isTauriRuntime();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -23,6 +30,7 @@ export function useChat(workspaceRoot: string | null) {
   const [latestArtifact, setLatestArtifact] = useState<ArtifactRecord | null>(null);
   const [researchTaskUpdate, setResearchTaskUpdate] = useState<ResearchTask | null>(null);
   const [latestRunMetrics, setLatestRunMetrics] = useState<ChatRunSummary | null>(null);
+  const [toolProgress, setToolProgress] = useState<ToolProgress | null>(null);
   const currentModel = useRef<string>("");
   const sendingRef = useRef(false);
   const doneHandledRef = useRef(false); // prevent duplicate done handling
@@ -119,7 +127,10 @@ export function useChat(workspaceRoot: string | null) {
       const ul11 = await listen<ChatRunSummary>("chat-run-metrics", (e) => {
         if (!cancelled) setLatestRunMetrics(e.payload);
       });
-      unlisteners.push(ul1, ul2, ul3, ul4, ul5, ul6, ul7, ul8, ul9, ul10, ul11);
+      const ul12 = await listen<ToolProgress>("chat-tool-progress", (e) => {
+        if (!cancelled) setToolProgress(e.payload);
+      });
+      unlisteners.push(ul1, ul2, ul3, ul4, ul5, ul6, ul7, ul8, ul9, ul10, ul11, ul12);
     };
 
     register().catch((e) => {
@@ -158,6 +169,7 @@ export function useChat(workspaceRoot: string | null) {
       doneHandledRef.current = false; // reset for new message
       setStreaming("");
       setThinking("");
+      setToolProgress(null);
       setError(null);
 
       try {
@@ -216,6 +228,7 @@ export function useChat(workspaceRoot: string | null) {
     latestArtifact,
     researchTaskUpdate,
     latestRunMetrics,
+    toolProgress,
     send,
     clear,
   };

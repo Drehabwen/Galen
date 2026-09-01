@@ -264,7 +264,10 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
 
     // Multi-turn loop: keep going until model responds with text (no tool calls)
     let mut turn = 0;
-    let max_tool_turns = task_contract.max_tool_turns;
+    // Long research tasks need a generous internal runway. The ceiling remains
+    // a safety mechanism, but users receive a final synthesis rather than an
+    // exposed "max tool calls" failure.
+    let max_tool_turns = task_contract.max_tool_turns.max(36);
     let mut last_tool_name: Option<String> = None;
     let mut same_tool_streak: u32 = 0;
     let mut con_error_streak: u32 = 0;
@@ -341,7 +344,9 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
         turn += 1;
         if turn > max_tool_turns {
             if final_chance_used {
-                on_event(ChatEvent::Error("Reached max tool-call turns".into()));
+                on_event(ChatEvent::Delta(
+                    "[执行收束] 已达到本轮工具预算，正在基于已获得的证据整理可交付结论。\n".into(),
+                ));
                 break;
             }
             // Smart termination: the next (final) turn is stripped of tools,
@@ -719,6 +724,12 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
             assistant_content.push(InputContentBlock::Text { text: text.clone() });
         }
         for tool in &tool_calls {
+            on_event(ChatEvent::ToolProgress {
+                turn,
+                max_turns: max_tool_turns,
+                tool: tool.name.clone(),
+                phase: "running".to_string(),
+            });
             let mut input: serde_json::Value =
                 serde_json::from_str(&tool.input_json).unwrap_or(serde_json::Value::Null);
             normalize_workspace_tool_input(&mut input, &ctx);
@@ -821,7 +832,7 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
                         }
                         Err(error) => Err(error),
                     };
-                let (text, is_error) = match result {
+            let (text, is_error) = match result {
                     Ok(ok) => (ok, false),
                     Err(error) => (error, true),
                 };
@@ -830,6 +841,12 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
                 }
                 (text, is_error, false)
             };
+            on_event(ChatEvent::ToolProgress {
+                turn,
+                max_turns: max_tool_turns,
+                tool: tool.name.clone(),
+                phase: if is_error { "failed" } else { "completed" }.to_string(),
+            });
             turn_gained_information |=
                 working_memory.observe_tool_result(&tool.name, &input, &text, is_error, cache_hit);
             if registry.is_write_tool(&tool.name) != Some(false) {
