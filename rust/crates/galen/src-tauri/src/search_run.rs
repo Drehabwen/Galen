@@ -10,6 +10,15 @@ use std::sync::{Mutex, MutexGuard};
 
 static SEARCH_RUN_STORE_LOCK: Mutex<()> = Mutex::new(());
 
+/// Maximum nested containers retained from one provider argument payload.
+pub const MAX_ARGUMENT_DEPTH: usize = 12;
+/// JSON byte budget retained from one argument payload before explicit markers.
+pub const MAX_ARGUMENT_BYTES: usize = 32 * 1024;
+/// Maximum serialized overhead reserved for explicit depth/size markers.
+pub const MAX_ARGUMENT_OVERHEAD_BYTES: usize = 1_024;
+const REDACTED: &str = "[redacted]";
+const TRUNCATED: &str = "[truncated]";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum SearchRunStatus {
@@ -466,65 +475,177 @@ fn validate_timestamps(started_at: &str, finished_at: &str) -> Result<(), String
 }
 
 fn project_arguments(arguments: &Value) -> Value {
-    const ALLOWED_KEYS: &[&str] = &[
-        "query",
-        "search_term",
-        "search_terms",
-        "keyword",
-        "keywords",
-        "title",
-        "author",
-        "doi",
-        "year",
-        "from_year",
-        "to_year",
-        "date_from",
-        "date_to",
-        "limit",
-        "offset",
-        "page",
-        "page_size",
-        "sort",
-        "order",
-        "language",
-        "fields",
-    ];
-    let projected = arguments
-        .as_object()
-        .into_iter()
-        .flat_map(|object| object.iter())
-        .filter(|(key, _)| ALLOWED_KEYS.contains(&key.as_str()))
-        .filter_map(|(key, value)| safe_argument_value(value).map(|value| (key.clone(), value)))
-        .collect();
-    Value::Object(projected)
+    let mut budget = ProjectionBudget {
+        remaining: MAX_ARGUMENT_BYTES,
+    };
+    project_argument_value(arguments, None, 0, &mut budget)
 }
 
-fn safe_argument_value(value: &Value) -> Option<Value> {
-    match value {
-        Value::Null | Value::Bool(_) | Value::Number(_) => Some(value.clone()),
-        Value::String(value) => Some(Value::String(sanitize_argument_text(value))),
-        Value::Array(values) => Some(Value::Array(
-            values
-                .iter()
-                .take(32)
-                .filter_map(|value| match value {
-                    Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {
-                        safe_argument_value(value)
-                    }
-                    _ => None,
-                })
-                .collect(),
-        )),
-        Value::Object(_) => None,
+struct ProjectionBudget {
+    remaining: usize,
+}
+
+impl ProjectionBudget {
+    fn consume(&mut self, amount: usize) -> bool {
+        if amount > self.remaining {
+            false
+        } else {
+            self.remaining -= amount;
+            true
+        }
     }
+}
+
+fn project_argument_value(
+    value: &Value,
+    key: Option<&str>,
+    depth: usize,
+    budget: &mut ProjectionBudget,
+) -> Value {
+    if key.is_some_and(is_sensitive_argument_key) {
+        return marker_value(REDACTED, budget);
+    }
+    if depth > MAX_ARGUMENT_DEPTH {
+        return marker_value(TRUNCATED, budget);
+    }
+    if budget.remaining == 0 {
+        return Value::String(TRUNCATED.to_string());
+    }
+    match value {
+        Value::Null => {
+            if budget.consume(4) {
+                Value::Null
+            } else {
+                marker_value(TRUNCATED, budget)
+            }
+        }
+        Value::Bool(value) => {
+            if budget.consume(if *value { 4 } else { 5 }) {
+                Value::Bool(*value)
+            } else {
+                marker_value(TRUNCATED, budget)
+            }
+        }
+        Value::Number(value) => {
+            if budget.consume(value.to_string().len()) {
+                Value::Number(value.clone())
+            } else {
+                marker_value(TRUNCATED, budget)
+            }
+        }
+        Value::String(value) => {
+            let value = sanitize_argument_text(value);
+            if budget.consume(encoded_string_len(&value)) {
+                Value::String(value)
+            } else {
+                marker_value(TRUNCATED, budget)
+            }
+        }
+        Value::Array(values) => {
+            if !budget.consume(2) {
+                return marker_value(TRUNCATED, budget);
+            }
+            let mut projected = Vec::new();
+            for value in values {
+                if budget.remaining == 0 {
+                    projected.push(Value::String(TRUNCATED.to_string()));
+                    break;
+                }
+                if !projected.is_empty() {
+                    budget.consume(1);
+                }
+                projected.push(project_argument_value(value, None, depth + 1, budget));
+            }
+            Value::Array(projected)
+        }
+        Value::Object(object) => {
+            if !budget.consume(2) {
+                return marker_value(TRUNCATED, budget);
+            }
+            let field_selects_sensitive_value = object.iter().any(|(key, value)| {
+                matches!(
+                    normalize_argument_key(key).as_str(),
+                    "field" | "name" | "key" | "type"
+                ) && value.as_str().is_some_and(is_sensitive_argument_key)
+            });
+            let mut projected = serde_json::Map::new();
+            for (key, value) in object {
+                if budget.remaining == 0 {
+                    projected.insert("_truncated".to_string(), Value::Bool(true));
+                    break;
+                }
+                if !projected.is_empty() {
+                    budget.consume(1);
+                }
+                if !budget.consume(encoded_string_len(key) + 1) {
+                    projected.insert("_truncated".to_string(), Value::Bool(true));
+                    break;
+                }
+                let sensitive_value =
+                    field_selects_sensitive_value && normalize_argument_key(key) == "value";
+                let value = if sensitive_value {
+                    marker_value(REDACTED, budget)
+                } else {
+                    project_argument_value(value, Some(key), depth + 1, budget)
+                };
+                projected.insert(key.clone(), value);
+            }
+            Value::Object(projected)
+        }
+    }
+}
+
+fn marker_value(marker: &str, budget: &mut ProjectionBudget) -> Value {
+    if !budget.consume(encoded_string_len(marker)) {
+        budget.remaining = 0;
+    }
+    Value::String(marker.to_string())
+}
+
+fn encoded_string_len(value: &str) -> usize {
+    serde_json::to_string(value)
+        .map(|encoded| encoded.len())
+        .unwrap_or(MAX_ARGUMENT_BYTES.saturating_add(1))
 }
 
 fn sanitize_argument_text(value: &str) -> String {
     if contains_sensitive_value(value) {
-        "[redacted]".to_string()
+        REDACTED.to_string()
     } else {
-        value.chars().take(500).collect()
+        value.to_string()
     }
+}
+
+fn normalize_argument_key(key: &str) -> String {
+    key.chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+fn is_sensitive_argument_key(key: &str) -> bool {
+    let key = normalize_argument_key(key);
+    key == "env"
+        || key == "auth"
+        || [
+            "credential",
+            "password",
+            "passwd",
+            "token",
+            "apikey",
+            "cookie",
+            "authorization",
+            "secret",
+            "environmentvariable",
+            "envvar",
+            "profile",
+            "browserdata",
+            "browserstorage",
+            "localstorage",
+            "sessionstorage",
+        ]
+        .iter()
+        .any(|marker| key.contains(marker))
 }
 
 fn contains_sensitive_value(value: &str) -> bool {
@@ -548,8 +669,14 @@ fn contains_sensitive_value(value: &str) -> bool {
     let bytes = value.as_bytes();
     let windows_absolute =
         bytes.len() >= 3 && bytes[1] == b':' && (bytes[2] == b'\\' || bytes[2] == b'/');
+    let cookie_like = lower.contains('=')
+        && lower.contains(';')
+        && ["path=/", "httponly", "samesite=", "; secure"]
+            .iter()
+            .any(|marker| lower.contains(marker));
     markers.iter().any(|marker| lower.contains(marker))
         || windows_absolute
+        || cookie_like
         || value.starts_with("\\\\")
         || value.starts_with('/')
 }
@@ -744,14 +871,134 @@ mod tests {
             "session-secret",
             "env-secret",
             "cnki-profile",
-            "api_key",
-            "cookie",
-            "browser_profile_path",
             "auth failed",
         ] {
             assert!(!ledger.contains(secret), "ledger leaked {secret}");
         }
+        assert!(ledger.contains("\"api_key\":\"[redacted]\""));
+        assert!(ledger.contains("\"cookie\":\"[redacted]\""));
+        assert!(ledger.contains("\"env\":\"[redacted]\""));
+        assert!(ledger.contains("\"browser_profile_path\":\"[redacted]\""));
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn recursive_projection_preserves_unknown_legitimate_provider_arguments() {
+        // Returning only known keys loses provider-specific retrieval provenance.
+        let arguments = serde_json::json!({
+            "facets": ["year", "publicationType"],
+            "providerOptions": {
+                "includePreprints": true,
+                "minimumCitationCount": 5,
+                "openAccess": null,
+                "filters": [
+                    {"field": "journal", "operator": "equals", "value": "Stroke"},
+                    {"field": "year", "operator": "gte", "value": 2020}
+                ]
+            },
+            "experimentalRanking": "citation_velocity"
+        });
+        let run = SearchRun::succeeded(
+            "task-1",
+            "semantic-scholar",
+            "search_papers",
+            "stroke",
+            arguments.clone(),
+            "100",
+            "200",
+            3,
+            HASH_A,
+        )
+        .unwrap();
+
+        assert_eq!(run.arguments(), &arguments);
+    }
+
+    #[test]
+    fn recursive_projection_redacts_nested_sensitive_values_without_flattening() {
+        // Nested provider options must retain shape while secrets and profile paths do not.
+        let run = SearchRun::succeeded(
+            "task-1",
+            "crossref",
+            "search_works",
+            "stroke",
+            serde_json::json!({
+                "providerOptions": {
+                    "apiKey": "key-secret",
+                    "headers": {
+                        "Authorization": "Bearer auth-secret",
+                        "Accept": "application/json",
+                        "opaqueValue": "sid=abc123; Path=/; HttpOnly"
+                    },
+                    "filters": [
+                        {"field": "journal", "value": "Stroke"},
+                        {"field": "profile", "value": "browser-secret"}
+                    ],
+                    "cacheLocation": "C:\\Users\\alice\\provider-profile"
+                },
+                "environment_variables": {"CROSSREF_TOKEN": "env-secret"},
+                "page": 2
+            }),
+            "100",
+            "200",
+            3,
+            HASH_A,
+        )
+        .unwrap();
+
+        assert_eq!(
+            run.arguments(),
+            &serde_json::json!({
+                "providerOptions": {
+                    "apiKey": "[redacted]",
+                    "headers": {
+                        "Authorization": "[redacted]",
+                        "Accept": "application/json",
+                        "opaqueValue": "[redacted]"
+                    },
+                    "filters": [
+                        {"field": "journal", "value": "Stroke"},
+                        {"field": "profile", "value": "[redacted]"}
+                    ],
+                    "cacheLocation": "[redacted]"
+                },
+                "environment_variables": "[redacted]",
+                "page": 2
+            })
+        );
+    }
+
+    #[test]
+    fn recursive_projection_marks_depth_and_size_bounds_explicitly() {
+        // Bounds must be visible in provenance instead of silently dropping the argument object.
+        let mut deep = serde_json::json!({"leaf": "kept-until-bound"});
+        for level in 0..(MAX_ARGUMENT_DEPTH + 2) {
+            let mut object = serde_json::Map::new();
+            object.insert(format!("level{level}"), deep);
+            deep = Value::Object(object);
+        }
+        let run = SearchRun::succeeded(
+            "task-1",
+            "provider",
+            "search",
+            "stroke",
+            serde_json::json!({
+                "normal": {"nested": [true, 7, null, "kept"]},
+                "deep": deep,
+                "escaped": "\"".repeat(MAX_ARGUMENT_BYTES * 3 / 4),
+                "oversized": "x".repeat(MAX_ARGUMENT_BYTES * 2)
+            }),
+            "100",
+            "200",
+            0,
+            HASH_A,
+        )
+        .unwrap();
+        let serialized = serde_json::to_string(run.arguments()).unwrap();
+
+        assert!(serialized.contains("\"normal\":{\"nested\":[true,7,null,\"kept\"]}"));
+        assert!(serialized.contains("[truncated]"));
+        assert!(serialized.len() <= MAX_ARGUMENT_BYTES + MAX_ARGUMENT_OVERHEAD_BYTES);
     }
 
     #[test]
@@ -777,8 +1024,8 @@ mod tests {
     }
 
     #[test]
-    fn allowlisted_fields_still_redact_secret_values_and_profile_paths() {
-        // An allowlisted key must not become a tunnel for credentials or local profile paths.
+    fn ordinary_fields_still_redact_secret_values_and_profile_paths() {
+        // An ordinary key must not become a tunnel for credentials or local profile paths.
         let root = temp_workspace("secret-values");
         let run = SearchRun::succeeded(
             "task-1",
