@@ -5,7 +5,7 @@ use medical_core::types::CitationStyle;
 use medical_core::types::Paper;
 use serde_json::{json, Value};
 
-use super::{GalenTool, ToolContext};
+use super::{GalenTool, ToolContext, ToolExecution};
 use crate::backend::ChatEvent;
 
 // ---------------------------------------------------------------------------
@@ -34,48 +34,59 @@ impl GalenTool for SearchPubMed {
     }
 
     async fn execute(&self, input: Value, ctx: &ToolContext) -> Result<String, String> {
-        let query = input["query"].as_str().ok_or("Missing 'query' parameter")?;
-        let limit = input["max_results"].as_u64().unwrap_or(10) as u32;
-        let papers = ctx
-            .medical
-            .search_pubmed(query, limit)
-            .await
-            .map_err(|e| format!("PubMed search error: {e}"))?;
+        execute_pubmed(input, ctx).await.result
+    }
 
-        ctx.send_event(ChatEvent::SearchResults(papers.clone()));
+    async fn execute_observed(&self, input: Value, ctx: &ToolContext) -> ToolExecution {
+        execute_pubmed(input, ctx).await
+    }
+}
 
-        if papers.is_empty() {
-            Ok("No results found.".into())
-        } else {
-            let summary: Vec<String> = papers
-                .iter()
-                .map(|p| {
-                    let authors = if p.authors.is_empty() {
-                        "Unknown".to_string()
-                    } else if p.authors.len() == 1 {
-                        p.authors[0].to_string()
-                    } else {
-                        format!("{} et al.", p.authors[0])
-                    };
-                    let journal = p.journal.as_deref().unwrap_or("Unknown Journal");
-                    let year = p.year.as_deref().unwrap_or("n.d.");
-                    let doi_str = p
-                        .doi
-                        .as_deref()
-                        .map(|d| format!("\n  DOI: {d}"))
-                        .unwrap_or_default();
-                    format!(
-                        "PMID:{}\n  {}\n  {} — {} ({}){}\n",
-                        p.pmid, p.title, authors, journal, year, doi_str
-                    )
-                })
-                .collect();
-            Ok(format!(
-                "Found {} results:\n\n{}",
-                papers.len(),
-                summary.join("\n")
-            ))
+async fn execute_pubmed(input: Value, ctx: &ToolContext) -> ToolExecution {
+    let Some(query) = input["query"].as_str() else {
+        return ToolExecution::from_result(Err("Missing 'query' parameter".into()));
+    };
+    let limit = input["max_results"].as_u64().unwrap_or(10) as u32;
+    let papers = match ctx.medical.search_pubmed(query, limit).await {
+        Ok(papers) => papers,
+        Err(error) => {
+            return ToolExecution::from_result(Err(format!("PubMed search error: {error}")))
         }
+    };
+    ctx.send_event(ChatEvent::SearchResults(papers.clone()));
+    let text = if papers.is_empty() {
+        "No results found.".into()
+    } else {
+        let summary: Vec<String> = papers
+            .iter()
+            .map(|p| {
+                let authors = if p.authors.is_empty() {
+                    "Unknown".to_string()
+                } else if p.authors.len() == 1 {
+                    p.authors[0].to_string()
+                } else {
+                    format!("{} et al.", p.authors[0])
+                };
+                let journal = p.journal.as_deref().unwrap_or("Unknown Journal");
+                let year = p.year.as_deref().unwrap_or("n.d.");
+                let doi_str = p
+                    .doi
+                    .as_deref()
+                    .map(|d| format!("\n  DOI: {d}"))
+                    .unwrap_or_default();
+                format!(
+                    "PMID:{}\n  {}\n  {} — {} ({}){}\n",
+                    p.pmid, p.title, authors, journal, year, doi_str
+                )
+            })
+            .collect();
+        format!("Found {} results:\n\n{}", papers.len(), summary.join("\n"))
+    };
+    ToolExecution {
+        result: Ok(text),
+        raw_output: serde_json::to_value(&papers).ok(),
+        result_count: Some(papers.len()),
+        query: Some(query.to_string()),
     }
 }
 
@@ -199,30 +210,44 @@ impl GalenTool for SearchRehabLiterature {
     }
 
     async fn execute(&self, input: Value, ctx: &ToolContext) -> Result<String, String> {
-        let topic = input["topic"].as_str().ok_or("Missing 'topic' parameter")?;
-        let focus = input["focus"].as_str().and_then(RehabFocus::from_id);
-        let study_type = RehabStudyType::from_id(input["study_type"].as_str().unwrap_or("rct"));
-        let limit = input["max_results"].as_u64().unwrap_or(10) as u32;
+        execute_rehab_search(input, ctx).await.result
+    }
 
-        let query = build_rehab_query(topic, focus, study_type);
-        let papers = ctx
-            .medical
-            .search_pubmed(&query, limit)
-            .await
-            .map_err(|e| format!("PubMed search error: {e}"))?;
+    async fn execute_observed(&self, input: Value, ctx: &ToolContext) -> ToolExecution {
+        execute_rehab_search(input, ctx).await
+    }
+}
 
-        ctx.send_event(ChatEvent::SearchResults(papers.clone()));
-
-        if papers.is_empty() {
-            Ok(format!("No results found.\nQuery used: {query}"))
-        } else {
-            let summary = format_paper_entries(&papers);
-            Ok(format!(
-                "Rehabilitation query: {query}\n\nFound {} results:\n\n{}",
-                papers.len(),
-                summary.join("\n")
-            ))
+async fn execute_rehab_search(input: Value, ctx: &ToolContext) -> ToolExecution {
+    let Some(topic) = input["topic"].as_str() else {
+        return ToolExecution::from_result(Err("Missing 'topic' parameter".into()));
+    };
+    let focus = input["focus"].as_str().and_then(RehabFocus::from_id);
+    let study_type = RehabStudyType::from_id(input["study_type"].as_str().unwrap_or("rct"));
+    let limit = input["max_results"].as_u64().unwrap_or(10) as u32;
+    let query = build_rehab_query(topic, focus, study_type);
+    let papers = match ctx.medical.search_pubmed(&query, limit).await {
+        Ok(papers) => papers,
+        Err(error) => {
+            return ToolExecution::from_result(Err(format!("PubMed search error: {error}")))
         }
+    };
+    ctx.send_event(ChatEvent::SearchResults(papers.clone()));
+    let text = if papers.is_empty() {
+        format!("No results found.\nQuery used: {query}")
+    } else {
+        let summary = format_paper_entries(&papers);
+        format!(
+            "Rehabilitation query: {query}\n\nFound {} results:\n\n{}",
+            papers.len(),
+            summary.join("\n")
+        )
+    };
+    ToolExecution {
+        result: Ok(text),
+        raw_output: serde_json::to_value(&papers).ok(),
+        result_count: Some(papers.len()),
+        query: Some(query),
     }
 }
 

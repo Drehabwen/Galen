@@ -13,11 +13,12 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use api::ToolDefinition;
 use async_trait::async_trait;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use tokio::time::timeout;
 
 use crate::backend::ChatEvent;
@@ -50,9 +51,34 @@ pub trait GalenTool: Send + Sync {
     /// Execute the tool with the given JSON input and shared context.
     async fn execute(&self, input: Value, ctx: &ToolContext) -> Result<String, String>;
 
+    /// Execute while retaining provider-native data needed by host provenance.
+    /// Ordinary tools preserve the historical result and expose no metadata.
+    async fn execute_observed(&self, input: Value, ctx: &ToolContext) -> ToolExecution {
+        ToolExecution::from_result(self.execute(input, ctx).await)
+    }
+
     /// Whether this tool modifies state (blocked in Discuss mode).
     fn is_write(&self) -> bool {
         false
+    }
+}
+
+#[doc(hidden)]
+pub struct ToolExecution {
+    pub result: Result<String, String>,
+    pub raw_output: Option<Value>,
+    pub result_count: Option<usize>,
+    pub query: Option<String>,
+}
+
+impl ToolExecution {
+    pub(crate) fn from_result(result: Result<String, String>) -> Self {
+        Self {
+            result,
+            raw_output: None,
+            result_count: None,
+            query: None,
+        }
     }
 }
 
@@ -284,13 +310,30 @@ impl ToolRegistry {
         // Try built-in tools (with timeout)
         if let Some(tool) = self.tools.get(name) {
             let tool_name = name.to_string();
-            return match timeout(TOOL_TIMEOUT, tool.execute(input, ctx)).await {
-                Ok(result) => result,
-                Err(_) => Err(format!(
+            let search = research::recognized_builtin_search(name);
+            let arguments = input.clone();
+            let started_at = epoch_millis();
+            let execution = match timeout(TOOL_TIMEOUT, tool.execute_observed(input, ctx)).await {
+                Ok(execution) => execution,
+                Err(_) => ToolExecution::from_result(Err(format!(
                     "工具「{tool_name}」执行超时（{} 秒）。请检查输入或重试。",
                     TOOL_TIMEOUT.as_secs()
-                )),
+                ))),
             };
+            if let Some(search) = search {
+                record_search_run(
+                    ctx,
+                    search,
+                    name,
+                    &arguments,
+                    started_at,
+                    &execution.result,
+                    execution.raw_output.as_ref(),
+                    execution.result_count,
+                    execution.query.as_deref(),
+                );
+            }
+            return execution.result;
         }
 
         // Try MCP tools
@@ -307,15 +350,114 @@ impl ToolRegistry {
             }
             let (server_name, tool_name) = crate::mcp_client::resolve_tool_route(name, &available)
                 .map_err(|e| e.to_string())?;
-            return self
+            let search = research::recognized_mcp_search(&server_name, &tool_name);
+            let arguments = input.clone();
+            let started_at = epoch_millis();
+            let outcome = self
                 .mcp
-                .call_tool(&server_name, &tool_name, input)
-                .await
-                .map_err(|e| e.to_string());
+                .call_tool_observed(&server_name, &tool_name, input)
+                .await;
+            let result = outcome.result.map_err(|error| error.to_string());
+            if let Some(search) = search {
+                record_search_run(
+                    ctx,
+                    search,
+                    &tool_name,
+                    &arguments,
+                    started_at,
+                    &result,
+                    outcome.raw_output.as_ref(),
+                    None,
+                    None,
+                );
+            }
+            return result;
         }
 
         Err(format!("Unknown tool: {name}"))
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn record_search_run(
+    ctx: &ToolContext,
+    search: research::RecognizedSearch,
+    tool_name: &str,
+    arguments: &Value,
+    started_at: u128,
+    result: &Result<String, String>,
+    raw_output: Option<&Value>,
+    observed_count: Option<usize>,
+    observed_query: Option<&str>,
+) {
+    let workspace = match ctx.workspace_root.lock() {
+        Ok(root) => root.clone(),
+        Err(_) => return,
+    };
+    let Some(workspace) = workspace else {
+        return;
+    };
+    let task = match crate::research_task::load_active_task(&workspace) {
+        Ok(Some(task)) => task,
+        _ => return,
+    };
+    let finished_at = epoch_millis().max(started_at);
+    let query = observed_query
+        .map(str::to_string)
+        .unwrap_or_else(|| search.query_from(arguments));
+    let hash_input = raw_output
+        .and_then(|raw| serde_json::to_vec(raw).ok())
+        .unwrap_or_else(|| match result {
+            Ok(output) => output.as_bytes().to_vec(),
+            Err(error) => error.as_bytes().to_vec(),
+        });
+    let raw_result_hash = format!("{:x}", Sha256::digest(hash_input));
+    let run = match result {
+        Ok(_) => {
+            let result_count =
+                observed_count.or_else(|| raw_output.and_then(|raw| search.result_count_from(raw)));
+            let mut run = match crate::search_run::SearchRun::succeeded(
+                task.task_id,
+                search.provider_id,
+                tool_name,
+                &query,
+                arguments.clone(),
+                started_at.to_string(),
+                finished_at.to_string(),
+                result_count.unwrap_or_default(),
+                raw_result_hash,
+            ) {
+                Ok(run) => run,
+                Err(_) => return,
+            };
+            if result_count.is_none() {
+                run.result_count = None;
+            }
+            run
+        }
+        Err(error) => match crate::search_run::SearchRun::failed(
+            task.task_id,
+            search.provider_id,
+            tool_name,
+            &query,
+            arguments.clone(),
+            started_at.to_string(),
+            finished_at.to_string(),
+            crate::search_run::SearchErrorClass::classify(error),
+            raw_result_hash,
+        ) {
+            Ok(run) => run,
+            Err(_) => return,
+        },
+    };
+    let _ = crate::search_run::append_search_run(&workspace, &run);
+}
+
+fn epoch_millis() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
 }
 
 impl Default for ToolRegistry {
@@ -334,6 +476,58 @@ impl Default for ToolRegistry {
 mod tests {
     use super::*;
     use crate::modes::ChatMode;
+    use crate::search_run::{load_search_runs, SearchRunStatus};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    struct SuccessfulPubMed;
+
+    #[async_trait]
+    impl GalenTool for SuccessfulPubMed {
+        fn definition(&self) -> ToolDefinition {
+            ToolDefinition {
+                name: "search_pubmed".into(),
+                description: None,
+                input_schema: serde_json::json!({"type": "object"}),
+            }
+        }
+
+        async fn execute(&self, _input: Value, _ctx: &ToolContext) -> Result<String, String> {
+            Ok("Found 2 results.".into())
+        }
+
+        async fn execute_observed(&self, _input: Value, _ctx: &ToolContext) -> ToolExecution {
+            ToolExecution {
+                result: Ok("Found 2 results.".into()),
+                raw_output: Some(serde_json::json!([{"pmid": "1"}, {"pmid": "2"}])),
+                result_count: Some(2),
+                query: None,
+            }
+        }
+    }
+
+    fn temp_workspace(tag: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "galen-tool-search-run-{tag}-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    fn active_task(root: &std::path::Path) -> String {
+        crate::research_task::create_task(
+            root,
+            "task-1".into(),
+            "test search recording".into(),
+            Vec::new(),
+        )
+        .unwrap()
+        .task_id
+    }
 
     fn test_ctx(mode: ChatMode) -> ToolContext {
         let mut ctx = ToolContext::new(
@@ -450,6 +644,32 @@ mod tests {
             .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Unknown tool"));
+    }
+
+    #[tokio::test]
+    async fn pubmed_success_appends_one_terminal_search_run_with_paper_count() {
+        // Removing the post-dispatch ledger append, or recording twice, must fail this test.
+        let root = temp_workspace("pubmed-success");
+        let task_id = active_task(&root);
+        let ctx = ToolContext::new(
+            Arc::new(medical_core::MedicalCore::new(None)),
+            Mutex::new(Some(root.clone())),
+        );
+        let mut registry = ToolRegistry::new();
+        registry.register(SuccessfulPubMed);
+        let input = serde_json::json!({"query": "stroke rehabilitation", "max_results": 5});
+
+        let result = registry.execute_dynamic("search_pubmed", input, &ctx).await;
+        let runs = load_search_runs(&root, &task_id).unwrap();
+
+        assert_eq!(result.unwrap(), "Found 2 results.");
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].provider_id, "pubmed");
+        assert_eq!(runs[0].tool_name, "search_pubmed");
+        assert_eq!(runs[0].query, "stroke rehabilitation");
+        assert_eq!(runs[0].status, SearchRunStatus::Succeeded);
+        assert_eq!(runs[0].result_count, Some(2));
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[tokio::test]

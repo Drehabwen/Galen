@@ -787,7 +787,8 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
                 tool.name,
                 serde_json::to_string(&input).unwrap_or_else(|_| tool.input_json.clone())
             );
-            let cacheable = registry.is_write_tool(&tool.name) == Some(false);
+            let cacheable = registry.is_write_tool(&tool.name) == Some(false)
+                && crate::tools::research::recognized_builtin_search(&tool.name).is_none();
             let cached = cacheable
                 .then(|| readonly_tool_cache.get(&cache_key).cloned())
                 .flatten();

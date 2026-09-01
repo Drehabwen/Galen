@@ -193,12 +193,14 @@ pub fn resolve_tool_route(
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CallToolResult {
     content: Vec<McpContent>,
     #[allow(dead_code)]
     is_error: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    structured_content: Option<Value>,
 }
 
 impl CallToolResult {
@@ -228,7 +230,7 @@ impl CallToolResult {
 }
 
 #[allow(dead_code)] // content_type/resource are protocol fields kept for completeness
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct McpContent {
     #[serde(rename = "type")]
     content_type: String,
@@ -236,6 +238,20 @@ struct McpContent {
     text: Option<String>,
     #[serde(default)]
     resource: Option<Value>,
+}
+
+pub(crate) struct McpToolOutcome {
+    pub result: Result<String, McpError>,
+    pub raw_output: Option<Value>,
+}
+
+impl McpToolOutcome {
+    fn failed(error: McpError) -> Self {
+        Self {
+            result: Err(error),
+            raw_output: None,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -450,7 +466,11 @@ impl McpServer {
         tool_name: &str,
         arguments: Value,
     ) -> Result<String, McpError> {
-        let result: CallToolResult = self
+        self.call_tool_observed(tool_name, arguments).await.result
+    }
+
+    async fn call_tool_observed(&mut self, tool_name: &str, arguments: Value) -> McpToolOutcome {
+        let raw_output: Value = match self
             .call(
                 "tools/call",
                 Some(serde_json::json!({
@@ -458,9 +478,18 @@ impl McpServer {
                     "arguments": arguments,
                 })),
             )
-            .await?;
-
-        result.into_text()
+            .await
+        {
+            Ok(raw_output) => raw_output,
+            Err(error) => return McpToolOutcome::failed(error),
+        };
+        let result = serde_json::from_value::<CallToolResult>(raw_output.clone())
+            .map_err(|error| McpError::Deserialize(format!("{}: {error}", self.name)))
+            .and_then(CallToolResult::into_text);
+        McpToolOutcome {
+            result,
+            raw_output: Some(raw_output),
+        }
     }
 
     /// Return a copy of the discovered tools.
@@ -533,11 +562,22 @@ impl McpServerRegistry {
         tool_name: &str,
         arguments: Value,
     ) -> Result<String, McpError> {
+        self.call_tool_observed(server_name, tool_name, arguments)
+            .await
+            .result
+    }
+
+    pub(crate) async fn call_tool_observed(
+        &self,
+        server_name: &str,
+        tool_name: &str,
+        arguments: Value,
+    ) -> McpToolOutcome {
         for server in &self.servers {
             let s = server.lock().await;
             if s.name == server_name {
                 if s.status != McpConnectionStatus::Connected {
-                    return Err(McpError::Protocol(
+                    return McpToolOutcome::failed(McpError::Protocol(
                         -1,
                         format!(
                             "server '{server_name}' is not connected (status: {})",
@@ -546,16 +586,16 @@ impl McpServerRegistry {
                     ));
                 }
                 if !s.tools.iter().any(|t| t.name == tool_name) {
-                    return Err(McpError::NotFound(format!(
+                    return McpToolOutcome::failed(McpError::NotFound(format!(
                         "tool '{tool_name}' not found on server '{server_name}'"
                     )));
                 }
                 drop(s);
                 let mut s = server.lock().await;
-                return s.call_tool(tool_name, arguments).await;
+                return s.call_tool_observed(tool_name, arguments).await;
             }
         }
-        Err(McpError::NotFound(format!(
+        McpToolOutcome::failed(McpError::NotFound(format!(
             "server '{server_name}' not found"
         )))
     }
@@ -819,6 +859,93 @@ pub async fn connect_configured_servers() -> McpServerRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::modes::ChatMode;
+    use crate::search_run::{load_search_runs, SearchErrorClass, SearchRunStatus};
+    use crate::tools::{ToolContext, ToolRegistry};
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_workspace(tag: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "galen-mcp-search-run-{tag}-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    fn active_task(root: &Path) -> String {
+        crate::research_task::create_task(
+            root,
+            "task-1".into(),
+            "test MCP search recording".into(),
+            Vec::new(),
+        )
+        .unwrap()
+        .task_id
+    }
+
+    fn fixture_child(response: &str) -> Child {
+        #[cfg(windows)]
+        let mut command = {
+            let escaped = response.replace('`', "``").replace('"', "`\"");
+            let mut command = Command::new("powershell");
+            command.args([
+                "-NoProfile",
+                "-Command",
+                &format!(
+                    "$null = [Console]::In.ReadLine(); [Console]::Out.WriteLine(\"{escaped}\")"
+                ),
+            ]);
+            command
+        };
+        #[cfg(not(windows))]
+        let mut command = {
+            let escaped = response.replace('\'', "'\\''");
+            let mut command = Command::new("sh");
+            command.args(["-c", &format!("read line; printf '%s\\n' '{escaped}'")]);
+            command
+        };
+        command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap()
+    }
+
+    fn fixture_server(status: McpConnectionStatus, response: Option<&str>) -> McpServer {
+        let mut child = fixture_child(response.unwrap_or("{}"));
+        let stdin = child.stdin.take().unwrap();
+        let stdout = child.stdout.take().unwrap();
+        McpServer {
+            name: "crossref".into(),
+            status,
+            stdin: Arc::new(Mutex::new(stdin)),
+            stdout: Arc::new(Mutex::new(BufReader::new(stdout))),
+            _child: Some(child),
+            next_id: Arc::new(Mutex::new(1)),
+            tools: vec![McpTool {
+                name: "crossref_search_works".into(),
+                description: None,
+                input_schema: Some(serde_json::json!({"type": "object"})),
+            }],
+        }
+    }
+
+    fn search_context(root: PathBuf) -> ToolContext {
+        let mut ctx = ToolContext::new(
+            Arc::new(medical_core::MedicalCore::new(None)),
+            std::sync::Mutex::new(Some(root)),
+        );
+        ctx.mode = ChatMode::Auto;
+        ctx
+    }
 
     #[test]
     fn mcp_error_display() {
@@ -1013,6 +1140,88 @@ mod tests {
         assert!(reg.is_empty());
         assert_eq!(reg.len(), 0);
         assert!(reg.servers().is_empty());
+    }
+
+    #[tokio::test]
+    async fn resolved_crossref_failure_appends_one_terminal_search_run() {
+        // Losing resolved MCP identity or returning before recording must fail this test.
+        let root = temp_workspace("crossref-failure");
+        let task_id = active_task(&root);
+        let response = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "content": [{"type": "text", "text": "rate limited"}],
+                "isError": true
+            }
+        })
+        .to_string();
+        let mut registry = ToolRegistry::new();
+        registry.load_mcp_from_cache(vec![Arc::new(Mutex::new(fixture_server(
+            McpConnectionStatus::Connected,
+            Some(&response),
+        )))]);
+        let input = serde_json::json!({"query": "stroke"});
+
+        let result = registry
+            .execute_dynamic(
+                "mcp__crossref__crossref_search_works",
+                input,
+                &search_context(root.clone()),
+            )
+            .await;
+        let runs = load_search_runs(&root, &task_id).unwrap();
+
+        assert_eq!(result.unwrap_err(), "MCP error [-32000]: rate limited");
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].provider_id, "crossref");
+        assert_eq!(runs[0].status, SearchRunStatus::Failed);
+        assert_eq!(runs[0].result_count, None);
+        assert_eq!(runs[0].error_class, Some(SearchErrorClass::RateLimited));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn resolved_crossref_zero_result_success_appends_one_terminal_search_run() {
+        // Treating an empty structured result as failure, or appending twice, must fail this test.
+        let root = temp_workspace("crossref-zero");
+        let task_id = active_task(&root);
+        let response = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "content": [{"type": "text", "text": "{\"items\":[]}"}],
+                "structuredContent": {"items": []},
+                "isError": false
+            }
+        })
+        .to_string();
+        let mut registry = ToolRegistry::new();
+        registry.load_mcp_from_cache(vec![Arc::new(Mutex::new(fixture_server(
+            McpConnectionStatus::Connected,
+            Some(&response),
+        )))]);
+        let input = serde_json::json!({"query": "no matching works"});
+
+        let result = registry
+            .execute_dynamic(
+                "mcp__crossref__crossref_search_works",
+                input,
+                &search_context(root.clone()),
+            )
+            .await;
+        let runs = load_search_runs(&root, &task_id).unwrap();
+
+        assert_eq!(result.unwrap(), r#"{"items":[]}"#);
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].provider_id, "crossref");
+        assert_eq!(runs[0].status, SearchRunStatus::Succeeded);
+        assert_eq!(runs[0].result_count, Some(0));
+        assert_eq!(
+            runs[0].raw_result_hash.as_str(),
+            "a307cc6ebd7b03f3d581a0b146b27ec213e6f8a72d4ce3ddafb93845db9f92c8"
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
