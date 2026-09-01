@@ -408,6 +408,31 @@ fn snapshot_search_scope(ctx: &ToolContext) -> Result<SearchRunScope, String> {
     Ok(SearchRunScope { workspace, task_id })
 }
 
+#[derive(Debug, Clone)]
+enum DeclaredSearchOutcome {
+    Failed(crate::search_run::SearchErrorClass),
+    Partial(crate::search_run::SearchErrorClass),
+}
+
+fn declared_search_outcome(raw_output: Option<&Value>) -> Option<DeclaredSearchOutcome> {
+    let structured = raw_output?.get("structuredContent")?;
+    let status = structured.get("status")?.as_str()?.to_ascii_lowercase();
+    let error_class = structured
+        .get("error")
+        .and_then(|error| match error {
+            Value::String(message) => Some(message.as_str()),
+            Value::Object(_) => error.get("message").and_then(Value::as_str),
+            _ => None,
+        })
+        .map(crate::search_run::SearchErrorClass::classify)
+        .unwrap_or(crate::search_run::SearchErrorClass::Other);
+    match status.as_str() {
+        "partial" => Some(DeclaredSearchOutcome::Partial(error_class)),
+        "failed" | "failure" | "error" => Some(DeclaredSearchOutcome::Failed(error_class)),
+        _ => None,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn record_search_run(
     scope: &SearchRunScope,
@@ -431,27 +456,10 @@ fn record_search_run(
             Err(error) => error.as_bytes().to_vec(),
         });
     let raw_result_hash = format!("{:x}", Sha256::digest(hash_input));
-    let run = match result {
-        Ok(_) => {
-            let result_count =
-                observed_count.or_else(|| raw_output.and_then(|raw| search.result_count_from(raw)));
-            let mut run = crate::search_run::SearchRun::succeeded(
-                scope.task_id.clone(),
-                search.provider_id,
-                tool_name,
-                &query,
-                arguments.clone(),
-                started_at.to_string(),
-                finished_at.to_string(),
-                result_count.unwrap_or_default(),
-                raw_result_hash,
-            )?;
-            if result_count.is_none() {
-                run.result_count = None;
-            }
-            run
-        }
-        Err(error) => crate::search_run::SearchRun::failed(
+    let result_count =
+        observed_count.or_else(|| raw_output.and_then(|raw| search.result_count_from(raw)));
+    let run = match declared_search_outcome(raw_output) {
+        Some(DeclaredSearchOutcome::Partial(error_class)) => crate::search_run::SearchRun::partial(
             scope.task_id.clone(),
             search.provider_id,
             tool_name,
@@ -459,9 +467,51 @@ fn record_search_run(
             arguments.clone(),
             started_at.to_string(),
             finished_at.to_string(),
-            crate::search_run::SearchErrorClass::classify(error),
+            result_count,
+            error_class,
             raw_result_hash,
         )?,
+        Some(DeclaredSearchOutcome::Failed(error_class)) => crate::search_run::SearchRun::failed(
+            scope.task_id.clone(),
+            search.provider_id,
+            tool_name,
+            &query,
+            arguments.clone(),
+            started_at.to_string(),
+            finished_at.to_string(),
+            error_class,
+            raw_result_hash,
+        )?,
+        None => match result {
+            Ok(_) => {
+                let mut run = crate::search_run::SearchRun::succeeded(
+                    scope.task_id.clone(),
+                    search.provider_id,
+                    tool_name,
+                    &query,
+                    arguments.clone(),
+                    started_at.to_string(),
+                    finished_at.to_string(),
+                    result_count.unwrap_or_default(),
+                    raw_result_hash,
+                )?;
+                if result_count.is_none() {
+                    run.result_count = None;
+                }
+                run
+            }
+            Err(error) => crate::search_run::SearchRun::failed(
+                scope.task_id.clone(),
+                search.provider_id,
+                tool_name,
+                &query,
+                arguments.clone(),
+                started_at.to_string(),
+                finished_at.to_string(),
+                crate::search_run::SearchErrorClass::classify(error),
+                raw_result_hash,
+            )?,
+        },
     };
     crate::search_run::append_search_run(&scope.workspace, &run)
 }
@@ -732,6 +782,82 @@ mod tests {
         assert_eq!(runs[0].query, "stroke rehabilitation");
         assert_eq!(runs[0].status, SearchRunStatus::Succeeded);
         assert_eq!(runs[0].result_count, Some(2));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn structured_mcp_partial_with_zero_records_is_not_recorded_as_succeeded() {
+        // Treating a provider-declared partial response as success hides an incomplete search.
+        let root = temp_workspace("mcp-partial");
+        let task_id = active_task(&root);
+        let scope = SearchRunScope {
+            workspace: root.clone(),
+            task_id: task_id.clone(),
+        };
+        let search = research::recognized_mcp_search("cnki", "cnki_structured_search").unwrap();
+        let arguments = serde_json::json!({"conditions": {"keyword": "stroke rehabilitation"}});
+        let raw_output = serde_json::json!({
+            "structuredContent": {
+                "status": "partial",
+                "results": []
+            }
+        });
+
+        record_search_run(
+            &scope,
+            search,
+            "cnki_structured_search",
+            &arguments,
+            1,
+            &Ok("provider returned partial results".into()),
+            Some(&raw_output),
+            None,
+            None,
+        )
+        .unwrap();
+
+        let runs = load_search_runs(&root, &task_id).unwrap();
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].status, SearchRunStatus::Partial);
+        assert_eq!(runs[0].result_count, Some(0));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn structured_mcp_failure_is_not_recorded_as_succeeded_zero_results() {
+        // A provider-declared failure must not look like an empty but successful search.
+        let root = temp_workspace("mcp-failed");
+        let task_id = active_task(&root);
+        let scope = SearchRunScope {
+            workspace: root.clone(),
+            task_id: task_id.clone(),
+        };
+        let search = research::recognized_mcp_search("cnki", "cnki_structured_search").unwrap();
+        let arguments = serde_json::json!({"conditions": {"keyword": "stroke rehabilitation"}});
+        let raw_output = serde_json::json!({
+            "structuredContent": {
+                "status": "failed",
+                "results": []
+            }
+        });
+
+        record_search_run(
+            &scope,
+            search,
+            "cnki_structured_search",
+            &arguments,
+            1,
+            &Ok("provider returned a failure payload".into()),
+            Some(&raw_output),
+            None,
+            None,
+        )
+        .unwrap();
+
+        let runs = load_search_runs(&root, &task_id).unwrap();
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].status, SearchRunStatus::Failed);
+        assert_eq!(runs[0].result_count, None);
         let _ = std::fs::remove_dir_all(root);
     }
 
