@@ -200,6 +200,11 @@ pub struct ForbiddenOutcome {
     pub tools: Vec<String>,
     #[serde(default)]
     pub response_patterns: Vec<String>,
+    /// Patterns that must not appear anywhere in the generated workspace
+    /// output. Unlike `response_patterns`, this protects deliverables rather
+    /// than only the model's final status message.
+    #[serde(default)]
+    pub artifact_patterns: Vec<String>,
     /// Evidence IDs that must neither be retrieved nor cited.
     #[serde(default)]
     pub evidence_ids: Vec<String>,
@@ -211,6 +216,7 @@ impl Default for ForbiddenOutcome {
             repeated_call_limit: default_repeat_limit(),
             tools: Vec::new(),
             response_patterns: Vec::new(),
+            artifact_patterns: Vec::new(),
             evidence_ids: Vec::new(),
         }
     }
@@ -653,6 +659,13 @@ impl RunRecord {
                 format!("forbidden_response_pattern:{pattern}"),
                 !observation.response.contains(pattern),
                 "checked final response".to_string(),
+            );
+        }
+        for pattern in &case.forbidden.artifact_patterns {
+            add(
+                format!("forbidden_artifact_pattern:{pattern}"),
+                !searchable.contains(pattern),
+                "checked workspace deliverables".to_string(),
             );
         }
 
@@ -2130,6 +2143,37 @@ mod tests {
         );
         assert!(!record.hard_gates_passed);
         assert_eq!(record.tools.max_repeat, 3);
+    }
+
+    #[test]
+    fn forbidden_artifact_pattern_fails_when_deliverable_invents_a_fact() {
+        let workspace = std::env::temp_dir().join("galen-eval-artifact-pattern-test");
+        let output = workspace.join("output");
+        std::fs::create_dir_all(&output).unwrap();
+        std::fs::write(output.join("report.md"), "人口学：28 岁男性").unwrap();
+        let mut value = case();
+        value.required.artifacts = vec!["output/report.md".to_string()];
+        value.forbidden.artifact_patterns = vec!["男性".to_string()];
+        let summary = summary();
+        let record = RunRecord::evaluate(
+            &value,
+            RunObservation {
+                commit: "abc",
+                model: "model",
+                run_index: 1,
+                run_ok: true,
+                response: "FMA-UE",
+                summary: &summary,
+                traces: &[],
+                workspace: &workspace,
+                summary_field_coverage: None,
+            },
+        );
+        assert!(!record.hard_gates_passed);
+        assert!(record.assertions.iter().any(|assertion| {
+            assertion.name == "forbidden_artifact_pattern:男性" && !assertion.pass
+        }));
+        let _ = std::fs::remove_dir_all(workspace);
     }
 
     #[test]
