@@ -64,6 +64,18 @@ pub(crate) fn build_turn_context(
     let evidence = workspace_root_path(workspace_root)
         .map(|root| crate::evidence::evidence_chain_summary(&root, 8))
         .unwrap_or_default();
+    let literature_coverage = match workspace_root_path(workspace_root) {
+        Some(root) => {
+            let providers = crate::commands::configured_literature_providers();
+            match crate::commands::literature_coverage_for_workspace(&root, &providers) {
+                Ok(coverage) => render_literature_coverage_context(&coverage),
+                Err(_) => render_literature_coverage_unavailable_context(),
+            }
+        }
+        None => render_literature_coverage_context(
+            &crate::commands::literature_coverage_from_runs(None, &[], &[]),
+        ),
+    };
     let resume = if first_turn {
         resume_protocol(workspace_root)
     } else {
@@ -125,8 +137,51 @@ pub(crate) fn build_turn_context(
          写完 .typ 后立即用 typst compile 验证，报错则修复重试。")
     };
     format!(
-        "{mode_policy}\n\n{opening}{skills}{execution_policy}\n\n## 当前工作区\n{workspace}\n\n## 当前科研环境\n{env_summary}\n\n{plan}\n\n{memory}{evidence}{resume}{plan_format}"
+        "{mode_policy}\n\n{opening}{skills}{execution_policy}\n\n## 当前工作区\n{workspace}\n\n## 当前科研环境\n{env_summary}\n\n{plan}\n\n{memory}{evidence}\n\n{literature_coverage}{resume}{plan_format}"
     )
+}
+
+pub(crate) fn render_literature_coverage_context(
+    coverage: &crate::commands::LiteratureCoverageResponse,
+) -> String {
+    let mut lines = vec!["## Literature coverage".to_string()];
+    if coverage.task_id.is_none() {
+        lines.push(
+            "- No active research task; task-scoped literature coverage is unavailable."
+                .to_string(),
+        );
+    }
+    for provider in &coverage.providers {
+        let detail = match provider.state {
+            crate::search_run::CoverageState::Searched => match provider.result_count {
+                Some(count) => format!("searched ({count} results)"),
+                None => "searched (result count unavailable)".to_string(),
+            },
+            crate::search_run::CoverageState::Failed if provider.provider_id == "cnki" => {
+                "failed; do not infer absence of Chinese evidence".to_string()
+            }
+            crate::search_run::CoverageState::Failed => "failed".to_string(),
+            crate::search_run::CoverageState::ConnectedNotSearched => "not searched".to_string(),
+            crate::search_run::CoverageState::ConfiguredDisabled => "disabled".to_string(),
+            crate::search_run::CoverageState::Unavailable if provider.provider_id == "cnki" => {
+                "unavailable; do not infer absence of Chinese evidence".to_string()
+            }
+            crate::search_run::CoverageState::Unavailable => "unavailable".to_string(),
+            crate::search_run::CoverageState::NotConfigured => "not configured".to_string(),
+        };
+        lines.push(format!("- {}: {detail}", provider.display_name));
+    }
+    if let Some(limitation) = &coverage.limitation {
+        lines.push(format!("- Coverage limitation: {limitation}"));
+    }
+    lines.join("\n")
+}
+
+fn render_literature_coverage_unavailable_context() -> String {
+    "## Literature coverage\n\
+     - Literature coverage is unavailable; task-scoped search history could not be read.\n\
+     - Coverage limitation: Final claims must say \"based on searched providers\" and must not imply comprehensive coverage."
+        .to_string()
 }
 
 /// Keep tool evidence useful without replaying unbounded logs or entire data

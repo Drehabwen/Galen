@@ -11,14 +11,174 @@ use crate::workspace::WorkspaceConfig;
 use api::{InputContentBlock, InputMessage, MessageRequest};
 use medical_core::clinical::ClinicalCaseInput;
 
-pub mod workspace;
 pub mod rehab;
+pub mod workspace;
 
 pub struct AppState {
     pub backend: Mutex<ChatBackend>,
     pub ws_config: Mutex<WorkspaceConfig>,
     pub mode: Mutex<ChatMode>,
     pub persona: Mutex<crate::personas::Persona>,
+}
+
+/// A deliberately narrow, presentation-ready projection of one literature
+/// provider. Full SearchRun records and MCP configuration never cross the
+/// WebView boundary.
+#[derive(Debug, Clone, serde::Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LiteratureProviderCoverage {
+    pub provider_id: String,
+    pub display_name: String,
+    pub state: crate::search_run::CoverageState,
+    pub has_successful_history: bool,
+    pub latest_query: Option<String>,
+    pub latest_finished_at: Option<String>,
+    pub result_count: Option<usize>,
+    pub error_class: Option<crate::search_run::SearchErrorClass>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LiteratureCoverageResponse {
+    pub task_id: Option<String>,
+    pub providers: Vec<LiteratureProviderCoverage>,
+    pub has_limitations: bool,
+    pub limitation: Option<String>,
+}
+
+const LITERATURE_PROVIDER_IDS: &[&str] = &["pubmed", "crossref", "semantic-scholar", "cnki"];
+const MAX_COVERAGE_QUERY_CHARS: usize = 240;
+
+fn literature_provider_name(provider_id: &str) -> String {
+    match provider_id {
+        "pubmed" => "PubMed".to_string(),
+        "crossref" => "Crossref".to_string(),
+        "semantic-scholar" => "Semantic Scholar".to_string(),
+        "cnki" => "CNKI".to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn bounded_query_summary(query: Option<&str>) -> Option<String> {
+    query.map(|query| {
+        if query.chars().count() <= MAX_COVERAGE_QUERY_CHARS {
+            query.to_string()
+        } else {
+            let mut summary: String = query.chars().take(MAX_COVERAGE_QUERY_CHARS).collect();
+            summary.push('…');
+            summary
+        }
+    })
+}
+
+pub(crate) fn configured_literature_providers() -> Vec<crate::search_run::ProviderDescriptor> {
+    let config = crate::mcp_client::McpConfig::with_builtin_catalog(
+        crate::mcp_client::McpConfig::load().unwrap_or_default(),
+    );
+    LITERATURE_PROVIDER_IDS
+        .iter()
+        .map(|provider_id| {
+            if *provider_id == "pubmed" {
+                return crate::search_run::ProviderDescriptor::configured(*provider_id, true, true);
+            }
+            match config.mcp_servers.get(*provider_id) {
+                Some(server) => crate::search_run::ProviderDescriptor::configured(
+                    *provider_id,
+                    server.enabled,
+                    false,
+                ),
+                None => crate::search_run::ProviderDescriptor::not_configured(*provider_id),
+            }
+        })
+        .collect()
+}
+
+pub(crate) fn literature_coverage_from_runs(
+    task_id: Option<&str>,
+    providers: &[crate::search_run::ProviderDescriptor],
+    runs: &[crate::search_run::SearchRun],
+) -> LiteratureCoverageResponse {
+    let observed_providers: Vec<_> = providers
+        .iter()
+        .cloned()
+        .map(|mut provider| {
+            if provider.configured
+                && provider.enabled
+                && runs
+                    .iter()
+                    .any(|run| run.provider_id == provider.provider_id)
+            {
+                // A durable terminal attempt is enough to derive searched or
+                // failed state without claiming a current live connection.
+                provider.connected = true;
+            }
+            provider
+        })
+        .collect();
+    let coverage = crate::search_run::derive_coverage(&observed_providers, runs);
+    let providers: Vec<_> = observed_providers
+        .iter()
+        .filter_map(|descriptor| coverage.get(&descriptor.provider_id))
+        .map(|provider| LiteratureProviderCoverage {
+            provider_id: provider.provider_id.clone(),
+            display_name: literature_provider_name(&provider.provider_id),
+            state: provider.state.clone(),
+            has_successful_history: provider.has_successful_history,
+            latest_query: bounded_query_summary(provider.latest_query.as_deref()),
+            latest_finished_at: provider.latest_finished_at.clone(),
+            result_count: provider.result_count,
+            error_class: provider.error_class.clone(),
+        })
+        .collect();
+    let has_limitations = task_id.is_none()
+        || providers.iter().any(|provider| {
+            !matches!(
+                provider.state,
+                crate::search_run::CoverageState::Searched
+                    | crate::search_run::CoverageState::NotConfigured
+            )
+        });
+    LiteratureCoverageResponse {
+        task_id: task_id.map(str::to_string),
+        providers,
+        has_limitations,
+        limitation: has_limitations.then(|| {
+            "One or more configured literature sources were not successfully searched. Final claims must say \"based on searched providers\" and must not imply comprehensive coverage."
+                .to_string()
+        }),
+    }
+}
+
+pub(crate) fn literature_coverage_for_workspace(
+    workspace_root: &std::path::Path,
+    providers: &[crate::search_run::ProviderDescriptor],
+) -> Result<LiteratureCoverageResponse, String> {
+    let Some(task) = crate::research_task::load_active_task(workspace_root)? else {
+        return Ok(literature_coverage_from_runs(None, providers, &[]));
+    };
+    let runs = crate::search_run::load_search_runs(workspace_root, &task.task_id)?;
+    Ok(literature_coverage_from_runs(
+        Some(&task.task_id),
+        providers,
+        &runs,
+    ))
+}
+
+/// Return coverage only for the host-selected workspace and its active task.
+/// No WebView-supplied path or task identifier is accepted.
+#[tauri::command]
+pub fn get_literature_coverage(
+    state: State<AppState>,
+) -> Result<LiteratureCoverageResponse, String> {
+    let workspace_root = {
+        let backend = lock_mutex(&state.backend)?;
+        backend.get_workspace_root()
+    };
+    let providers = configured_literature_providers();
+    match workspace_root {
+        Some(root) => literature_coverage_for_workspace(&root, &providers),
+        None => Ok(literature_coverage_from_runs(None, &providers, &[])),
+    }
 }
 
 /// Lock a std::sync::Mutex and map the poison error to a String.

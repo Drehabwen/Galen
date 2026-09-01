@@ -18,6 +18,25 @@ mod context_tests {
         Mutex::new(Some(dir))
     }
 
+    fn literature_workspace(tag: &str) -> (Mutex<Option<PathBuf>>, PathBuf, String) {
+        let workspace = tmp_ws(tag, &[]);
+        let root = workspace.lock().unwrap().clone().unwrap();
+        let task = crate::research_task::create_task(
+            &root,
+            "Stroke rehabilitation review".to_string(),
+            "Synthesize the literature".to_string(),
+            Vec::new(),
+        )
+        .unwrap();
+        (workspace, root, task.task_id)
+    }
+
+    fn append_literature_run(root: &std::path::Path, run: crate::search_run::SearchRun) {
+        crate::search_run::append_search_run(root, &run).unwrap();
+    }
+
+    const TEST_HASH: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
     #[test]
     fn memory_short_is_injected_fully() {
         let ws = tmp_ws(
@@ -370,6 +389,259 @@ mod context_tests {
         let contract = compile_task_contract(model_router::TaskKind::QuickLookup, prompt);
         assert_ne!(contract.class, TaskClass::DirectAnswer);
         assert!(!contract.disable_deep_reasoning);
+    }
+
+    #[test]
+    fn literature_coverage_renders_searched_zero_and_cnki_failure_truthfully() {
+        // Conflating a zero-result success with failure, or a CNKI failure with
+        // evidence absence, would make the synthesis boundary actively false.
+        let providers = vec![
+            crate::search_run::ProviderDescriptor::configured("pubmed", true, true),
+            crate::search_run::ProviderDescriptor::configured("cnki", true, true),
+        ];
+        let pubmed = crate::search_run::SearchRun::succeeded(
+            "task-1",
+            "pubmed",
+            "search_pubmed",
+            "stroke rehabilitation",
+            serde_json::json!({"query": "stroke rehabilitation"}),
+            "100",
+            "200",
+            0,
+            TEST_HASH,
+        )
+        .unwrap();
+        let cnki = crate::search_run::SearchRun::failed(
+            "task-1",
+            "cnki",
+            "cnki_search",
+            "脑卒中康复",
+            serde_json::json!({"query": "脑卒中康复"}),
+            "100",
+            "210",
+            crate::search_run::SearchErrorClass::Unavailable,
+            TEST_HASH,
+        )
+        .unwrap();
+        let coverage = crate::commands::literature_coverage_from_runs(
+            Some("task-1"),
+            &providers,
+            &[pubmed, cnki],
+        );
+
+        let prompt = render_literature_coverage_context(&coverage);
+
+        assert!(prompt.contains("## Literature coverage"));
+        assert!(prompt.contains("PubMed: searched (0 results)"));
+        assert!(prompt.contains("CNKI: failed; do not infer absence of Chinese evidence"));
+        assert!(prompt.contains("based on searched providers"));
+    }
+
+    #[test]
+    fn complete_configured_coverage_does_not_add_a_limitation_claim() {
+        // Applying the qualifier after every successful configured search
+        // would obscure the meaningful incomplete-coverage boundary.
+        let providers = vec![
+            crate::search_run::ProviderDescriptor::configured("pubmed", true, true),
+            crate::search_run::ProviderDescriptor::not_configured("cnki"),
+        ];
+        let pubmed = crate::search_run::SearchRun::succeeded(
+            "task-1",
+            "pubmed",
+            "search_pubmed",
+            "stroke rehabilitation",
+            serde_json::Value::Null,
+            "100",
+            "200",
+            2,
+            TEST_HASH,
+        )
+        .unwrap();
+        let coverage =
+            crate::commands::literature_coverage_from_runs(Some("task-1"), &providers, &[pubmed]);
+
+        let prompt = render_literature_coverage_context(&coverage);
+
+        assert!(prompt.contains("PubMed: searched (2 results)"));
+        assert!(!prompt.contains("based on searched providers"));
+    }
+
+    #[test]
+    fn direct_answer_keeps_dynamic_coverage_out_but_explicit_literature_intent_gets_it() {
+        // Removing the direct-answer early return would regress the fast path;
+        // omitting coverage from explicit synthesis/search would hide limits.
+        let (workspace, root, task_id) = literature_workspace("coverage_intent_boundary");
+        append_literature_run(
+            &root,
+            crate::search_run::SearchRun::succeeded(
+                &task_id,
+                "pubmed",
+                "search_pubmed",
+                "stroke rehabilitation",
+                serde_json::Value::Null,
+                "100",
+                "200",
+                0,
+                TEST_HASH,
+            )
+            .unwrap(),
+        );
+
+        let direct = build_turn_context(
+            "请用不超过 180 字解释 FMA-UE 的用途。直接回答。",
+            crate::modes::ChatMode::Auto,
+            &workspace,
+            true,
+        );
+        let synthesis = build_turn_context(
+            "请基于现有文献证据简短综合脑卒中康复结论。",
+            crate::modes::ChatMode::Auto,
+            &workspace,
+            true,
+        );
+
+        assert!(!direct.contains("## Literature coverage"));
+        assert!(synthesis.contains("## Literature coverage"));
+        assert!(synthesis.contains("PubMed: searched (0 results)"));
+    }
+
+    #[test]
+    fn coverage_dto_is_task_scoped_and_secret_free_by_construction() {
+        // Returning full configuration or SearchRun objects would expose MCP
+        // environment values, tool arguments, hashes, and internal record IDs.
+        let (_workspace, root, task_id) = literature_workspace("coverage_dto");
+        append_literature_run(
+            &root,
+            crate::search_run::SearchRun::succeeded(
+                &task_id,
+                "pubmed",
+                "search_pubmed",
+                "stroke rehabilitation",
+                serde_json::json!({"apiKey": "must-not-leak"}),
+                "100",
+                "200",
+                0,
+                TEST_HASH,
+            )
+            .unwrap(),
+        );
+        let providers = vec![crate::search_run::ProviderDescriptor::configured(
+            "pubmed", true, true,
+        )];
+
+        let response =
+            crate::commands::literature_coverage_for_workspace(&root, &providers).unwrap();
+        let json = serde_json::to_string(&response).unwrap();
+
+        assert_eq!(response.task_id.as_deref(), Some(task_id.as_str()));
+        assert!(json.contains("\"displayName\":\"PubMed\""));
+        assert!(json.contains("\"resultCount\":0"));
+        for forbidden in [
+            "must-not-leak",
+            "arguments",
+            "rawResultHash",
+            "toolName",
+            "command",
+            "env",
+        ] {
+            assert!(!json.contains(forbidden), "coverage DTO leaked {forbidden}");
+        }
+    }
+
+    #[test]
+    fn unreadable_coverage_is_reported_as_unavailable_not_as_no_active_task() {
+        // Swallowing a ledger error into the no-task fallback would falsely
+        // describe a coverage failure as absence of task-scoped provenance.
+        let (workspace, root, task_id) = literature_workspace("coverage_unreadable");
+        let ledger = root
+            .join(".galen")
+            .join("tasks")
+            .join(task_id)
+            .join("search-runs.jsonl");
+        std::fs::write(ledger, "not-json\n").unwrap();
+
+        let context = build_turn_context(
+            "请综合现有文献证据。",
+            crate::modes::ChatMode::Auto,
+            &workspace,
+            true,
+        );
+
+        assert!(context.contains("Literature coverage is unavailable"));
+        assert!(!context.contains("No active research task"));
+        assert!(context.contains("based on searched providers"));
+    }
+
+    #[test]
+    fn configuration_is_not_misreported_as_a_live_mcp_connection() {
+        // Treating `enabled` as `connected` would make every inspector refresh
+        // claim live availability without observing or probing a connection.
+        let providers = crate::commands::configured_literature_providers();
+
+        for provider in providers
+            .iter()
+            .filter(|provider| provider.provider_id != "pubmed")
+        {
+            assert!(!provider.connected, "{}", provider.provider_id);
+        }
+    }
+
+    #[test]
+    fn durable_terminal_run_remains_authoritative_without_a_live_status_probe() {
+        // Requiring a fresh MCP probe before reading the ledger would either
+        // hide a completed zero-result search or reconnect during UI refresh.
+        let providers = vec![crate::search_run::ProviderDescriptor::configured(
+            "crossref", true, false,
+        )];
+        let run = crate::search_run::SearchRun::succeeded(
+            "task-1",
+            "crossref",
+            "crossref_search_works",
+            "stroke rehabilitation",
+            serde_json::Value::Null,
+            "100",
+            "200",
+            0,
+            TEST_HASH,
+        )
+        .unwrap();
+
+        let coverage =
+            crate::commands::literature_coverage_from_runs(Some("task-1"), &providers, &[run]);
+
+        assert_eq!(
+            coverage.providers[0].state,
+            crate::search_run::CoverageState::Searched
+        );
+        assert_eq!(coverage.providers[0].result_count, Some(0));
+    }
+
+    #[test]
+    fn coverage_query_disclosure_is_bounded() {
+        // A provider can receive a very large query payload; reflecting it in
+        // the inspector DTO would defeat the compact, safe summary boundary.
+        let providers = vec![crate::search_run::ProviderDescriptor::configured(
+            "pubmed", true, true,
+        )];
+        let run = crate::search_run::SearchRun::succeeded(
+            "task-1",
+            "pubmed",
+            "search_pubmed",
+            "x".repeat(2_000),
+            serde_json::Value::Null,
+            "100",
+            "200",
+            1,
+            TEST_HASH,
+        )
+        .unwrap();
+
+        let coverage =
+            crate::commands::literature_coverage_from_runs(Some("task-1"), &providers, &[run]);
+        let query = coverage.providers[0].latest_query.as_deref().unwrap();
+
+        assert!(query.chars().count() <= 241);
+        assert!(query.ends_with('…'));
     }
 
     #[test]

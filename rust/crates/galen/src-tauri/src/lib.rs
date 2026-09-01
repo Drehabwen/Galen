@@ -94,6 +94,7 @@ pub fn run() {
             commands::test_model_connection,
             commands::append_evidence,
             commands::get_evidence,
+            commands::get_literature_coverage,
             commands::get_artifacts,
             commands::create_research_task,
             commands::get_active_research_task,
