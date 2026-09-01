@@ -197,6 +197,10 @@ export default function App() {
               ) : selectedNode ? (
                 <SessionInspectorDrawer
                   node={selectedNode}
+                  backendAvailable={chat.backendAvailable}
+                  workspaceRoot={wsRoot}
+                  taskId={researchTask?.taskId}
+                  coverageRefreshKey={chat.messages.length}
                   onClose={() => setSelectedNode(null)}
                   onEnterSession={execution.enterSession}
                   onApprove={execution.approveNode}

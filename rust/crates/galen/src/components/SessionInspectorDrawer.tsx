@@ -1,13 +1,19 @@
 import { useState } from "react";
 import { Tag, StatusDot, ProgressBar } from "./ui/primitives";
+import { EvidenceCoverageCard } from "./EvidenceCoverageCard";
 import type { SessionNode } from "../domain/sessionTypes";
 import { MOCK_NODES } from "../domain/sessionTypes";
+import { useLiteratureCoverage } from "../hooks/useLiteratureCoverage";
 
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
 interface SessionInspectorDrawerProps {
   node: SessionNode;
+  backendAvailable: boolean;
+  workspaceRoot: string | null;
+  taskId?: string;
+  coverageRefreshKey: number;
   onClose: () => void;
   onEnterSession?: (node: SessionNode) => void;
   onApprove?: (node: SessionNode) => void;
@@ -19,12 +25,22 @@ interface SessionInspectorDrawerProps {
 // ---------------------------------------------------------------------------
 export function SessionInspectorDrawer({
   node,
+  backendAvailable,
+  workspaceRoot,
+  taskId,
+  coverageRefreshKey,
   onClose,
   onEnterSession,
   onApprove,
   onAssign,
 }: SessionInspectorDrawerProps) {
   const [enteredSub, setEnteredSub] = useState<SessionNode | null>(null);
+  const literatureCoverage = useLiteratureCoverage(
+    backendAvailable,
+    workspaceRoot,
+    taskId,
+    coverageRefreshKey,
+  );
 
   // If a sub-session is entered, show its detail view
   if (enteredSub) {
@@ -78,6 +94,8 @@ export function SessionInspectorDrawer({
           <Section title="将执行">
             <p className="session-meta-text">{execForNode(node)}</p>
           </Section>
+
+          <EvidenceCoverageCard {...literatureCoverage} />
 
           {node.riskLevel && (
             <Section title="风险提示">
