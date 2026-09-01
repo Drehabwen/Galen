@@ -496,7 +496,7 @@
   line-height: var(--leading-relaxed);
 }
 .evidence-coverage-limitation { color: var(--warning); }
-.evidence-coverage-error { color: var(--danger); }
+.evidence-coverage-error { color: var(--error); }
 .evidence-coverage-empty { color: var(--text-tertiary); }
 
 /* ── Sub-session items ── */

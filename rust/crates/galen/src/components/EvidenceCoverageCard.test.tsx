@@ -99,6 +99,24 @@ describe("EvidenceCoverageCard", () => {
     expect(screen.getByText("stroke rehabilitation")).toBeTruthy();
   });
 
+  it("does not present an unknown searched result count as zero", () => {
+    render(
+      <EvidenceCoverageCard
+        coverage={{
+          ...coverage,
+          providers: coverage.providers.map((provider) => (
+            provider.providerId === "pubmed"
+              ? { ...provider, resultCount: null }
+              : provider
+          )),
+        }}
+      />,
+    );
+
+    expect(screen.getByText("已检索 · 数量未知")).toBeTruthy();
+    expect(screen.queryByText("已检索 · 0 条")).toBeNull();
+  });
+
   it("does not treat a failed CNKI search as absence of Chinese evidence", () => {
     render(
       <EvidenceCoverageCard

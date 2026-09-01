@@ -78,7 +78,9 @@ export function EvidenceCoverageCard({
 function providerStateLabel(provider: LiteratureProviderCoverage): string {
   switch (provider.state) {
     case "searched":
-      return `已检索 · ${provider.resultCount ?? 0} 条`;
+      return provider.resultCount === null
+        ? "已检索 · 数量未知"
+        : `已检索 · ${provider.resultCount} 条`;
     case "failed":
       return provider.providerId === "cnki"
         ? "失败 · 不代表没有中文证据"
