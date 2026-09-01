@@ -311,6 +311,10 @@ impl ToolRegistry {
         if let Some(tool) = self.tools.get(name) {
             let tool_name = name.to_string();
             let search = research::recognized_builtin_search(name);
+            let scope = match search {
+                Some(_) => Some(snapshot_search_scope(ctx).map_err(provenance_failure)?),
+                None => None,
+            };
             let arguments = input.clone();
             let started_at = epoch_millis();
             let execution = match timeout(TOOL_TIMEOUT, tool.execute_observed(input, ctx)).await {
@@ -320,9 +324,9 @@ impl ToolRegistry {
                     TOOL_TIMEOUT.as_secs()
                 ))),
             };
-            if let Some(search) = search {
-                record_search_run(
-                    ctx,
+            if let (Some(search), Some(scope)) = (search, scope.as_ref()) {
+                if let Err(error) = record_search_run(
+                    scope,
                     search,
                     name,
                     &arguments,
@@ -331,7 +335,9 @@ impl ToolRegistry {
                     execution.raw_output.as_ref(),
                     execution.result_count,
                     execution.query.as_deref(),
-                );
+                ) {
+                    return Err(provenance_failure(error));
+                }
             }
             return execution.result;
         }
@@ -351,6 +357,10 @@ impl ToolRegistry {
             let (server_name, tool_name) = crate::mcp_client::resolve_tool_route(name, &available)
                 .map_err(|e| e.to_string())?;
             let search = research::recognized_mcp_search(&server_name, &tool_name);
+            let scope = match search {
+                Some(_) => Some(snapshot_search_scope(ctx).map_err(provenance_failure)?),
+                None => None,
+            };
             let arguments = input.clone();
             let started_at = epoch_millis();
             let outcome = self
@@ -358,9 +368,9 @@ impl ToolRegistry {
                 .call_tool_observed(&server_name, &tool_name, input)
                 .await;
             let result = outcome.result.map_err(|error| error.to_string());
-            if let Some(search) = search {
-                record_search_run(
-                    ctx,
+            if let (Some(search), Some(scope)) = (search, scope.as_ref()) {
+                if let Err(error) = record_search_run(
+                    scope,
                     search,
                     &tool_name,
                     &arguments,
@@ -369,7 +379,9 @@ impl ToolRegistry {
                     outcome.raw_output.as_ref(),
                     None,
                     None,
-                );
+                ) {
+                    return Err(provenance_failure(error));
+                }
             }
             return result;
         }
@@ -378,9 +390,27 @@ impl ToolRegistry {
     }
 }
 
+struct SearchRunScope {
+    workspace: PathBuf,
+    task_id: String,
+}
+
+fn snapshot_search_scope(ctx: &ToolContext) -> Result<SearchRunScope, String> {
+    let workspace = ctx
+        .workspace_root
+        .lock()
+        .map_err(|error| format!("workspace lock failed: {error}"))?
+        .clone()
+        .ok_or("no workspace selected for literature coverage provenance")?;
+    let task_id = crate::research_task::load_active_task(&workspace)?
+        .ok_or("no active research task for literature coverage provenance")?
+        .task_id;
+    Ok(SearchRunScope { workspace, task_id })
+}
+
 #[allow(clippy::too_many_arguments)]
 fn record_search_run(
-    ctx: &ToolContext,
+    scope: &SearchRunScope,
     search: research::RecognizedSearch,
     tool_name: &str,
     arguments: &Value,
@@ -389,18 +419,7 @@ fn record_search_run(
     raw_output: Option<&Value>,
     observed_count: Option<usize>,
     observed_query: Option<&str>,
-) {
-    let workspace = match ctx.workspace_root.lock() {
-        Ok(root) => root.clone(),
-        Err(_) => return,
-    };
-    let Some(workspace) = workspace else {
-        return;
-    };
-    let task = match crate::research_task::load_active_task(&workspace) {
-        Ok(Some(task)) => task,
-        _ => return,
-    };
+) -> Result<(), String> {
     let finished_at = epoch_millis().max(started_at);
     let query = observed_query
         .map(str::to_string)
@@ -416,8 +435,8 @@ fn record_search_run(
         Ok(_) => {
             let result_count =
                 observed_count.or_else(|| raw_output.and_then(|raw| search.result_count_from(raw)));
-            let mut run = match crate::search_run::SearchRun::succeeded(
-                task.task_id,
+            let mut run = crate::search_run::SearchRun::succeeded(
+                scope.task_id.clone(),
                 search.provider_id,
                 tool_name,
                 &query,
@@ -426,17 +445,14 @@ fn record_search_run(
                 finished_at.to_string(),
                 result_count.unwrap_or_default(),
                 raw_result_hash,
-            ) {
-                Ok(run) => run,
-                Err(_) => return,
-            };
+            )?;
             if result_count.is_none() {
                 run.result_count = None;
             }
             run
         }
-        Err(error) => match crate::search_run::SearchRun::failed(
-            task.task_id,
+        Err(error) => crate::search_run::SearchRun::failed(
+            scope.task_id.clone(),
             search.provider_id,
             tool_name,
             &query,
@@ -445,12 +461,13 @@ fn record_search_run(
             finished_at.to_string(),
             crate::search_run::SearchErrorClass::classify(error),
             raw_result_hash,
-        ) {
-            Ok(run) => run,
-            Err(_) => return,
-        },
+        )?,
     };
-    let _ = crate::search_run::append_search_run(&workspace, &run);
+    crate::search_run::append_search_run(&scope.workspace, &run)
+}
+
+fn provenance_failure(error: String) -> String {
+    format!("Literature coverage provenance could not be recorded: {error}")
 }
 
 fn epoch_millis() -> u128 {
@@ -481,6 +498,8 @@ mod tests {
 
     struct SuccessfulPubMed;
 
+    struct SwitchingPubMed;
+
     #[async_trait]
     impl GalenTool for SuccessfulPubMed {
         fn definition(&self) -> ToolDefinition {
@@ -503,6 +522,50 @@ mod tests {
                 query: None,
             }
         }
+    }
+
+    #[async_trait]
+    impl GalenTool for SwitchingPubMed {
+        fn definition(&self) -> ToolDefinition {
+            ToolDefinition {
+                name: "search_pubmed".into(),
+                description: None,
+                input_schema: serde_json::json!({"type": "object"}),
+            }
+        }
+
+        async fn execute(&self, _input: Value, ctx: &ToolContext) -> Result<String, String> {
+            switch_active_task(ctx)?;
+            Ok("Found 1 result.".into())
+        }
+
+        async fn execute_observed(&self, _input: Value, ctx: &ToolContext) -> ToolExecution {
+            if let Err(error) = switch_active_task(ctx) {
+                return ToolExecution::from_result(Err(error));
+            }
+            ToolExecution {
+                result: Ok("Found 1 result.".into()),
+                raw_output: Some(serde_json::json!([{"pmid": "1"}])),
+                result_count: Some(1),
+                query: None,
+            }
+        }
+    }
+
+    fn switch_active_task(ctx: &ToolContext) -> Result<(), String> {
+        let root = ctx
+            .workspace_root
+            .lock()
+            .map_err(|error| error.to_string())?
+            .clone()
+            .ok_or("missing workspace")?;
+        crate::research_task::create_task(
+            &root,
+            "task-2".into(),
+            "switched while search was in flight".into(),
+            Vec::new(),
+        )?;
+        Ok(())
     }
 
     fn temp_workspace(tag: &str) -> PathBuf {
@@ -669,6 +732,74 @@ mod tests {
         assert_eq!(runs[0].query, "stroke rehabilitation");
         assert_eq!(runs[0].status, SearchRunStatus::Succeeded);
         assert_eq!(runs[0].result_count, Some(2));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn pubmed_success_is_not_reported_when_search_run_append_fails() {
+        // Ignoring append_search_run errors would report provider success without durable coverage.
+        let root = temp_workspace("pubmed-ledger-failure");
+        let task_id = active_task(&root);
+        let ledger_path = root
+            .join(".galen")
+            .join("tasks")
+            .join(&task_id)
+            .join("search-runs.jsonl");
+        std::fs::create_dir_all(&ledger_path).unwrap();
+        let ctx = ToolContext::new(
+            Arc::new(medical_core::MedicalCore::new(None)),
+            Mutex::new(Some(root.clone())),
+        );
+        let mut registry = ToolRegistry::new();
+        registry.register(SuccessfulPubMed);
+
+        let result = registry
+            .execute_dynamic(
+                "search_pubmed",
+                serde_json::json!({"query": "stroke rehabilitation"}),
+                &ctx,
+            )
+            .await;
+
+        let error = result.unwrap_err();
+        assert!(
+            error.starts_with("Literature coverage provenance could not be recorded:"),
+            "{error}"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn in_flight_task_switch_records_search_against_original_task() {
+        // Looking up the active task after dispatch would attach this run to task-2.
+        let root = temp_workspace("pubmed-task-switch");
+        let original_task_id = active_task(&root);
+        let ctx = ToolContext::new(
+            Arc::new(medical_core::MedicalCore::new(None)),
+            Mutex::new(Some(root.clone())),
+        );
+        let mut registry = ToolRegistry::new();
+        registry.register(SwitchingPubMed);
+
+        let result = registry
+            .execute_dynamic(
+                "search_pubmed",
+                serde_json::json!({"query": "stroke rehabilitation"}),
+                &ctx,
+            )
+            .await;
+        let switched_task_id = crate::research_task::load_active_task(&root)
+            .unwrap()
+            .unwrap()
+            .task_id;
+        let original_runs = load_search_runs(&root, &original_task_id).unwrap();
+        let switched_runs = load_search_runs(&root, &switched_task_id).unwrap();
+
+        assert_eq!(result.unwrap(), "Found 1 result.");
+        assert_ne!(switched_task_id, original_task_id);
+        assert_eq!(original_runs.len(), 1);
+        assert_eq!(original_runs[0].task_id, original_task_id);
+        assert!(switched_runs.is_empty());
         let _ = std::fs::remove_dir_all(root);
     }
 
