@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use api::{
@@ -24,6 +24,26 @@ use crate::task_contract::{
     compile_task_contract, is_local_data_task, TaskContract, WorkingMemory,
 };
 use crate::tools::{ToolContext, ToolRegistry};
+
+type McpServerHandle = Arc<tokio::sync::Mutex<crate::mcp_client::McpServer>>;
+
+// Chat setup owns connection creation. Coverage refreshes can only inspect
+// this cache, never spawn a second MCP connection set.
+static MCP_CACHE: OnceLock<Vec<McpServerHandle>> = OnceLock::new();
+
+pub(crate) fn cached_connected_mcp_server_names() -> Vec<String> {
+    MCP_CACHE
+        .get()
+        .into_iter()
+        .flatten()
+        .filter_map(|server| {
+            server.try_lock().ok().and_then(|server| {
+                (server.status == crate::mcp_client::McpConnectionStatus::Connected)
+                    .then(|| server.name.clone())
+            })
+        })
+        .collect()
+}
 
 fn format_api_error(e: &dyn std::error::Error) -> String {
     let msg = e.to_string().to_lowercase();
@@ -221,9 +241,6 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
     // Cache MCP connections globally — connect once, reuse across turns.
     {
         timing_probe("run_chat:mcp_start");
-        use std::sync::OnceLock;
-        static MCP_CACHE: OnceLock<Vec<Arc<tokio::sync::Mutex<crate::mcp_client::McpServer>>>> =
-            OnceLock::new();
         if let Some(cached) = MCP_CACHE.get() {
             registry.load_mcp_from_cache(cached.clone());
         } else {

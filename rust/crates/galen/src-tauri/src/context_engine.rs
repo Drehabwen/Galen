@@ -66,15 +66,25 @@ pub(crate) fn build_turn_context(
         .unwrap_or_default();
     let literature_coverage = match workspace_root_path(workspace_root) {
         Some(root) => {
-            let providers = crate::commands::configured_literature_providers();
-            match crate::commands::literature_coverage_for_workspace(&root, &providers) {
+            let provider_source = crate::commands::configured_literature_providers();
+            match crate::commands::literature_coverage_for_workspace_from_provider_source(
+                &root,
+                &provider_source,
+            ) {
                 Ok(coverage) => render_literature_coverage_context(&coverage),
                 Err(_) => render_literature_coverage_unavailable_context(),
             }
         }
-        None => render_literature_coverage_context(
-            &crate::commands::literature_coverage_from_runs(None, &[], &[]),
-        ),
+        None => {
+            let provider_source = crate::commands::configured_literature_providers();
+            render_literature_coverage_context(
+                &crate::commands::literature_coverage_from_provider_source(
+                    None,
+                    &provider_source,
+                    &[],
+                ),
+            )
+        }
     };
     let resume = if first_turn {
         resume_protocol(workspace_root)

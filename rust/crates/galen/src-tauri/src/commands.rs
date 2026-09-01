@@ -46,6 +46,14 @@ pub struct LiteratureCoverageResponse {
     pub limitation: Option<String>,
 }
 
+/// Internal provider input that preserves the distinction between a missing
+/// configuration (catalog defaults may be used) and an unreadable one.
+#[derive(Debug, Clone)]
+pub(crate) struct LiteratureProviderSource {
+    pub(crate) providers: Vec<crate::search_run::ProviderDescriptor>,
+    pub(crate) configuration_unavailable: bool,
+}
+
 const LITERATURE_PROVIDER_IDS: &[&str] = &["pubmed", "crossref", "semantic-scholar", "cnki"];
 const MAX_COVERAGE_QUERY_CHARS: usize = 240;
 
@@ -71,11 +79,52 @@ fn bounded_query_summary(query: Option<&str>) -> Option<String> {
     })
 }
 
-pub(crate) fn configured_literature_providers() -> Vec<crate::search_run::ProviderDescriptor> {
-    let config = crate::mcp_client::McpConfig::with_builtin_catalog(
-        crate::mcp_client::McpConfig::load().unwrap_or_default(),
-    );
-    LITERATURE_PROVIDER_IDS
+pub(crate) fn read_literature_mcp_config(
+    path: &std::path::Path,
+) -> Result<Option<crate::mcp_client::McpConfig>, ()> {
+    match std::fs::read_to_string(path) {
+        Ok(text) => serde_json::from_str(&text).map(Some).map_err(|_| ()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(_) => Err(()),
+    }
+}
+
+pub(crate) fn literature_provider_source_from_config(
+    config: Result<Option<crate::mcp_client::McpConfig>, ()>,
+    connected_server_names: &[String],
+) -> LiteratureProviderSource {
+    let config = match config {
+        Ok(config) => {
+            crate::mcp_client::McpConfig::with_builtin_catalog(config.unwrap_or_default())
+        }
+        Err(()) => {
+            return LiteratureProviderSource {
+                providers: LITERATURE_PROVIDER_IDS
+                    .iter()
+                    .map(|provider_id| {
+                        if *provider_id == "pubmed" {
+                            crate::search_run::ProviderDescriptor::configured(
+                                *provider_id,
+                                true,
+                                true,
+                            )
+                        } else {
+                            // The provider is part of the known catalog, but
+                            // its user configuration is unavailable. Do not
+                            // treat it as a healthy catalog default.
+                            crate::search_run::ProviderDescriptor::configured(
+                                *provider_id,
+                                true,
+                                false,
+                            )
+                        }
+                    })
+                    .collect(),
+                configuration_unavailable: true,
+            };
+        }
+    };
+    let providers = LITERATURE_PROVIDER_IDS
         .iter()
         .map(|provider_id| {
             if *provider_id == "pubmed" {
@@ -85,12 +134,62 @@ pub(crate) fn configured_literature_providers() -> Vec<crate::search_run::Provid
                 Some(server) => crate::search_run::ProviderDescriptor::configured(
                     *provider_id,
                     server.enabled,
-                    false,
+                    server.enabled
+                        && connected_server_names
+                            .iter()
+                            .any(|name| name == provider_id),
                 ),
                 None => crate::search_run::ProviderDescriptor::not_configured(*provider_id),
             }
         })
-        .collect()
+        .collect();
+    LiteratureProviderSource {
+        providers,
+        configuration_unavailable: false,
+    }
+}
+
+pub(crate) fn configured_literature_providers() -> LiteratureProviderSource {
+    let config = dirs::config_dir()
+        .map(|dir| read_literature_mcp_config(&dir.join("galen").join("mcp_servers.json")))
+        .unwrap_or(Err(()));
+    let connected_server_names = crate::chat_loop::cached_connected_mcp_server_names();
+    literature_provider_source_from_config(config, &connected_server_names)
+}
+
+pub(crate) fn literature_coverage_from_provider_source(
+    task_id: Option<&str>,
+    provider_source: &LiteratureProviderSource,
+    runs: &[crate::search_run::SearchRun],
+) -> LiteratureCoverageResponse {
+    let mut response = literature_coverage_from_runs(task_id, &provider_source.providers, runs);
+    if provider_source.configuration_unavailable {
+        response.has_limitations = true;
+        response.limitation = Some(
+            "Literature provider configuration is unavailable. Final claims must say \"based on searched providers\" and must not imply comprehensive coverage."
+                .to_string(),
+        );
+    }
+    response
+}
+
+pub(crate) fn literature_coverage_for_workspace_from_provider_source(
+    workspace_root: &std::path::Path,
+    provider_source: &LiteratureProviderSource,
+) -> Result<LiteratureCoverageResponse, String> {
+    let Some(task) = crate::research_task::load_active_task(workspace_root)? else {
+        return Ok(literature_coverage_from_provider_source(
+            None,
+            provider_source,
+            &[],
+        ));
+    };
+    let runs = crate::search_run::load_search_runs(workspace_root, &task.task_id)?;
+    Ok(literature_coverage_from_provider_source(
+        Some(&task.task_id),
+        provider_source,
+        &runs,
+    ))
 }
 
 pub(crate) fn literature_coverage_from_runs(
@@ -149,21 +248,6 @@ pub(crate) fn literature_coverage_from_runs(
     }
 }
 
-pub(crate) fn literature_coverage_for_workspace(
-    workspace_root: &std::path::Path,
-    providers: &[crate::search_run::ProviderDescriptor],
-) -> Result<LiteratureCoverageResponse, String> {
-    let Some(task) = crate::research_task::load_active_task(workspace_root)? else {
-        return Ok(literature_coverage_from_runs(None, providers, &[]));
-    };
-    let runs = crate::search_run::load_search_runs(workspace_root, &task.task_id)?;
-    Ok(literature_coverage_from_runs(
-        Some(&task.task_id),
-        providers,
-        &runs,
-    ))
-}
-
 /// Return coverage only for the host-selected workspace and its active task.
 /// No WebView-supplied path or task identifier is accepted.
 #[tauri::command]
@@ -174,10 +258,16 @@ pub fn get_literature_coverage(
         let backend = lock_mutex(&state.backend)?;
         backend.get_workspace_root()
     };
-    let providers = configured_literature_providers();
+    let provider_source = configured_literature_providers();
     match workspace_root {
-        Some(root) => literature_coverage_for_workspace(&root, &providers),
-        None => Ok(literature_coverage_from_runs(None, &providers, &[])),
+        Some(root) => {
+            literature_coverage_for_workspace_from_provider_source(&root, &provider_source)
+        }
+        None => Ok(literature_coverage_from_provider_source(
+            None,
+            &provider_source,
+            &[],
+        )),
     }
 }
 

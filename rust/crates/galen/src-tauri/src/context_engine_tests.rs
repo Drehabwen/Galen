@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod context_tests {
+    use std::collections::HashMap;
     use std::sync::Mutex;
 
     use api::ToolDefinition;
@@ -529,8 +530,15 @@ mod context_tests {
             "pubmed", true, true,
         )];
 
-        let response =
-            crate::commands::literature_coverage_for_workspace(&root, &providers).unwrap();
+        let provider_source = crate::commands::LiteratureProviderSource {
+            providers,
+            configuration_unavailable: false,
+        };
+        let response = crate::commands::literature_coverage_for_workspace_from_provider_source(
+            &root,
+            &provider_source,
+        )
+        .unwrap();
         let json = serde_json::to_string(&response).unwrap();
 
         assert_eq!(response.task_id.as_deref(), Some(task_id.as_str()));
@@ -576,14 +584,161 @@ mod context_tests {
     fn configuration_is_not_misreported_as_a_live_mcp_connection() {
         // Treating `enabled` as `connected` would make every inspector refresh
         // claim live availability without observing or probing a connection.
-        let providers = crate::commands::configured_literature_providers();
+        let provider_source = crate::commands::configured_literature_providers();
 
-        for provider in providers
+        for provider in provider_source
+            .providers
             .iter()
             .filter(|provider| provider.provider_id != "pubmed")
         {
             assert!(!provider.connected, "{}", provider.provider_id);
         }
+    }
+
+    #[test]
+    fn connected_cached_provider_without_a_run_is_connected_not_searched() {
+        // The coverage command must consume an existing connection snapshot
+        // without reconnecting; otherwise this real state is unreachable.
+        let config = crate::mcp_client::McpConfig {
+            mcp_servers: HashMap::from([(
+                "crossref".to_string(),
+                crate::mcp_client::McpServerConfig {
+                    command: "ignored-by-coverage".to_string(),
+                    args: Vec::new(),
+                    env: HashMap::new(),
+                    enabled: true,
+                },
+            )]),
+        };
+        let provider_source = crate::commands::literature_provider_source_from_config(
+            Ok(Some(config)),
+            &["crossref".to_string()],
+        );
+
+        let coverage = crate::commands::literature_coverage_from_provider_source(
+            Some("task-1"),
+            &provider_source,
+            &[],
+        );
+
+        let crossref = coverage
+            .providers
+            .iter()
+            .find(|provider| provider.provider_id == "crossref")
+            .unwrap();
+        assert_eq!(
+            crossref.state,
+            crate::search_run::CoverageState::ConnectedNotSearched
+        );
+    }
+
+    #[test]
+    fn malformed_mcp_config_projects_unavailable_without_defaulting_to_healthy_providers() {
+        // A corrupt user configuration must not be silently reinterpreted as
+        // the healthy built-in catalog, and its raw contents must not cross
+        // the coverage DTO boundary.
+        let config_path = std::env::temp_dir().join(format!(
+            "galen-coverage-malformed-config-{}-{}.json",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::write(&config_path, "{not-json").unwrap();
+
+        let provider_source = crate::commands::literature_provider_source_from_config(
+            crate::commands::read_literature_mcp_config(&config_path),
+            &[],
+        );
+        let _ = std::fs::remove_file(config_path);
+        let coverage = crate::commands::literature_coverage_from_provider_source(
+            Some("task-1"),
+            &provider_source,
+            &[],
+        );
+        let json = serde_json::to_string(&coverage).unwrap();
+
+        assert!(provider_source.configuration_unavailable);
+        assert!(coverage
+            .limitation
+            .as_deref()
+            .unwrap()
+            .contains("configuration"));
+        for provider in coverage
+            .providers
+            .iter()
+            .filter(|provider| provider.provider_id != "pubmed")
+        {
+            assert_eq!(
+                provider.state,
+                crate::search_run::CoverageState::Unavailable
+            );
+        }
+        assert!(!json.contains("mcpServers"));
+        assert!(!json.contains("command"));
+        assert!(!json.contains("env"));
+    }
+
+    #[test]
+    fn explicit_disabled_provider_is_preserved_when_connection_snapshot_is_connected() {
+        // A cached connection observation must not overwrite a user's
+        // disabled configuration, and config internals remain secret-free.
+        let config = crate::mcp_client::McpConfig {
+            mcp_servers: HashMap::from([(
+                "crossref".to_string(),
+                crate::mcp_client::McpServerConfig {
+                    command: "private-runner".to_string(),
+                    args: vec!["private-argument".to_string()],
+                    env: HashMap::from([("API_KEY".to_string(), "must-not-leak".to_string())]),
+                    enabled: false,
+                },
+            )]),
+        };
+        let provider_source = crate::commands::literature_provider_source_from_config(
+            Ok(Some(config)),
+            &["crossref".to_string()],
+        );
+        let coverage = crate::commands::literature_coverage_from_provider_source(
+            Some("task-1"),
+            &provider_source,
+            &[],
+        );
+        let crossref = coverage
+            .providers
+            .iter()
+            .find(|provider| provider.provider_id == "crossref")
+            .unwrap();
+        let json = serde_json::to_string(&coverage).unwrap();
+
+        assert_eq!(
+            crossref.state,
+            crate::search_run::CoverageState::ConfiguredDisabled
+        );
+        for forbidden in ["private-runner", "private-argument", "must-not-leak", "env"] {
+            assert!(!json.contains(forbidden), "coverage DTO leaked {forbidden}");
+        }
+    }
+
+    #[test]
+    fn short_literature_review_request_keeps_coverage_while_ordinary_direct_answer_stays_fast() {
+        let (workspace, _root, _task_id) = literature_workspace("coverage_review_intent");
+
+        let literature = build_turn_context(
+            "请简要回答：综述脑卒中康复结论。",
+            crate::modes::ChatMode::Auto,
+            &workspace,
+            true,
+        );
+        let direct = build_turn_context(
+            "请简要回答：FMA-UE 用于什么？",
+            crate::modes::ChatMode::Auto,
+            &workspace,
+            true,
+        );
+
+        assert!(literature.contains("## Literature coverage"));
+        assert!(!direct.contains("## Literature coverage"));
     }
 
     #[test]

@@ -294,6 +294,7 @@ fn is_direct_answer_task(text: &str) -> bool {
         "查一下",
         "最新",
         "文献",
+        "综述",
         "证据",
         "pubmed",
         "读取",
