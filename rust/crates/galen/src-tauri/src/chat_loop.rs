@@ -195,7 +195,7 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
     let context_started = Instant::now();
     let task_kind = model_router::TaskKind::from_intent(&user_message);
     let task_contract = compile_task_contract(task_kind, &user_message);
-    let system_prompt = build_system_prompt_for_contract(&persona, mode, &task_contract);
+    let mut system_prompt = build_system_prompt_for_contract(&persona, mode, &task_contract);
     // Dynamic state is refreshed every turn while the cache-stable prefix stays unchanged.
     let first_turn = history.is_empty();
     let turn_context = build_turn_context(&user_message, mode, &workspace_root, first_turn);
@@ -949,6 +949,11 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
             role: "user".to_string(),
             content: tool_results,
         });
+
+        // Search tools persist their terminal outcome while executing. Rebuild
+        // the dynamic workspace-backed prompt before the next model request so
+        // the final synthesis sees this turn's actual provider coverage.
+        system_prompt = build_system_prompt_for_contract(&persona, mode, &task_contract);
     }
 
     run_summary.total_ms = run_started.elapsed().as_millis() as u64;

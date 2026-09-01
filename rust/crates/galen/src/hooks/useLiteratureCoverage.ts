@@ -40,7 +40,7 @@ export function useLiteratureCoverage(
   backendAvailable: boolean,
   workspaceRoot: string | null,
   taskId: string | undefined,
-  refreshKey: number,
+  refreshKey: string | number,
 ) {
   const [coverage, setCoverage] = useState<LiteratureCoverage | null>(null);
   const [loading, setLoading] = useState(false);

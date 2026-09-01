@@ -200,7 +200,7 @@ export default function App() {
                   backendAvailable={chat.backendAvailable}
                   workspaceRoot={wsRoot}
                   taskId={researchTask?.taskId}
-                  coverageRefreshKey={chat.messages.length}
+                  coverageRefreshKey={`${chat.messages.length}:${chat.error ?? ""}`}
                   onClose={() => setSelectedNode(null)}
                   onEnterSession={execution.enterSession}
                   onApprove={execution.approveNode}

@@ -13,7 +13,7 @@ interface SessionInspectorDrawerProps {
   backendAvailable: boolean;
   workspaceRoot: string | null;
   taskId?: string;
-  coverageRefreshKey: number;
+  coverageRefreshKey: string | number;
   onClose: () => void;
   onEnterSession?: (node: SessionNode) => void;
   onApprove?: (node: SessionNode) => void;
