@@ -25,8 +25,10 @@ describe("ArtifactMarkdown", () => {
       </ArtifactMarkdown>,
     );
 
-    expect(screen.getByRole("link", { name: "查看来源" }).getAttribute("href"))
-      .toBe("https://example.com/paper");
+    const link = screen.getByRole("link", { name: "查看来源" });
+    expect(link.getAttribute("href")).toBe("https://example.com/paper");
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toBe("noreferrer");
   });
 
   it("turns explicit PMID and DOI identifiers into verification links", () => {

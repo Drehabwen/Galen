@@ -35,7 +35,13 @@ export function ArtifactMarkdown({ children, onOpenArtifact }: ArtifactMarkdownP
       urlTransform={(url) => url.startsWith(ARTIFACT_PROTOCOL) ? url : defaultUrlTransform(url)}
       components={{
         a: ({ href = "", children: label }: { href?: string; children?: ReactNode }) => {
-          if (!href.startsWith(ARTIFACT_PROTOCOL)) return <a href={href}>{label}</a>;
+          if (!href.startsWith(ARTIFACT_PROTOCOL)) {
+            return (
+              <a href={href} target="_blank" rel="noreferrer">
+                {label}
+              </a>
+            );
+          }
           const artifactId = decodeURIComponent(href.slice(ARTIFACT_PROTOCOL.length));
           return (
             <a
