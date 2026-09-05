@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState } from "react";
 import { ArtifactMarkdown, artifactHref } from "./ArtifactMarkdown";
+import type { VerifiableSource } from "./SourceInspector";
 import { StatusDot, Tag, ApprovalCard } from "./ui/primitives";
 import { TokenRing } from "./TokenRing";
 import type { ChatMessage, ChatRunSummary, ModelConfig } from "../types";
@@ -62,6 +63,7 @@ interface ResearchExecutionThreadProps {
   onThinkingLevelChange: (level: string) => void;
   artifacts?: ArtifactRecord[];
   onOpenArtifact?: (artifactId: string) => void;
+  onOpenSource?: (source: VerifiableSource) => void;
   // Callbacks for thread actions
   onApprove?: (messageId: number) => void;
   onReject?: (messageId: number) => void;
@@ -242,6 +244,7 @@ export function ResearchExecutionThread({
   onViewEvidence,
   artifacts = [],
   onOpenArtifact,
+  onOpenSource,
 }: ResearchExecutionThreadProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -306,7 +309,7 @@ export function ResearchExecutionThread({
               <span className="thread-block-role">研究者</span>
             </div>
             <div className="thread-block-body">
-              <ArtifactMarkdown onOpenArtifact={onOpenArtifact}>
+              <ArtifactMarkdown onOpenArtifact={onOpenArtifact} onOpenSource={onOpenSource}>
                 {block.text}
               </ArtifactMarkdown>
             </div>
@@ -320,7 +323,7 @@ export function ResearchExecutionThread({
               <StatusDot tone="active">AI 执行计划</StatusDot>
             </div>
             <div className="thread-block-body">
-              <ArtifactMarkdown onOpenArtifact={onOpenArtifact}>
+              <ArtifactMarkdown onOpenArtifact={onOpenArtifact} onOpenSource={onOpenSource}>
                 {block.text}
               </ArtifactMarkdown>
             </div>
@@ -334,7 +337,7 @@ export function ResearchExecutionThread({
               <Tag type="execution">工具执行</Tag>
             </div>
             <div className="thread-block-body">
-              <ArtifactMarkdown onOpenArtifact={onOpenArtifact}>
+              <ArtifactMarkdown onOpenArtifact={onOpenArtifact} onOpenSource={onOpenSource}>
                 {block.text}
               </ArtifactMarkdown>
             </div>
@@ -348,7 +351,7 @@ export function ResearchExecutionThread({
               <Tag type="status">修订建议</Tag>
             </div>
             <div className="thread-block-body">
-              <ArtifactMarkdown onOpenArtifact={onOpenArtifact}>
+              <ArtifactMarkdown onOpenArtifact={onOpenArtifact} onOpenSource={onOpenSource}>
                 {block.text}
               </ArtifactMarkdown>
             </div>
@@ -382,7 +385,7 @@ export function ResearchExecutionThread({
               </button>
             </div>
             <div className="thread-block-body">
-              <ArtifactMarkdown onOpenArtifact={onOpenArtifact}>
+              <ArtifactMarkdown onOpenArtifact={onOpenArtifact} onOpenSource={onOpenSource}>
                 {block.text}
               </ArtifactMarkdown>
             </div>
@@ -430,7 +433,7 @@ export function ResearchExecutionThread({
               <span className="thread-block-role">Galen</span>
             </div>
             <div className="thread-block-body">
-              <ArtifactMarkdown onOpenArtifact={onOpenArtifact}>
+              <ArtifactMarkdown onOpenArtifact={onOpenArtifact} onOpenSource={onOpenSource}>
                 {block.text}
               </ArtifactMarkdown>
             </div>
@@ -541,7 +544,7 @@ export function ResearchExecutionThread({
                 .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
                 .slice(0, 5)
                 .map((artifact) => (
-                  <ArtifactMarkdown key={artifact.id} onOpenArtifact={onOpenArtifact}>
+                  <ArtifactMarkdown key={artifact.id} onOpenArtifact={onOpenArtifact} onOpenSource={onOpenSource}>
                     {`[预览 ${artifact.path.split(/[/\\]/).pop() ?? artifact.path}](${artifactHref(artifact.id)})`}
                   </ArtifactMarkdown>
                 ))}

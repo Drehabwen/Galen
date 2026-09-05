@@ -1,12 +1,14 @@
 import type { ReactNode } from "react";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { sourceFromLink, type VerifiableSource } from "./SourceInspector";
 
 const ARTIFACT_PROTOCOL = "galen-artifact://";
 
 interface ArtifactMarkdownProps {
   children: string;
   onOpenArtifact?: (artifactId: string) => void;
+  onOpenSource?: (source: VerifiableSource) => void;
 }
 
 export function artifactHref(artifactId: string): string {
@@ -28,7 +30,7 @@ export function linkifyEvidenceIdentifiers(markdown: string): string {
     );
 }
 
-export function ArtifactMarkdown({ children, onOpenArtifact }: ArtifactMarkdownProps) {
+export function ArtifactMarkdown({ children, onOpenArtifact, onOpenSource }: ArtifactMarkdownProps) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
@@ -36,8 +38,18 @@ export function ArtifactMarkdown({ children, onOpenArtifact }: ArtifactMarkdownP
       components={{
         a: ({ href = "", children: label }: { href?: string; children?: ReactNode }) => {
           if (!href.startsWith(ARTIFACT_PROTOCOL)) {
+            const source = sourceFromLink(href, extractLabel(label));
             return (
-              <a href={href} target="_blank" rel="noreferrer">
+              <a
+                href={href}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(event) => {
+                  if (!source || !onOpenSource) return;
+                  event.preventDefault();
+                  onOpenSource(source);
+                }}
+              >
                 {label}
               </a>
             );
@@ -61,4 +73,10 @@ export function ArtifactMarkdown({ children, onOpenArtifact }: ArtifactMarkdownP
       {linkifyEvidenceIdentifiers(children)}
     </ReactMarkdown>
   );
+}
+
+function extractLabel(label: ReactNode): string {
+  if (typeof label === "string" || typeof label === "number") return String(label);
+  if (Array.isArray(label)) return label.map(extractLabel).join("");
+  return "";
 }

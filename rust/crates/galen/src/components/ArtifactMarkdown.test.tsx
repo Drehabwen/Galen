@@ -44,6 +44,23 @@ describe("ArtifactMarkdown", () => {
       .toBe("https://doi.org/10.1000/example.1");
   });
 
+  it("opens a recognized source in the provenance inspector when requested", () => {
+    const onOpenSource = vi.fn();
+    render(
+      <ArtifactMarkdown onOpenSource={onOpenSource}>
+        {"运动功能改善见 PMID: 32946039。"}
+      </ArtifactMarkdown>,
+    );
+
+    fireEvent.click(screen.getByRole("link", { name: "PMID: 32946039" }));
+    expect(onOpenSource).toHaveBeenCalledWith({
+      kind: "pmid",
+      id: "32946039",
+      href: "https://pubmed.ncbi.nlm.nih.gov/32946039/",
+      label: "PMID: 32946039",
+    });
+  });
+
   it("does not turn an unlabelled number into a citation", () => {
     expect(linkifyEvidenceIdentifiers("样本量为 32946039 例")).toBe("样本量为 32946039 例");
   });

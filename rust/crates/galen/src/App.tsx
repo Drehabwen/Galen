@@ -23,6 +23,7 @@ import { AppTopBar } from "./components/AppTopBar";
 import { RehabContextPanel } from "./components/RehabContextPanel";
 import type { WorkbenchView } from "./components/WorkbenchRail";
 import { useRehabContext } from "./hooks/useRehabContext";
+import { SourceInspector, type VerifiableSource } from "./components/SourceInspector";
 
 // ---------------------------------------------------------------------------
 // App
@@ -83,6 +84,7 @@ export default function App() {
   const rehabContext = useRehabContext(chat.backendAvailable, wsRoot);
 
   const [activeView, setActiveView] = useState<WorkbenchView>("daily-workbench");
+  const [sourceInspector, setSourceInspector] = useState<VerifiableSource | null>(null);
 
   const packageName = workspace.name;
   const completedNodes = planNodes.filter((node) => node.status === "completed").length;
@@ -173,6 +175,7 @@ export default function App() {
                   const artifact = delivery.artifacts.find((item) => item.id === artifactId);
                   if (artifact) void delivery.openRegisteredArtifact(artifact);
                 }}
+                onOpenSource={setSourceInspector}
                 onViewEvidence={() => delivery.setCanvasTab("plan")}
               />
             </div>
@@ -195,6 +198,7 @@ export default function App() {
                     execution.closeSession();
                     void delivery.openRegisteredArtifact(artifact);
                   }}
+                  onOpenSource={setSourceInspector}
                 />
               ) : selectedNode ? (
                 <SessionInspectorDrawer
@@ -304,6 +308,10 @@ export default function App() {
           void delivery.openRegisteredArtifact(artifact);
         }}
       />
+
+      {sourceInspector && (
+        <SourceInspector source={sourceInspector} onClose={() => setSourceInspector(null)} />
+      )}
 
       {/* ════ Welcome Wizard ════ */}
       {showWelcome && (

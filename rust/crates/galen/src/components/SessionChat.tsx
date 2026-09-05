@@ -6,6 +6,7 @@ import { StatusDot } from "./ui/primitives";
 import type { ChatMessage } from "../types";
 import type { SessionNode } from "../domain/sessionTypes";
 import type { ArtifactRecord } from "../domain/artifact";
+import type { VerifiableSource } from "./SourceInspector";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -22,6 +23,7 @@ interface SessionChatProps {
   autoRun?: boolean;
   artifacts?: ArtifactRecord[];
   onOpenArtifact?: (artifactId: string) => void;
+  onOpenSource?: (source: VerifiableSource) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -37,6 +39,7 @@ export function SessionChat({
   autoRun,
   artifacts = [],
   onOpenArtifact,
+  onOpenSource,
 }: SessionChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -241,7 +244,7 @@ export function SessionChat({
               {msg.role === "user" ? "你" : "Galen"}
             </div>
             <div className="session-msg-body">
-              <ArtifactMarkdown onOpenArtifact={onOpenArtifact}>{msg.content}</ArtifactMarkdown>
+              <ArtifactMarkdown onOpenArtifact={onOpenArtifact} onOpenSource={onOpenSource}>{msg.content}</ArtifactMarkdown>
             </div>
           </div>
         ))}
@@ -249,7 +252,7 @@ export function SessionChat({
           <div key={artifact.id} className="session-msg session-msg-assistant session-artifact-delivery">
             <div className="session-msg-role">产物已生成</div>
             <div className="session-msg-body">
-              <ArtifactMarkdown onOpenArtifact={onOpenArtifact}>
+              <ArtifactMarkdown onOpenArtifact={onOpenArtifact} onOpenSource={onOpenSource}>
                 {`[预览 ${artifact.path.split(/[/\\]/).pop() ?? artifact.path}](${artifactHref(artifact.id)})`}
               </ArtifactMarkdown>
             </div>
