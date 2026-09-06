@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ResearchDocumentCanvas } from "./ResearchDocumentCanvas";
 import type { ArtifactPreview } from "../domain/preview";
 import { codeLanguageOf } from "../domain/preview";
@@ -19,6 +19,19 @@ vi.mock("read-excel-file/browser", () => ({
   ]),
 }));
 
+const renderPage = vi.fn(() => ({ promise: Promise.resolve() }));
+const getPage = vi.fn(async () => ({
+  getViewport: ({ scale }: { scale: number }) => ({ width: 300 * scale, height: 400 * scale }),
+  render: renderPage,
+}));
+
+vi.mock("pdfjs-dist/legacy/build/pdf.mjs", () => ({
+  GlobalWorkerOptions: { workerSrc: "" },
+  getDocument: vi.fn(() => ({
+    promise: Promise.resolve({ numPages: 2, getPage }),
+  })),
+}));
+
 function preview(partial: Partial<ArtifactPreview>): ArtifactPreview {
   return { path: "output/result.md", kind: "markdown", content: "", ...partial };
 }
@@ -26,9 +39,10 @@ function preview(partial: Partial<ArtifactPreview>): ArtifactPreview {
 describe("ResearchDocumentCanvas preview dispatch", () => {
   afterEach(() => cleanup());
   beforeEach(() => {
-    // jsdom lacks object URL support; stub it for iframe/image viewers.
+    // jsdom lacks object URL support; stub it for image viewers.
     globalThis.URL.createObjectURL = vi.fn(() => "blob:mock-object-url");
     globalThis.URL.revokeObjectURL = vi.fn();
+    HTMLCanvasElement.prototype.getContext = vi.fn(() => ({})) as unknown as typeof HTMLCanvasElement.prototype.getContext;
     // jsdom 23 Blob lacks arrayBuffer(); polyfill via FileReader for DOCX/XLSX.
     if (typeof Blob.prototype.arrayBuffer !== "function") {
       Blob.prototype.arrayBuffer = function arrayBuffer() {
@@ -72,16 +86,18 @@ describe("ResearchDocumentCanvas preview dispatch", () => {
     expect(table.textContent).toContain("2");
   });
 
-  it("renders PDF inside an iframe", () => {
+  it("renders PDF pages through PDF.js inside the app", async () => {
     render(
       <ResearchDocumentCanvas
         artifact={preview({ path: "output/brief.pdf", kind: "pdf", blob: new Blob(["%PDF"]) })}
       />,
     );
-    const frame = screen.getByTestId("artifact-pdf-frame") as HTMLIFrameElement;
-    expect(frame.src).toBe("blob:mock-object-url");
-    const pdfBlob = vi.mocked(URL.createObjectURL).mock.calls[0]?.[0] as Blob;
-    expect(pdfBlob.type).toBe("application/pdf");
+    const document = await screen.findByTestId("artifact-pdf-document");
+    expect(document.querySelectorAll("canvas")).toHaveLength(2);
+    expect(screen.getByText("第 1 / 2 页")).toBeTruthy();
+    expect(renderPage).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+    expect(screen.getByText("第 2 / 2 页")).toBeTruthy();
   });
 
   it("renders images through an img tag", () => {
