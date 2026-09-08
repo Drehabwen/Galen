@@ -29,21 +29,6 @@ function extractEvidence(summary: string): string[] {
     .slice(0, 8);
 }
 
-function findNextReady(nodes: SessionNode[]): SessionNode | null {
-  return (
-    nodes.find(
-      (node) =>
-        node.status !== "completed" &&
-        node.status !== "running" &&
-        (node.dependsOn ?? []).every(
-          (dependency) =>
-            nodes.find((candidate) => candidate.id === dependency)?.status ===
-            "completed",
-        ),
-    ) ?? null
-  );
-}
-
 export function useResearchExecution({
   backendAvailable,
   workspaceRoot,
@@ -124,50 +109,77 @@ export function useResearchExecution({
   }, [chat, mode, model, onModelRequired, pendingPlan, research, thinkingLevel]);
 
   const enterSession = useCallback(
-    (node: SessionNode) => {
-      research.patchNode(node.id, { status: "running" });
-      setEnteredSession(node);
+    async (node: SessionNode) => {
+      try {
+        const snapshot = await research.startNode(node.id);
+        const running =
+          snapshot.task.nodes.find((candidate) => candidate.id === node.id) ??
+          node;
+        setEnteredSession(running);
+        setSelectedNode(null);
+      } catch (error) {
+        alert("PI 无法启动该节点：" + String(error));
+      }
     },
-    [research.patchNode],
+    [research],
   );
 
   const closeSession = useCallback(() => {
-    if (enteredSession?.status === "running") {
-      research.patchNode(enteredSession.id, { status: "pending" });
-    }
     setEnteredSession(null);
     setSelectedNode(null);
-  }, [enteredSession, research.patchNode]);
+  }, []);
 
-  const setNodeStatus = useCallback(
-    (node: SessionNode, status: "approved" | "assigned") => {
-      research.patchNode(node.id, { status });
-      setSelectedNode(null);
+  const resetForNewTopic = useCallback(() => {
+    completionNotifiedRef.current = false;
+    observedTaskIdRef.current = null;
+    setPendingPlan(null);
+    setSelectedNode(null);
+    setEnteredSession(null);
+    research.reset();
+  }, [research]);
+
+  const approveNode = useCallback(
+    async (node: SessionNode) => {
+      try {
+        await research.approveNode(node.id);
+        setSelectedNode(null);
+      } catch (error) {
+        alert("PI 无法批准该节点：" + String(error));
+      }
     },
-    [research.patchNode],
+    [research],
+  );
+
+  const assignNode = useCallback(
+    async (node: SessionNode) => {
+      try {
+        await research.assignNode(node.id, node.owner);
+        setSelectedNode(null);
+      } catch (error) {
+        alert("PI 无法分派该节点：" + String(error));
+      }
+    },
+    [research],
   );
 
   const flowBack = useCallback(
-    (node: SessionNode, summary: string) => {
-      const updated = research.nodes.map((candidate) =>
-        candidate.id === node.id
-          ? {
-              ...candidate,
-              status: "completed" as SessionNode["status"],
-              result: summary.trim().slice(0, 2000),
-              evidence: extractEvidence(summary),
-            }
-          : candidate,
-      );
-      const completedCount = updated.filter(
+    async (node: SessionNode, summary: string) => {
+      const evidence = extractEvidence(summary);
+      let snapshot;
+      try {
+        snapshot = await research.completeNode(node.id, summary, evidence);
+      } catch (error) {
+        alert("PI 无法接收节点回流：" + String(error));
+        return;
+      }
+      const completedCount = snapshot.task.nodes.filter(
         (candidate) => candidate.status === "completed",
       ).length;
-      research.setNodes(updated);
       chat.send(
         `[Session ${node.index} 回流 · 已完成]\n` +
           `目标: ${node.title}\n` +
           `产出摘要: ${summary.trim()}\n` +
-          `计划进度: ${completedCount}/${updated.length} 完成`,
+          `计划进度: ${completedCount}/${snapshot.task.nodes.length} 完成`,
         model,
         mode,
         "medical",
@@ -178,7 +190,7 @@ export function useResearchExecution({
           .trim()
           .slice(0, 120)} | .galen/tasks/${research.task?.taskId || "active"}/task.json`,
       }).catch(console.error);
-      research
+      await research
         .appendEvidence({
           id: `${Date.now()}-${node.id}`,
           node_id: node.id,
@@ -193,10 +205,8 @@ export function useResearchExecution({
       setEnteredSession(null);
       setSelectedNode(null);
 
-      const nextReady = findNextReady(updated);
-      if (nextReady) enterSession(nextReady);
     },
-    [chat, enterSession, mode, model, research, thinkingLevel],
+    [chat, mode, model, research, thinkingLevel],
   );
 
   useEffect(() => {
@@ -229,8 +239,9 @@ export function useResearchExecution({
     confirmPlan,
     enterSession,
     closeSession,
-    approveNode: (node: SessionNode) => setNodeStatus(node, "approved"),
-    assignNode: (node: SessionNode) => setNodeStatus(node, "assigned"),
+    approveNode,
+    assignNode,
     flowBack,
+    resetForNewTopic,
   };
 }

@@ -12,6 +12,7 @@ const LITERATURE_TOOLS: &[&str] = &[
     "search_evidence",
     "search_pubmed",
     "fetch_article",
+    "verify_citation",
     "format_citation",
     "list_files",
     "read_file",
@@ -38,6 +39,7 @@ const LOOKUP_TOOLS: &[&str] = &[
     "search_evidence",
     "search_pubmed",
     "fetch_article",
+    "verify_citation",
     "format_citation",
     "list_files",
     "read_file",
@@ -492,10 +494,8 @@ mod tests {
 
     #[test]
     fn literature_contract_allows_only_recognized_qualified_mcp_searches() {
-        let contract = compile_task_contract(
-            model_router::TaskKind::Chat,
-            "请检索脑卒中康复的中文文献",
-        );
+        let contract =
+            compile_task_contract(model_router::TaskKind::Chat, "请检索脑卒中康复的中文文献");
 
         assert_eq!(contract.class, TaskClass::Literature);
         assert!(contract.allows_tool("mcp__cnki__cnki_structured_search"));

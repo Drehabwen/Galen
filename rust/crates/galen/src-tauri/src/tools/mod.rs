@@ -311,10 +311,11 @@ impl ToolRegistry {
         if let Some(tool) = self.tools.get(name) {
             let tool_name = name.to_string();
             let search = research::recognized_builtin_search(name);
-            let scope = match search {
-                Some(_) => Some(snapshot_search_scope(ctx).map_err(provenance_failure)?),
-                None => None,
-            };
+            // External literature search is useful before a project has been
+            // created.  Provenance is best-effort in that state and is
+            // persisted as soon as a workspace + active task becomes
+            // available; it must not turn a read-only search into a blocker.
+            let scope = search.and_then(|_| snapshot_search_scope(ctx));
             let arguments = input.clone();
             let started_at = epoch_millis();
             let execution = match timeout(TOOL_TIMEOUT, tool.execute_observed(input, ctx)).await {
@@ -357,10 +358,10 @@ impl ToolRegistry {
             let (server_name, tool_name) = crate::mcp_client::resolve_tool_route(name, &available)
                 .map_err(|e| e.to_string())?;
             let search = research::recognized_mcp_search(&server_name, &tool_name);
-            let scope = match search {
-                Some(_) => Some(snapshot_search_scope(ctx).map_err(provenance_failure)?),
-                None => None,
-            };
+            // MCP search follows the same rule as built-in PubMed: absence of
+            // a workspace only disables durable coverage recording, not the
+            // search itself.
+            let scope = search.and_then(|_| snapshot_search_scope(ctx));
             let arguments = input.clone();
             let started_at = epoch_millis();
             let outcome = self
@@ -395,17 +396,12 @@ struct SearchRunScope {
     task_id: String,
 }
 
-fn snapshot_search_scope(ctx: &ToolContext) -> Result<SearchRunScope, String> {
-    let workspace = ctx
-        .workspace_root
-        .lock()
-        .map_err(|error| format!("workspace lock failed: {error}"))?
-        .clone()
-        .ok_or("no workspace selected for literature coverage provenance")?;
-    let task_id = crate::research_task::load_active_task(&workspace)?
-        .ok_or("no active research task for literature coverage provenance")?
+fn snapshot_search_scope(ctx: &ToolContext) -> Option<SearchRunScope> {
+    let workspace = ctx.workspace_root.lock().ok()?.clone()?;
+    let task_id = crate::research_task::load_active_task(&workspace)
+        .ok()??
         .task_id;
-    Ok(SearchRunScope { workspace, task_id })
+    Some(SearchRunScope { workspace, task_id })
 }
 
 #[derive(Debug, Clone)]
@@ -698,12 +694,13 @@ mod tests {
     fn registry_has_all_builtin_definitions() {
         let registry = ToolRegistry::default();
         let defs = registry.definitions();
-        assert_eq!(defs.len(), 19);
+        assert_eq!(defs.len(), 20);
         let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
         for expected in &[
             "search_pubmed",
             "fetch_article",
             "format_citation",
+            "verify_citation",
             "analyze_clinical_case",
             "rehab_data",
             "search_rehab_literature",
@@ -757,6 +754,24 @@ mod tests {
             .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Unknown tool"));
+    }
+
+    #[tokio::test]
+    async fn pubmed_search_is_available_before_workspace_selection() {
+        // Literature search is a read-only discovery action.  It should not
+        // be blocked merely because durable evidence provenance has nowhere
+        // to be written yet; the UI can ask the researcher to choose a
+        // workspace when they decide to save the result.
+        let mut registry = ToolRegistry::new();
+        registry.register(SuccessfulPubMed);
+        let result = registry
+            .execute_dynamic(
+                "search_pubmed",
+                serde_json::json!({"query": "stroke rehabilitation"}),
+                &test_ctx(ChatMode::Auto),
+            )
+            .await;
+        assert_eq!(result.unwrap(), "Found 2 results.");
     }
 
     #[tokio::test]

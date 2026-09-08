@@ -3,7 +3,7 @@ import type { SessionNode } from "../domain/sessionTypes";
 import { normalizeResearchNodes } from "./useResearchTask";
 
 describe("normalizeResearchNodes", () => {
-  it("removes legacy approval gates without mutating the source", () => {
+  it("preserves host-authoritative approval gates without mutating the source", () => {
     const source: SessionNode[] = [
       {
         id: "s01",
@@ -17,8 +17,8 @@ describe("normalizeResearchNodes", () => {
 
     const normalized = normalizeResearchNodes(source);
 
-    expect(normalized[0].status).toBe("pending");
-    expect(normalized[0].approvalRequired).toBe(false);
+    expect(normalized[0].status).toBe("pending_approval");
+    expect(normalized[0].approvalRequired).toBe(true);
     expect(source[0].status).toBe("pending_approval");
     expect(source[0].approvalRequired).toBe(true);
   });

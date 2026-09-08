@@ -10,6 +10,8 @@ use crate::runtime_manager::{self, McpServerStatus, RuntimeStatus};
 use crate::workspace::WorkspaceConfig;
 use api::{InputContentBlock, InputMessage, MessageRequest};
 use medical_core::clinical::ClinicalCaseInput;
+use medical_core::types::CitationStyle;
+use std::collections::BTreeSet;
 
 pub mod rehab;
 pub mod workspace;
@@ -606,6 +608,51 @@ pub fn clear_chat_session(state: State<AppState>, tag: Option<String>) -> Result
     crate::chat_session::archive_session(&root, tag.as_deref())
 }
 
+/// Archive the current research context and leave the workspace ready for a
+/// genuinely new question. Nothing is deleted: the old session, memory,
+/// decisions and active-task pointer move under `.galen/topic-archives/`.
+#[tauri::command]
+pub fn start_new_research_topic(state: State<AppState>) -> Result<(), String> {
+    let backend = lock_mutex(&state.backend)?;
+    let Some(root) = backend.get_workspace_root() else {
+        return Ok(());
+    };
+    crate::chat_session::archive_session(&root, None)?;
+    archive_topic_context(&root)
+}
+
+fn archive_topic_context(root: &std::path::Path) -> Result<(), String> {
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| format!("系统时间错误: {error}"))?
+        .as_millis();
+    let archive = root
+        .join(".galen")
+        .join("topic-archives")
+        .join(stamp.to_string());
+    std::fs::create_dir_all(&archive).map_err(|error| format!("创建课题归档目录失败: {error}"))?;
+    for relative in [
+        "GALEN.md",
+        ".galen/conversation-decisions.jsonl",
+        ".galen/active-task.json",
+        "plan.json",
+    ] {
+        let source = root.join(relative);
+        if !source.exists() {
+            continue;
+        }
+        let target = archive.join(relative.replace(['/', '\\'], "_"));
+        std::fs::rename(&source, &target)
+            .map_err(|error| format!("归档旧课题上下文 {} 失败: {error}", source.display()))?;
+    }
+    std::fs::write(
+        archive.join("README.txt"),
+        "此目录保存由“新课题”操作归档的会话上下文；研究任务和产物仍保留在 .galen/tasks 与 output。\n",
+    )
+    .map_err(|error| format!("写入课题归档说明失败: {error}"))?;
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Runtime environment status
 // ---------------------------------------------------------------------------
@@ -791,6 +838,54 @@ mod tests {
 
         std::fs::remove_dir_all(dir).unwrap();
     }
+
+    #[test]
+    fn citation_export_only_collects_explicit_pmids() {
+        let evidence = vec![crate::evidence::Evidence {
+            id: "ev-1".into(),
+            node_id: "node-1".into(),
+            node_title: "文献检索".into(),
+            source: "research".into(),
+            claim: "支持结论 [PMID: 12345678]，样本量为 987654。".into(),
+            detail: Some("另见 PMID：23456789；重复 PMID: 12345678。".into()),
+            confidence: "high".into(),
+            created_at: "2026-09-07".into(),
+        }];
+        assert_eq!(
+            cited_pmids(&evidence),
+            vec!["12345678".to_string(), "23456789".to_string()]
+        );
+    }
+
+    #[test]
+    fn new_topic_archives_context_without_deleting_it() {
+        let root = std::env::temp_dir().join(format!(
+            "galen-topic-archive-test-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(root.join(".galen")).unwrap();
+        std::fs::write(root.join("GALEN.md"), "旧课题记忆").unwrap();
+        std::fs::write(root.join(".galen").join("active-task.json"), "{}").unwrap();
+        archive_topic_context(&root).unwrap();
+        assert!(!root.join("GALEN.md").exists());
+        assert!(!root.join(".galen").join("active-task.json").exists());
+        let archive = std::fs::read_dir(root.join(".galen").join("topic-archives"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        assert_eq!(
+            std::fs::read_to_string(archive.join("GALEN.md")).unwrap(),
+            "旧课题记忆"
+        );
+        assert!(archive.join(".galen_active-task.json").exists());
+        let _ = std::fs::remove_dir_all(root);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -851,7 +946,8 @@ pub fn create_research_task(
 ) -> Result<ResearchTask, String> {
     let backend = lock_mutex(&state.backend)?;
     let root = backend.get_workspace_root().ok_or("请先选择工作区")?;
-    crate::research_task::create_task(&root, title, goal, nodes)
+    let task = crate::research_task::create_task(&root, title, goal, nodes)?;
+    crate::pi_kernel::record_project_created(&root, task).map(|snapshot| snapshot.task)
 }
 
 /// Restore the active research task. If this workspace only has the old
@@ -869,21 +965,140 @@ pub fn get_active_research_task(state: State<AppState>) -> Result<Option<Researc
     // Complete legacy evidence migration before returning the revision that
     // the frontend will use for its first CAS write.
     crate::evidence::load_evidence(&root)?;
-    crate::research_task::load_active_task(&root)
+    crate::pi_kernel::load_active_snapshot(&root)
+        .map(|snapshot| snapshot.map(|snapshot| snapshot.task))
 }
 
-/// Replace the node snapshot for a task. The host derives the task-level
-/// status instead of accepting it from the webview.
+/// Return the PI's host-authoritative execution view for the active project.
 #[tauri::command]
-pub fn save_research_task_nodes(
+pub fn get_pi_snapshot(
+    state: State<AppState>,
+) -> Result<Option<crate::pi_kernel::PiSnapshot>, String> {
+    let backend = lock_mutex(&state.backend)?;
+    let Some(root) = backend.get_workspace_root() else {
+        return Ok(None);
+    };
+    crate::pi_kernel::load_active_snapshot(&root)
+}
+
+#[tauri::command]
+pub fn get_pi_events(
+    state: State<AppState>,
+    task_id: String,
+) -> Result<Vec<crate::pi_event::PiEvent>, String> {
+    let backend = lock_mutex(&state.backend)?;
+    let root = backend.get_workspace_root().ok_or("请先选择工作区")?;
+    let active =
+        crate::research_task::load_active_task(&root)?.ok_or("当前工作区没有活动研究任务")?;
+    if active.task_id != task_id {
+        return Err("PI_TASK_CONFLICT: 只能读取当前活动研究任务的事件".to_string());
+    }
+    crate::pi_event::read_events(&root, &task_id)
+}
+
+#[tauri::command]
+pub fn pi_start_node(
     state: State<AppState>,
     task_id: String,
     expected_revision: u64,
-    nodes: Vec<ResearchNode>,
-) -> Result<ResearchTask, String> {
+    node_id: String,
+    idempotency_key: String,
+) -> Result<crate::pi_kernel::PiSnapshot, String> {
     let backend = lock_mutex(&state.backend)?;
     let root = backend.get_workspace_root().ok_or("请先选择工作区")?;
-    crate::research_task::replace_nodes(&root, &task_id, expected_revision, nodes)
+    crate::pi_kernel::start_node(
+        &root,
+        &task_id,
+        expected_revision,
+        &node_id,
+        &idempotency_key,
+    )
+}
+
+#[tauri::command]
+pub fn pi_complete_node(
+    state: State<AppState>,
+    task_id: String,
+    expected_revision: u64,
+    node_id: String,
+    result: String,
+    evidence: Vec<String>,
+    outputs: Vec<String>,
+    idempotency_key: String,
+) -> Result<crate::pi_kernel::PiSnapshot, String> {
+    let backend = lock_mutex(&state.backend)?;
+    let root = backend.get_workspace_root().ok_or("请先选择工作区")?;
+    crate::pi_kernel::complete_node(
+        &root,
+        &task_id,
+        expected_revision,
+        &node_id,
+        result,
+        evidence,
+        outputs,
+        &idempotency_key,
+    )
+}
+
+#[tauri::command]
+pub fn pi_block_node(
+    state: State<AppState>,
+    task_id: String,
+    expected_revision: u64,
+    node_id: String,
+    reason: String,
+    idempotency_key: String,
+) -> Result<crate::pi_kernel::PiSnapshot, String> {
+    let backend = lock_mutex(&state.backend)?;
+    let root = backend.get_workspace_root().ok_or("请先选择工作区")?;
+    crate::pi_kernel::block_node(
+        &root,
+        &task_id,
+        expected_revision,
+        &node_id,
+        reason,
+        &idempotency_key,
+    )
+}
+
+#[tauri::command]
+pub fn pi_approve_node(
+    state: State<AppState>,
+    task_id: String,
+    expected_revision: u64,
+    node_id: String,
+    idempotency_key: String,
+) -> Result<crate::pi_kernel::PiSnapshot, String> {
+    let backend = lock_mutex(&state.backend)?;
+    let root = backend.get_workspace_root().ok_or("请先选择工作区")?;
+    crate::pi_kernel::approve_node(
+        &root,
+        &task_id,
+        expected_revision,
+        &node_id,
+        &idempotency_key,
+    )
+}
+
+#[tauri::command]
+pub fn pi_assign_node(
+    state: State<AppState>,
+    task_id: String,
+    expected_revision: u64,
+    node_id: String,
+    owner: Option<String>,
+    idempotency_key: String,
+) -> Result<crate::pi_kernel::PiSnapshot, String> {
+    let backend = lock_mutex(&state.backend)?;
+    let root = backend.get_workspace_root().ok_or("请先选择工作区")?;
+    crate::pi_kernel::assign_node(
+        &root,
+        &task_id,
+        expected_revision,
+        &node_id,
+        owner,
+        &idempotency_key,
+    )
 }
 
 /// Append one line to `<workspace>/GALEN.md` (loop output becomes memory).
@@ -912,7 +1127,18 @@ pub fn append_evidence(
 ) -> Result<ResearchTask, String> {
     let backend = lock_mutex(&state.backend)?;
     let root = backend.get_workspace_root().ok_or("请先选择工作区")?;
-    crate::evidence::append_evidence_file(&root, evidence)
+    let evidence_id = evidence.id.clone();
+    let node_id = evidence.node_id.clone();
+    let task = crate::evidence::append_evidence_file(&root, evidence)?;
+    crate::pi_event::append_event(
+        &root,
+        &task.task_id,
+        Some(&node_id),
+        crate::pi_event::PiEventKind::EvidenceAttached,
+        &format!("evidence-attached:{evidence_id}"),
+        serde_json::json!({"evidenceId": evidence_id, "revision": task.revision}),
+    )?;
+    Ok(task)
 }
 
 /// Read the active task's full evidence chain.
@@ -924,6 +1150,113 @@ pub fn get_evidence(state: State<AppState>) -> Result<Vec<crate::evidence::Evide
         None => return Ok(Vec::new()),
     };
     crate::evidence::load_evidence(&root)
+}
+
+#[tauri::command]
+pub fn get_review_flow(state: State<AppState>) -> Result<crate::review_flow::ReviewFlow, String> {
+    let backend = lock_mutex(&state.backend)?;
+    let root = match backend.get_workspace_root() {
+        Some(root) => root,
+        None => {
+            return Ok(crate::review_flow::ReviewFlow {
+                task_id: None,
+                identified: 0,
+                duplicates_removed: None,
+                screened: None,
+                excluded: None,
+                full_text_assessed: None,
+                included: None,
+                updated_at: None,
+            })
+        }
+    };
+    crate::review_flow::load_review_flow(&root)
+}
+
+#[tauri::command]
+pub fn save_review_flow(
+    state: State<AppState>,
+    flow: crate::review_flow::ReviewFlowInput,
+) -> Result<crate::review_flow::ReviewFlow, String> {
+    let backend = lock_mutex(&state.backend)?;
+    let root = backend.get_workspace_root().ok_or("请先选择工作区")?;
+    crate::review_flow::save_review_flow(&root, flow)
+}
+
+/// Export the PubMed records explicitly cited in the active evidence ledger.
+/// The export is deliberately derived from PMID-labelled evidence only: plain
+/// numbers in prose never become references, and every emitted record is
+/// fetched afresh from PubMed before it reaches a citation file.
+#[tauri::command]
+pub async fn export_evidence_citations(
+    state: State<'_, AppState>,
+    style: String,
+) -> Result<crate::artifact::ArtifactRecord, String> {
+    let (root, medical) = {
+        let backend = lock_mutex(&state.backend)?;
+        (
+            backend.get_workspace_root().ok_or("请先选择工作区")?,
+            backend.medical.clone(),
+        )
+    };
+    let pmids = cited_pmids(&crate::evidence::load_evidence(&root)?);
+    if pmids.is_empty() {
+        return Err("当前证据账本中没有 PMID 标注，无法导出可核验参考文献。".into());
+    }
+    let citation_style =
+        CitationStyle::from_str(&style).ok_or("仅支持 vancouver、bibtex、ris、apa 或 mla 格式")?;
+    let papers = medical
+        .pubmed
+        .fetch_articles(&pmids)
+        .await
+        .map_err(|error| format!("导出前回查 PubMed 失败: {error}"))?;
+    if papers.is_empty() {
+        return Err("PubMed 未返回可导出的题录。".into());
+    }
+    let content = medical.format_citations(&papers, citation_style);
+    let extension = match citation_style {
+        CitationStyle::BibTeX => "bib",
+        CitationStyle::RIS => "ris",
+        _ => "txt",
+    };
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|value| value.as_secs())
+        .unwrap_or_default();
+    let relative_path = format!("output/galen-verified-citations-{stamp}.{extension}");
+    let output = root.join(&relative_path);
+    let parent = output.parent().ok_or("引用导出路径无效")?;
+    std::fs::create_dir_all(parent).map_err(|error| format!("创建引用导出目录失败: {error}"))?;
+    std::fs::write(&output, content).map_err(|error| format!("写入引用文件失败: {error}"))?;
+    let task_id = crate::research_task::load_active_task(&root)?.map(|task| task.task_id);
+    crate::artifact::register_file(&root, &relative_path, task_id, None)
+}
+
+fn cited_pmids(evidence: &[crate::evidence::Evidence]) -> Vec<String> {
+    let mut ids = BTreeSet::new();
+    for item in evidence {
+        let text = format!(
+            "{}\n{}",
+            item.claim,
+            item.detail.as_deref().unwrap_or_default()
+        );
+        let lower = text.to_ascii_lowercase();
+        let mut offset = 0;
+        while let Some(relative) = lower[offset..].find("pmid") {
+            let start = offset + relative + 4;
+            let digits: String = text[start..]
+                .chars()
+                .skip_while(|ch| !ch.is_ascii_digit())
+                .take_while(|ch| ch.is_ascii_digit())
+                .take(10)
+                .collect();
+            if (5..=9).contains(&digits.len()) {
+                ids.insert(digits);
+            }
+            offset = start;
+        }
+    }
+    ids.into_iter().collect()
 }
 
 #[tauri::command]

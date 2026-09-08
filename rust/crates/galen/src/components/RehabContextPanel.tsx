@@ -24,13 +24,23 @@ const contextLabel: Record<string, string> = {
   unknown: "待确认",
 };
 
+const eventLabel: Record<string, string> = {
+  baseline: "基线",
+  imaging: "影像",
+  assessment: "评估",
+  intervention: "干预",
+  follow_up: "随访",
+  outcome: "结局",
+  other: "记录",
+};
+
 export function RehabContextPanel(props: RehabContextPanelProps) {
   const [sourcePath, setSourcePath] = useState("evals/case-datasets/ais-textbook-pilot-v1/cases.json");
   const [caseId, setCaseId] = useState("AIS-C025");
   const bundle = props.activeCase;
 
   if (!props.workspaceSelected) {
-    return <div className="rehab-empty"><h2>病例纵向证据</h2><p>先选择工作区，再导入去标识化病例。</p></div>;
+    return <div className="rehab-empty"><h2>Rehab ID 时间轴</h2><p>先选择工作区，再将清洗后的研究数据写入对应 Rehab ID。</p></div>;
   }
 
   return (
@@ -38,15 +48,16 @@ export function RehabContextPanel(props: RehabContextPanelProps) {
       <header className="rehab-header">
         <div>
           <span className="rehab-kicker">REHABILITATION CONTEXT</span>
-          <h1>{bundle ? bundle.case_record.case_id : "建立第一条病例证据链"}</h1>
-          <p>{bundle ? `Revision ${bundle.revision} · 主机侧权威状态` : "把来源、随访和裁决连接成可复算的科研记录。"}</p>
+          <h1>{bundle ? `Rehab ID · ${bundle.case_record.case_id}` : "Rehab ID 时间轴"}</h1>
+          <p>{bundle ? `Revision ${bundle.revision} · 数据、时间点、来源与质量记录已关联` : "从分析结果页写入清洗数据，建立第一条连续研究记录。"}</p>
         </div>
-        <div className="rehab-import">
-          <input aria-label="病例集相对路径" value={sourcePath} onChange={(event) => setSourcePath(event.target.value)} />
+        <details className="rehab-import">
+          <summary>导入示例病例与运行验证</summary>
+          <div><input aria-label="病例集相对路径" value={sourcePath} onChange={(event) => setSourcePath(event.target.value)} />
           <input aria-label="病例 ID" value={caseId} onChange={(event) => setCaseId(event.target.value)} />
           <button className="btn btn-primary" disabled={props.loading} onClick={() => props.onImportCase(sourcePath, caseId)}>导入病例</button>
-          <button className="btn btn-ghost rehab-eval-button" disabled={props.loading} onClick={() => props.onRunGoldenJourneys(sourcePath)}>运行黄金旅程</button>
-        </div>
+          <button className="btn btn-ghost rehab-eval-button" disabled={props.loading} onClick={() => props.onRunGoldenJourneys(sourcePath)}>运行黄金旅程</button></div>
+        </details>
       </header>
 
       {props.error && <div className="rehab-error">{props.error}</div>}
@@ -102,23 +113,23 @@ export function RehabContextPanel(props: RehabContextPanelProps) {
         </div>
       )}
 
-      {!bundle ? <div className="rehab-empty"><p>尚无病例。可先导入工作区内的 AIS-C025 金标准病例。</p></div> : (
+      {!bundle ? <div className="rehab-empty"><p>尚无 Rehab ID。先进入“数据体检与清洗”，在分析结果页点击“写入时间轴”。</p></div> : (
         <>
           <section className="rehab-strip" aria-label="病例状态">
-            <div><span>队列状态</span><strong className={`rehab-status ${bundle.cohort_row.status}`}>{bundle.cohort_row.status === "included" ? "可纳入" : "待复核"}</strong></div>
+            <div><span>研究记录状态</span><strong className={`rehab-status ${bundle.cohort_row.status}`}>{bundle.cohort_row.status === "included" ? "纵向可计算" : "持续采集"}</strong></div>
             <div><span>来源覆盖</span><strong>{Math.round(bundle.cohort_row.source_coverage * 100)}%</strong></div>
             <div><span>开放裁决</span><strong>{bundle.cohort_row.open_review_count}</strong></div>
             <div><span>核验观察</span><strong>{bundle.observations.filter((item) => item.verification_status === "verified").length}/{bundle.observations.length}</strong></div>
           </section>
 
           <section className="rehab-section">
-            <div className="rehab-section-title"><h2>纵向事件脉络</h2><span>采集状态不可混用</span></div>
+            <div className="rehab-section-title"><h2>纵向数据时间轴</h2><span>每个时间点保留来源与采集状态</span></div>
             <div className="rehab-timeline">
               {bundle.events.map((event) => (
                 <article key={event.event_id} className="rehab-event">
                   <i />
                   <time>{event.occurred_at}</time>
-                  <strong>{event.event_type === "baseline" ? "基线" : event.event_type === "follow_up" ? "随访" : "干预"}</strong>
+                  <strong>{eventLabel[event.event_type] ?? "记录"}</strong>
                   <span>{contextLabel[event.collection_context] ?? event.collection_context}</span>
                 </article>
               ))}
@@ -127,14 +138,14 @@ export function RehabContextPanel(props: RehabContextPanelProps) {
 
           <div className="rehab-grid">
             <section className="rehab-section">
-              <div className="rehab-section-title"><h2>观察值与来源</h2><span>仅已核验值进入硬门</span></div>
+              <div className="rehab-section-title"><h2>观察值与来源</h2><span>每个数值都能回到数据版本</span></div>
               <div className="rehab-observations">
                 {bundle.observations.map((item) => (
                   <div className="rehab-observation" key={item.observation_id}>
                     <div><strong>{item.region} · {item.metric}</strong><small>{item.event_id} / {contextLabel[item.collection_context]}</small></div>
                     <b>{item.value ?? "—"}<small>{item.unit}</small></b>
-                    <span className={`rehab-verification ${item.verification_status}`}>{item.verification_status === "verified" ? "已核验" : "有争议"}</span>
-                    <code>p.{item.source_locator.pdf_page ?? "?"} · {item.source_locator.channel}</code>
+                    <span className={`rehab-verification ${item.verification_status}`}>{item.verification_status === "verified" ? "来源已锁定" : "待复核"}</span>
+                    <code>{item.source_locator.channel === "governed_dataset" ? "清洗数据版本" : `p.${item.source_locator.pdf_page ?? "?"}`} · {item.source_locator.channel}</code>
                   </div>
                 ))}
               </div>

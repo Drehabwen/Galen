@@ -17,6 +17,7 @@ interface AppTopBarProps {
   workspaceLabel: string;
   onOpenModelStatus: () => void;
   onPickWorkspace: () => void;
+  onNewTopic: () => void;
 }
 
 const MODE_FALLBACK: Record<ChatMode, { label: string; description: string }> = {
@@ -37,6 +38,7 @@ export function AppTopBar({
   workspaceLabel,
   onOpenModelStatus,
   onPickWorkspace,
+  onNewTopic,
 }: AppTopBarProps) {
   const enabledCapabilities = capabilities.filter((item) => item.enabled);
 
@@ -123,6 +125,9 @@ export function AppTopBar({
       <StatusDot tone={running ? "active" : "idle"}>
         {running ? "运行中" : "就绪"}
       </StatusDot>
+      <button className="btn btn-sm btn-ghost" onClick={onNewTopic} disabled={running} title="归档当前课题上下文，从空白研究问题开始">
+        新课题
+      </button>
       <button className="btn btn-sm btn-ghost" onClick={onPickWorkspace}>
         {workspaceSelected ? workspaceLabel : "选择工作区"}
       </button>

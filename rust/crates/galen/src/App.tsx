@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useChat } from "./hooks/useChat";
 import { ResearchExecutionThread } from "./components/ResearchExecutionThread";
 import { ResearchPlanCanvas } from "./components/ResearchPlanCanvas";
@@ -24,6 +25,10 @@ import { RehabContextPanel } from "./components/RehabContextPanel";
 import type { WorkbenchView } from "./components/WorkbenchRail";
 import { useRehabContext } from "./hooks/useRehabContext";
 import { SourceInspector, type VerifiableSource } from "./components/SourceInspector";
+import { EvidenceTrailPanel } from "./components/EvidenceTrailPanel";
+import { DataQualityPanel } from "./components/DataQualityPanel";
+import { InteractiveInsightCanvas } from "./components/InteractiveInsightCanvas";
+import type { AnalysisResult, RehabTimelineImportOutput } from "./domain/analysisResult";
 
 // ---------------------------------------------------------------------------
 // App
@@ -85,6 +90,7 @@ export default function App() {
 
   const [activeView, setActiveView] = useState<WorkbenchView>("daily-workbench");
   const [sourceInspector, setSourceInspector] = useState<VerifiableSource | null>(null);
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
 
   const packageName = workspace.name;
   const completedNodes = planNodes.filter((node) => node.status === "completed").length;
@@ -112,6 +118,46 @@ export default function App() {
   };
 
   const handlePickWorkspace = () => workspace.pick(research.flushWrites);
+  const handleNewTopic = async () => {
+    if (chat.sending) return;
+    try {
+      if (chat.backendAvailable && wsRoot) await invoke("start_new_research_topic");
+      chat.resetView();
+      execution.resetForNewTopic();
+      delivery.clearTopicView();
+      setAnalysisResult(null);
+      setSourceInspector(null);
+      setInput("");
+      setActiveView("execution-thread");
+    } catch (cause) {
+      alert(`无法开始新课题：${String(cause)}`);
+    }
+  };
+
+  // Thread action buttons must feed back into the same durable run.  Earlier
+  // builds rendered these controls without wiring them, so “要求修订” looked
+  // clickable but produced no response.
+  const handleThreadApprove = (messageId: number) => {
+    const source = chat.messages[messageId]?.content.trim().slice(0, 240) ?? "当前修订建议";
+    chat.send(
+      `接受这条修订建议，并继续执行。建议摘要：${source}`,
+      model || "",
+      modeState.mode,
+      "medical",
+      thinkingLevel,
+    );
+  };
+
+  const handleThreadReject = (messageId: number) => {
+    const source = chat.messages[messageId]?.content.trim().slice(0, 240) ?? "当前修订建议";
+    chat.send(
+      `要求修订这条建议：请结合已有证据重新给出可执行版本，并说明改动依据。原建议摘要：${source}`,
+      model || "",
+      modeState.mode,
+      "medical",
+      thinkingLevel,
+    );
+  };
 
   // ---- Render ----
   return (
@@ -137,6 +183,7 @@ export default function App() {
         workspaceLabel={packageName}
         onOpenModelStatus={openModelStatus}
         onPickWorkspace={() => void handlePickWorkspace()}
+        onNewTopic={() => void handleNewTopic()}
       />
 
       {/* ════ Body ════ */}
@@ -160,8 +207,10 @@ export default function App() {
                 sending={chat.sending}
                 latestRunMetrics={chat.latestRunMetrics}
                 toolProgress={chat.toolProgress}
+                toolProgressHistory={chat.toolProgressHistory}
                 error={chat.error}
                 backendAvailable={chat.backendAvailable}
+                workspaceSelected={Boolean(wsRoot)}
                 input={input}
                 onInputChange={setInput}
                 onSend={handleSend}
@@ -176,7 +225,9 @@ export default function App() {
                   if (artifact) void delivery.openRegisteredArtifact(artifact);
                 }}
                 onOpenSource={setSourceInspector}
-                onViewEvidence={() => delivery.setCanvasTab("plan")}
+                onViewEvidence={() => delivery.setCanvasTab("evidence")}
+                onApprove={handleThreadApprove}
+                onReject={handleThreadReject}
               />
             </div>
 
@@ -217,10 +268,22 @@ export default function App() {
                   {/* Canvas tab bar */}
                   <div className="canvas-tab-bar">
                     <button
+                      className={`canvas-tab ${delivery.canvasTab === "insight" ? "active" : ""}`}
+                      onClick={() => delivery.setCanvasTab("insight")}
+                    >
+                      分析结果
+                    </button>
+                    <button
                       className={`canvas-tab ${delivery.canvasTab === "plan" ? "active" : ""}`}
                       onClick={() => delivery.setCanvasTab("plan")}
                     >
                       证据脉络
+                    </button>
+                    <button
+                      className={`canvas-tab ${delivery.canvasTab === "evidence" ? "active" : ""}`}
+                      onClick={() => delivery.setCanvasTab("evidence")}
+                    >
+                      查看依据
                     </button>
                     <button
                       className={`canvas-tab ${delivery.canvasTab === "doc" ? "active" : ""}`}
@@ -229,7 +292,23 @@ export default function App() {
                       成果预览
                     </button>
                   </div>
-                  {delivery.canvasTab === "plan" ? (
+                  {delivery.canvasTab === "insight" ? (
+                    <InteractiveInsightCanvas
+                      result={analysisResult}
+                      onOpenArtifact={(path) => {
+                        const artifact = delivery.artifacts.find((item) => item.path === path);
+                        if (artifact) void delivery.openRegisteredArtifact(artifact);
+                      }}
+                      onImportToTimeline={async (result) => {
+                        const imported = await invoke<RehabTimelineImportOutput>("import_governed_dataset_to_rehab_timeline", {
+                          input: result.timelineImport,
+                        });
+                        delivery.acceptArtifact(imported.receipt);
+                        if (imported.caseIds[0]) await rehabContext.openCase(imported.caseIds[0]);
+                        setActiveView("rehab-context");
+                      }}
+                    />
+                  ) : delivery.canvasTab === "plan" ? (
                     <ResearchPlanCanvas
                       nodes={planNodes}
                       planConfirmed={planConfirmed}
@@ -238,6 +317,32 @@ export default function App() {
                       onSelectNode={setSelectedNode}
                       onPreviewArtifact={delivery.previewNodeArtifact}
                       selectedNodeId={null}
+                    />
+                  ) : delivery.canvasTab === "evidence" ? (
+                    <EvidenceTrailPanel
+                      backendAvailable={chat.backendAvailable}
+                      workspaceRoot={wsRoot}
+                      workspaceSelected={Boolean(wsRoot)}
+                      refreshKey={`${chat.messages.length}:${researchTask?.revision ?? 0}`}
+                      onOpenSource={setSourceInspector}
+                      onOpenArtifact={(artifact) => {
+                        delivery.acceptArtifact(artifact);
+                        void delivery.openRegisteredArtifact(artifact);
+                      }}
+                      onSearchChineseEvidence={() => {
+                        if (!model) {
+                          setShowWelcome(true);
+                          return;
+                        }
+                        setActiveView("execution-thread");
+                        chat.send(
+                          "使用已连接的 CNKI MCP 对当前研究问题执行中文文献检索。请直接返回去重后的相关结果、检索式、数据库覆盖状态与可验证链接；不要把 PubMed 结果当作中文证据。",
+                          model,
+                          modeState.mode,
+                          "medical",
+                          thinkingLevel,
+                        );
+                      }}
                     />
                   ) : (
                     <ResearchDocumentCanvas
@@ -273,6 +378,21 @@ export default function App() {
               );
             }}
             onReadFile={() => {}}
+          />
+        ) : activeView === "data-quality" ? (
+          <DataQualityPanel
+            workspaceSelected={Boolean(wsRoot)}
+            onOpenArtifact={(artifact) => {
+              delivery.acceptArtifact(artifact);
+              setActiveView("execution-thread");
+              void delivery.openRegisteredArtifact(artifact);
+            }}
+            onArtifactsCreated={(artifacts) => artifacts.forEach((artifact) => delivery.acceptArtifact(artifact))}
+            onInsightReady={(result) => {
+              setAnalysisResult(result);
+              setActiveView("execution-thread");
+              delivery.setCanvasTab("insight");
+            }}
           />
         ) : (
           <RehabContextPanel

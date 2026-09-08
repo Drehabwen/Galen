@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -171,6 +172,52 @@ pub struct RehabCaseSummary {
     pub observation_count: usize,
     pub open_review_count: usize,
     pub updated_at: String,
+}
+
+/// A normalized observation flowing from the Data Quality Lab into a durable
+/// Rehab ID timeline. Values are already mapped to Galen canonical metric
+/// names in the UI, but the backend owns the final identifiers, provenance and
+/// persistent case files.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GovernedMeasurementInput {
+    pub case_id: String,
+    pub timepoint: String,
+    pub metric: String,
+    pub value: f64,
+    pub unit: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GovernedTimelineImportInput {
+    pub dataset_path: String,
+    pub quality_report_path: String,
+    pub measurements: Vec<GovernedMeasurementInput>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GovernedTimelineImportOutput {
+    pub case_ids: Vec<String>,
+    pub imported_event_count: usize,
+    pub imported_observation_count: usize,
+    pub skipped_observation_count: usize,
+    pub receipt: crate::artifact::ArtifactRecord,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GovernedTimelineImportReceipt {
+    schema_version: u32,
+    imported_at: String,
+    dataset_path: String,
+    quality_report_path: String,
+    dataset_sha256: String,
+    case_ids: Vec<String>,
+    imported_event_count: usize,
+    imported_observation_count: usize,
+    skipped_observation_count: usize,
 }
 
 #[derive(Debug, Deserialize)]
@@ -359,6 +406,231 @@ pub fn import_ais_case(
     Ok(bundle)
 }
 
+/// Persist cleaned, canonical research measurements into the same case bundles
+/// that power the Rehab ID longitudinal view. The raw input is never moved or
+/// overwritten; the case stores immutable source references plus a receipt.
+pub fn import_governed_timeline(
+    workspace: &Path,
+    input: GovernedTimelineImportInput,
+) -> Result<GovernedTimelineImportOutput, String> {
+    const MAX_MEASUREMENTS: usize = 100_000;
+    if input.measurements.is_empty() {
+        return Err("没有可写入 Rehab ID 的数值观察记录。".into());
+    }
+    if input.measurements.len() > MAX_MEASUREMENTS {
+        return Err(format!(
+            "单次最多写入 {MAX_MEASUREMENTS} 条观察记录，请拆分数据集。"
+        ));
+    }
+    let dataset_file = crate::tools::workspace_path::resolve_workspace_path_from_root(
+        workspace,
+        &input.dataset_path,
+    )?;
+    let quality_file = crate::tools::workspace_path::resolve_workspace_path_from_root(
+        workspace,
+        &input.quality_report_path,
+    )?;
+    if !dataset_file.is_file() || !quality_file.is_file() {
+        return Err("清洗数据或质量报告不存在，无法建立可追溯时间轴。".into());
+    }
+    let dataset_bytes =
+        std::fs::read(&dataset_file).map_err(|error| format!("读取清洗数据失败: {error}"))?;
+    let quality_bytes =
+        std::fs::read(&quality_file).map_err(|error| format!("读取质量报告失败: {error}"))?;
+    let dataset_hash = format!("{:x}", Sha256::digest(&dataset_bytes));
+    let quality_hash = format!("{:x}", Sha256::digest(&quality_bytes));
+    let dataset_source_id = format!("governed-dataset-{}", &dataset_hash[..12]);
+    let quality_source_id = format!("quality-report-{}", &quality_hash[..12]);
+
+    let mut grouped: BTreeMap<String, Vec<GovernedMeasurementInput>> = BTreeMap::new();
+    for measurement in input.measurements {
+        if !measurement.value.is_finite() {
+            return Err("观察值包含非有限数值，未写入 Rehab ID。".into());
+        }
+        let case_id = normalize_governed_id(&measurement.case_id, "Rehab ID")?;
+        let metric = normalize_governed_id(&measurement.metric, "指标")?;
+        let timepoint = normalize_timepoint(&measurement.timepoint)?;
+        grouped
+            .entry(case_id)
+            .or_default()
+            .push(GovernedMeasurementInput {
+                case_id: String::new(),
+                timepoint,
+                metric,
+                value: measurement.value,
+                unit: clean_unit(&measurement.unit),
+            });
+    }
+
+    let mut imported_event_count = 0;
+    let mut imported_observation_count = 0;
+    let mut skipped_observation_count = 0;
+    let mut case_ids = Vec::new();
+    let import_prefix = &dataset_hash[..10];
+    for (case_id, measurements) in grouped {
+        let existing_path = case_path(workspace, &case_id);
+        let mut bundle = if existing_path.exists() {
+            // A malformed existing case must never be silently replaced by a
+            // fresh one during import; that would destroy the very provenance
+            // this path is meant to protect.
+            load_case_bundle(workspace, &case_id)?
+        } else {
+            new_governed_case(&case_id)
+        };
+        let mut changed = false;
+        if !bundle
+            .sources
+            .iter()
+            .any(|source| source.source_id == dataset_source_id)
+        {
+            bundle.sources.push(SourceArtifact {
+                source_id: dataset_source_id.clone(),
+                kind: "governed_dataset".into(),
+                title: input.dataset_path.clone(),
+                content_hash: Some(dataset_hash.clone()),
+                pages: Vec::new(),
+                immutable: true,
+            });
+            bundle
+                .case_record
+                .source_ids
+                .push(dataset_source_id.clone());
+            changed = true;
+        }
+        if !bundle
+            .sources
+            .iter()
+            .any(|source| source.source_id == quality_source_id)
+        {
+            bundle.sources.push(SourceArtifact {
+                source_id: quality_source_id.clone(),
+                kind: "quality_report".into(),
+                title: input.quality_report_path.clone(),
+                content_hash: Some(quality_hash.clone()),
+                pages: Vec::new(),
+                immutable: true,
+            });
+            bundle
+                .case_record
+                .source_ids
+                .push(quality_source_id.clone());
+            changed = true;
+        }
+        bundle.case_record.source_ids.sort();
+        bundle.case_record.source_ids.dedup();
+
+        let mut event_ids: BTreeMap<String, String> = BTreeMap::new();
+        for measurement in &measurements {
+            let event_id = event_ids
+                .entry(measurement.timepoint.clone())
+                .or_insert_with(|| {
+                    format!(
+                        "data-{import_prefix}-{}-{}",
+                        slug(&measurement.timepoint, 32),
+                        hash_fragment(&measurement.timepoint, 8),
+                    )
+                })
+                .clone();
+            if !bundle.events.iter().any(|event| event.event_id == event_id) {
+                bundle.events.push(ClinicalEvent {
+                    event_id: event_id.clone(),
+                    case_id: case_id.clone(),
+                    event_type: event_type_for_timepoint(&measurement.timepoint),
+                    occurred_at: measurement.timepoint.clone(),
+                    collection_context: CollectionContext::Unknown,
+                    interventions: Vec::new(),
+                    source_ids: vec![dataset_source_id.clone()],
+                    verification_status: VerificationStatus::Verified,
+                });
+                imported_event_count += 1;
+                changed = true;
+            }
+        }
+        let mut per_event_metric: BTreeMap<(String, String), usize> = BTreeMap::new();
+        for measurement in measurements {
+            let event_id = event_ids
+                .get(&measurement.timepoint)
+                .cloned()
+                .ok_or("无法为观察值创建时间点")?;
+            let ordinal = per_event_metric
+                .entry((event_id.clone(), measurement.metric.clone()))
+                .and_modify(|value| *value += 1)
+                .or_insert(1);
+            let observation_id = format!(
+                "obs-{import_prefix}-{event_id}-{}-{ordinal}",
+                slug(&measurement.metric, 32)
+            );
+            if bundle
+                .observations
+                .iter()
+                .any(|observation| observation.observation_id == observation_id)
+            {
+                skipped_observation_count += 1;
+                continue;
+            }
+            bundle.observations.push(Observation {
+                observation_id,
+                case_id: case_id.clone(),
+                event_id,
+                metric: measurement.metric,
+                region: "whole_body".into(),
+                value: Some(Value::from(measurement.value)),
+                unit: measurement.unit,
+                collection_context: CollectionContext::Unknown,
+                source_locator: SourceLocator {
+                    source_id: dataset_source_id.clone(),
+                    pdf_page: None,
+                    book_page: None,
+                    channel: "governed_dataset".into(),
+                    figure: None,
+                },
+                verification_status: VerificationStatus::Verified,
+                note: Some("来自 Galen 数据体检后的可追溯数据版本".into()),
+            });
+            imported_observation_count += 1;
+            changed = true;
+        }
+        if changed {
+            bundle.revision += 1;
+            bundle.case_record.updated_at = now_timestamp();
+            bundle.cohort_row = compute_cohort_row(&bundle);
+            save_case_bundle(workspace, &bundle)?;
+        }
+        case_ids.push(case_id);
+    }
+
+    let receipt_data = GovernedTimelineImportReceipt {
+        schema_version: SCHEMA_VERSION,
+        imported_at: now_timestamp(),
+        dataset_path: input.dataset_path,
+        quality_report_path: input.quality_report_path,
+        dataset_sha256: dataset_hash,
+        case_ids: case_ids.clone(),
+        imported_event_count,
+        imported_observation_count,
+        skipped_observation_count,
+    };
+    let stamp = now_millis();
+    let receipt_path = format!("output/galen-rehab-import-{stamp}.json");
+    std::fs::create_dir_all(workspace.join("output"))
+        .map_err(|error| format!("创建导入回执目录失败: {error}"))?;
+    std::fs::write(
+        workspace.join(&receipt_path),
+        serde_json::to_string_pretty(&receipt_data)
+            .map_err(|error| format!("序列化导入回执失败: {error}"))?,
+    )
+    .map_err(|error| format!("写入导入回执失败: {error}"))?;
+    let task_id = crate::research_task::load_active_task(workspace)?.map(|task| task.task_id);
+    let receipt = crate::artifact::register_file(workspace, &receipt_path, task_id, None)?;
+    Ok(GovernedTimelineImportOutput {
+        case_ids,
+        imported_event_count,
+        imported_observation_count,
+        skipped_observation_count,
+        receipt,
+    })
+}
+
 pub fn load_case_bundle(workspace: &Path, case_id: &str) -> Result<RehabCaseBundle, String> {
     validate_id(case_id)?;
     let path = case_path(workspace, case_id);
@@ -447,16 +719,18 @@ pub fn compute_cohort_row(bundle: &RehabCaseBundle) -> CohortRow {
     let mut derived_values = BTreeMap::new();
     let mut selected_observation_ids = Vec::new();
 
-    for baseline in verified
-        .iter()
-        .filter(|observation| observation.event_id == "baseline")
-    {
+    for baseline in verified.iter().filter(|observation| {
+        bundle.events.iter().any(|event| {
+            event.event_id == observation.event_id && event.event_type == EventType::Baseline
+        })
+    }) {
         let Some(baseline_value) = baseline.value.as_ref().and_then(Value::as_f64) else {
             continue;
         };
         let follow_up = verified.iter().find(|observation| {
-            observation.event_id == "follow_up"
-                && observation.metric == baseline.metric
+            bundle.events.iter().any(|event| {
+                event.event_id == observation.event_id && event.event_type == EventType::FollowUp
+            }) && observation.metric == baseline.metric
                 && observation.region == baseline.region
                 && observation.value.as_ref().and_then(Value::as_f64).is_some()
         });
@@ -487,7 +761,11 @@ pub fn compute_cohort_row(bundle: &RehabCaseBundle) -> CohortRow {
     let located = verified
         .iter()
         .filter(|observation| {
-            observation.source_locator.pdf_page.is_some()
+            observation
+                .source_locator
+                .source_id
+                .starts_with("governed-dataset-")
+                || observation.source_locator.pdf_page.is_some()
                 || observation.source_locator.book_page.is_some()
                 || observation.source_locator.figure.is_some()
         })
@@ -605,6 +883,116 @@ fn empty_cohort(case_id: &str) -> CohortRow {
     }
 }
 
+fn new_governed_case(case_id: &str) -> RehabCaseBundle {
+    let now = now_timestamp();
+    RehabCaseBundle {
+        schema_version: SCHEMA_VERSION,
+        revision: 0,
+        case_record: CaseRecord {
+            case_id: case_id.to_string(),
+            research_id: None,
+            demographics: Value::Object(Default::default()),
+            condition: serde_json::json!({"source": "governed_research_dataset"}),
+            source_ids: Vec::new(),
+            created_at: now.clone(),
+            updated_at: now,
+        },
+        sources: Vec::new(),
+        events: Vec::new(),
+        observations: Vec::new(),
+        review_decisions: Vec::new(),
+        cohort_row: empty_cohort(case_id),
+    }
+}
+
+fn normalize_governed_id(value: &str, label: &str) -> Result<String, String> {
+    let normalized = value
+        .trim()
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || character == '-' || character == '_' {
+                character
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string();
+    validate_id(&normalized)
+        .map_err(|_| format!("{label} 不能为空，且只能使用字母、数字、- 或 _。"))?;
+    Ok(normalized.chars().take(80).collect())
+}
+
+fn normalize_timepoint(value: &str) -> Result<String, String> {
+    let cleaned = value.trim().chars().take(80).collect::<String>();
+    if cleaned.is_empty() {
+        Err("时间点不能为空。".into())
+    } else {
+        Ok(cleaned)
+    }
+}
+
+fn clean_unit(value: &str) -> String {
+    let unit = value.trim().chars().take(32).collect::<String>();
+    if unit.is_empty() {
+        "value".into()
+    } else {
+        unit
+    }
+}
+
+fn slug(value: &str, max: usize) -> String {
+    let value = value
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() {
+                character.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+    let value = value
+        .trim_matches('-')
+        .chars()
+        .take(max)
+        .collect::<String>();
+    if value.is_empty() {
+        "record".into()
+    } else {
+        value
+    }
+}
+
+fn hash_fragment(value: &str, length: usize) -> String {
+    format!("{:x}", Sha256::digest(value.as_bytes()))
+        .chars()
+        .take(length)
+        .collect()
+}
+
+fn event_type_for_timepoint(timepoint: &str) -> EventType {
+    let value = timepoint
+        .to_ascii_lowercase()
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect::<String>();
+    if value.contains("baseline") || timepoint.contains("基线") || value == "t0" {
+        EventType::Baseline
+    } else if value.contains("follow")
+        || timepoint.contains("随访")
+        || value.contains("24h")
+        || value.contains("48h")
+        || value.contains("week")
+        || timepoint.contains("天")
+    {
+        EventType::FollowUp
+    } else {
+        EventType::Assessment
+    }
+}
+
 fn clean_reviewer(value: &str) -> String {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -620,6 +1008,13 @@ fn now_timestamp() -> String {
         .unwrap_or_default()
         .as_secs()
         .to_string()
+}
+
+fn now_millis() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
 }
 
 #[cfg(test)]
@@ -689,5 +1084,148 @@ mod tests {
     fn rejects_path_traversal_case_id() {
         let workspace = fixture_workspace();
         assert!(load_case_bundle(&workspace, "../escape").is_err());
+    }
+
+    #[test]
+    fn governed_dataset_becomes_a_durable_rehab_id_timeline() {
+        let workspace = fixture_workspace();
+        std::fs::create_dir_all(workspace.join("output")).unwrap();
+        std::fs::write(
+            workspace.join("output/cleaned-fatigue.csv"),
+            "rehab_id,timepoint,hrv_rmssd_ms,cmj_height_cm\nP-001,baseline,42,31\nP-001,24h,55,34\n",
+        )
+        .unwrap();
+        std::fs::write(
+            workspace.join("output/quality.json"),
+            "{\"schemaVersion\":1}",
+        )
+        .unwrap();
+        let input = GovernedTimelineImportInput {
+            dataset_path: "output/cleaned-fatigue.csv".into(),
+            quality_report_path: "output/quality.json".into(),
+            measurements: vec![
+                GovernedMeasurementInput {
+                    case_id: "P-001".into(),
+                    timepoint: "baseline".into(),
+                    metric: "hrv_rmssd_ms".into(),
+                    value: 42.0,
+                    unit: "ms".into(),
+                },
+                GovernedMeasurementInput {
+                    case_id: "P-001".into(),
+                    timepoint: "baseline".into(),
+                    metric: "cmj_height_cm".into(),
+                    value: 31.0,
+                    unit: "cm".into(),
+                },
+                GovernedMeasurementInput {
+                    case_id: "P-001".into(),
+                    timepoint: "24h".into(),
+                    metric: "hrv_rmssd_ms".into(),
+                    value: 55.0,
+                    unit: "ms".into(),
+                },
+                GovernedMeasurementInput {
+                    case_id: "P-001".into(),
+                    timepoint: "24h".into(),
+                    metric: "cmj_height_cm".into(),
+                    value: 34.0,
+                    unit: "cm".into(),
+                },
+            ],
+        };
+        let output = import_governed_timeline(&workspace, input.clone()).unwrap();
+        assert_eq!(output.case_ids, vec!["P-001"]);
+        assert_eq!(output.imported_event_count, 2);
+        assert_eq!(output.imported_observation_count, 4);
+        assert!(workspace.join(&output.receipt.path).is_file());
+        let bundle = load_case_bundle(&workspace, "P-001").unwrap();
+        assert_eq!(bundle.events.len(), 2);
+        assert_eq!(bundle.observations.len(), 4);
+        assert_eq!(bundle.sources.len(), 2);
+        assert_eq!(bundle.cohort_row.status, CohortStatus::Included);
+        assert_eq!(bundle.cohort_row.source_coverage, 1.0);
+
+        let repeated = import_governed_timeline(&workspace, input).unwrap();
+        assert_eq!(repeated.imported_event_count, 0);
+        assert_eq!(repeated.imported_observation_count, 0);
+        assert_eq!(repeated.skipped_observation_count, 4);
+        assert_eq!(
+            load_case_bundle(&workspace, "P-001")
+                .unwrap()
+                .observations
+                .len(),
+            4
+        );
+    }
+
+    #[test]
+    fn chinese_timepoints_are_never_collapsed_into_one_event() {
+        let workspace = fixture_workspace();
+        std::fs::create_dir_all(workspace.join("output")).unwrap();
+        std::fs::write(workspace.join("output/cleaned.csv"), "metric\n1\n").unwrap();
+        std::fs::write(workspace.join("output/quality.json"), "{}").unwrap();
+        let output = import_governed_timeline(
+            &workspace,
+            GovernedTimelineImportInput {
+                dataset_path: "output/cleaned.csv".into(),
+                quality_report_path: "output/quality.json".into(),
+                measurements: vec![
+                    GovernedMeasurementInput {
+                        case_id: "P-002".into(),
+                        timepoint: "基线".into(),
+                        metric: "hrv_rmssd_ms".into(),
+                        value: 40.0,
+                        unit: "ms".into(),
+                    },
+                    GovernedMeasurementInput {
+                        case_id: "P-002".into(),
+                        timepoint: "训练后24小时".into(),
+                        metric: "hrv_rmssd_ms".into(),
+                        value: 38.0,
+                        unit: "ms".into(),
+                    },
+                    GovernedMeasurementInput {
+                        case_id: "P-002".into(),
+                        timepoint: "训练后48小时".into(),
+                        metric: "hrv_rmssd_ms".into(),
+                        value: 46.0,
+                        unit: "ms".into(),
+                    },
+                ],
+            },
+        )
+        .unwrap();
+        assert_eq!(output.imported_event_count, 3);
+        let bundle = load_case_bundle(&workspace, "P-002").unwrap();
+        assert_eq!(bundle.events.len(), 3);
+        assert_ne!(bundle.events[1].event_id, bundle.events[2].event_id);
+    }
+
+    #[test]
+    fn governed_import_never_replaces_a_corrupt_existing_case() {
+        let workspace = fixture_workspace();
+        std::fs::create_dir_all(workspace.join("output")).unwrap();
+        std::fs::write(workspace.join("output/cleaned.csv"), "metric\n1\n").unwrap();
+        std::fs::write(workspace.join("output/quality.json"), "{}").unwrap();
+        std::fs::create_dir_all(cases_dir(&workspace)).unwrap();
+        let corrupt = case_path(&workspace, "P-003");
+        std::fs::write(&corrupt, "not valid json").unwrap();
+        let result = import_governed_timeline(
+            &workspace,
+            GovernedTimelineImportInput {
+                dataset_path: "output/cleaned.csv".into(),
+                quality_report_path: "output/quality.json".into(),
+                measurements: vec![GovernedMeasurementInput {
+                    case_id: "P-003".into(),
+                    timepoint: "baseline".into(),
+                    metric: "rpe".into(),
+                    value: 12.0,
+                    unit: "score".into(),
+                }],
+            },
+        );
+        assert!(result.is_err());
+        assert_eq!(std::fs::read_to_string(corrupt).unwrap(), "not valid json");
     }
 }

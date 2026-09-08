@@ -1,8 +1,9 @@
 use std::path::Path;
 
+use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::backend::FileEntry;
+use crate::{artifact::ArtifactRecord, backend::FileEntry};
 
 use super::{lock_mutex, AppState};
 
@@ -92,6 +93,74 @@ pub fn read_artifact_bytes(
         .ok_or("No workspace selected")?;
     let bytes = read_artifact_bytes_at(&root, &path)?;
     Ok(tauri::ipc::Response::new(bytes))
+}
+
+/// Cleaned tabular data is always written as a new, timestamped CSV together
+/// with its machine-readable quality report. The source file is never touched.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CleanedDatasetInput {
+    pub source_path: String,
+    pub csv: String,
+    pub report_json: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CleanedDatasetOutput {
+    pub dataset: ArtifactRecord,
+    pub quality_report: ArtifactRecord,
+}
+
+#[tauri::command]
+pub fn write_cleaned_dataset(
+    state: State<AppState>,
+    input: CleanedDatasetInput,
+) -> Result<CleanedDatasetOutput, String> {
+    const MAX_OUTPUT_BYTES: usize = 25 * 1024 * 1024;
+    if input.csv.trim().is_empty() {
+        return Err("清洗结果为空，未生成新数据集。".into());
+    }
+    if input.csv.len() > MAX_OUTPUT_BYTES || input.report_json.len() > MAX_OUTPUT_BYTES {
+        return Err("当前清洗结果过大，请先拆分数据或使用批处理流程。".into());
+    }
+    serde_json::from_str::<serde_json::Value>(&input.report_json)
+        .map_err(|error| format!("数据质量报告不是有效 JSON: {error}"))?;
+    let backend = lock_mutex(&state.backend)?;
+    let root = backend.get_workspace_root().ok_or("请先选择工作区")?;
+    let task_id = crate::research_task::load_active_task(&root)?.map(|task| task.task_id);
+    let source_name = std::path::Path::new(&input.source_path)
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("dataset");
+    let safe_name: String = source_name
+        .chars()
+        .map(|ch| {
+            if ch.is_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|value| value.as_secs())
+        .unwrap_or_default();
+    let data_relative = format!("output/galen-cleaned-{safe_name}-{stamp}.csv");
+    let report_relative = format!("output/galen-quality-{safe_name}-{stamp}.json");
+    std::fs::create_dir_all(root.join("output"))
+        .map_err(|error| format!("创建数据输出目录失败: {error}"))?;
+    std::fs::write(root.join(&data_relative), input.csv)
+        .map_err(|error| format!("写入清洗数据失败: {error}"))?;
+    std::fs::write(root.join(&report_relative), input.report_json)
+        .map_err(|error| format!("写入数据质量报告失败: {error}"))?;
+    let dataset = crate::artifact::register_file(&root, &data_relative, task_id.clone(), None)?;
+    let quality_report = crate::artifact::register_file(&root, &report_relative, task_id, None)?;
+    Ok(CleanedDatasetOutput {
+        dataset,
+        quality_report,
+    })
 }
 
 #[cfg(test)]

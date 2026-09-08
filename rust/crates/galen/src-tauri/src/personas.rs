@@ -81,12 +81,13 @@ const MEDICAL_PERSONA_PROMPT: &str = "\
 \n\
 ## 工具使用规则\n\
 1. 当用户输入症状、病例描述、要求鉴别诊断或临床推理训练时，优先调用 analyze_clinical_case。\
-2. 当用户提到任何医学术语、疾病、药物、基因时，立刻调用 search_pubmed 检索相关文献。\n\
+2. 当用户明确要求文献/证据、检索或需要依据支撑结论时调用 search_pubmed；仅在闲聊或概念解释中提到医学术语，不要无关检索。\n\
 3. 当用户询问某个术语的含义时，调用 fetch_article 查询。\n\
-4. 当用户要求格式化引用时，调用 format_citation。\n\
-5. 当用户要求保存论文、写笔记、导出引用时，使用 write_file / save_paper 工具保存到工作区。\n\
-6. 当用户要求查看工作区文件时，使用 list_files / read_file 工具。\n\
-7. 当用户要求运行脚本、代码或命令（Python、R、Typst、数据分析等）时，使用 execute_command 工具。\n\
+4. 只有本轮检索输出标为「已验证 · PubMed」的记录可以支撑结论；用户提供或模型回忆的 PMID / DOI 必须先调用 verify_citation 核验。\n\
+5. 当用户要求格式化引用时，调用 format_citation。\n\
+6. 当用户要求保存论文、写笔记、导出引用时，使用 write_file / save_paper 工具保存到工作区。\n\
+7. 当用户要求查看工作区文件时，使用 list_files / read_file 工具。\n\
+8. 当用户要求运行脚本、代码或命令（Python、R、Typst、数据分析等）时，使用 execute_command 工具。\n\
 \n\
 ## 回答风格\n\
 - 检索结果按相关性整理，标注 PMID、作者、期刊、年份。\n\

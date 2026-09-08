@@ -56,16 +56,14 @@ fn get_version(binary: &str) -> Option<String> {
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
-    cmd.output()
-        .ok()
-        .and_then(|o| {
-            if o.status.success() {
-                let text = String::from_utf8_lossy(&o.stdout);
-                text.lines().next().map(|l| l.trim().to_string())
-            } else {
-                None
-            }
-        })
+    cmd.output().ok().and_then(|o| {
+        if o.status.success() {
+            let text = String::from_utf8_lossy(&o.stdout);
+            text.lines().next().map(|l| l.trim().to_string())
+        } else {
+            None
+        }
+    })
 }
 
 fn detect_python() -> RuntimeInfo {

@@ -404,10 +404,8 @@ mod tests {
 
     #[test]
     fn legacy_discuss_setting_migrates_to_auto() {
-        let dir = std::env::temp_dir().join(format!(
-            "galen-legacy-discuss-test-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("galen-legacy-discuss-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("settings.toml");
         std::fs::write(&path, "mode = \"discuss\"\n").unwrap();

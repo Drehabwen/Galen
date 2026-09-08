@@ -22,9 +22,11 @@ interface ResearchDocumentCanvasProps {
 
 function MarkdownView({ content }: { content: string }) {
   return (
-    <article className="artifact-preview-content" data-testid="artifact-rendered-preview">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-    </article>
+    <div className="artifact-preview-scroll">
+      <article className="artifact-preview-content" data-testid="artifact-rendered-preview">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+      </article>
+    </div>
   );
 }
 
@@ -97,6 +99,7 @@ function PdfView({ blob }: { blob: Blob }) {
   const [currentPage, setCurrentPage] = useState(1);
   const [loadError, setLoadError] = useState<string | null>(null);
   const canvasRefs = useRef<Record<number, HTMLCanvasElement | null>>({});
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -152,7 +155,31 @@ function PdfView({ blob }: { blob: Blob }) {
   const jumpToPage = (page: number) => {
     const target = Math.min(Math.max(page, 1), numPages);
     setCurrentPage(target);
+    const container = scrollRef.current;
+    const pageElement = canvasRefs.current[target]?.closest<HTMLElement>(".artifact-pdf-page");
+    if (container && pageElement && typeof container.scrollTo === "function") {
+      container.scrollTo({ top: Math.max(pageElement.offsetTop - 12, 0), behavior: "smooth" });
+      return;
+    }
     canvasRefs.current[target]?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+  };
+
+  const syncPageFromScroll = () => {
+    const container = scrollRef.current;
+    if (!container || numPages === 0) return;
+    const marker = container.scrollTop + 24;
+    let nearestPage = 1;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    for (let pageNumber = 1; pageNumber <= numPages; pageNumber += 1) {
+      const pageElement = canvasRefs.current[pageNumber]?.closest<HTMLElement>(".artifact-pdf-page");
+      if (!pageElement) continue;
+      const distance = Math.abs(pageElement.offsetTop - marker);
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestPage = pageNumber;
+      }
+    }
+    setCurrentPage((current) => current === nearestPage ? current : nearestPage);
   };
 
   if (loadError) return <div className="artifact-empty artifact-error">PDF 解析失败：{loadError}</div>;
@@ -164,7 +191,12 @@ function PdfView({ blob }: { blob: Blob }) {
         <span>第 {currentPage} / {numPages} 页</span>
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => jumpToPage(currentPage + 1)} disabled={currentPage >= numPages}>下一页</button>
       </div>
-      <div className="artifact-preview-scroll artifact-pdf-pages" data-testid="artifact-pdf-document">
+      <div
+        ref={scrollRef}
+        className="artifact-preview-scroll artifact-pdf-pages"
+        data-testid="artifact-pdf-document"
+        onScroll={syncPageFromScroll}
+      >
         {Array.from({ length: numPages }, (_, index) => {
           const pageNumber = index + 1;
           return (

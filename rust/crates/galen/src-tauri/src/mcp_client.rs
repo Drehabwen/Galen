@@ -889,6 +889,24 @@ mod tests {
         .task_id
     }
 
+    #[tokio::test]
+    #[ignore = "requires the locally configured CNKI browser profile and network"]
+    async fn configured_cnki_connects_and_exposes_a_search_tool() {
+        let registry = connect_configured_servers().await;
+        let cnki_tools = registry
+            .mcp_tool_definitions()
+            .into_iter()
+            .filter(|(server, _)| server == "cnki")
+            .map(|(_, tool)| tool.name)
+            .collect::<Vec<_>>();
+        assert!(
+            cnki_tools
+                .iter()
+                .any(|name| crate::tools::research::recognized_mcp_search("cnki", name).is_some()),
+            "CNKI connected but did not expose a registered search tool: {cnki_tools:?}"
+        );
+    }
+
     fn fixture_child(response: &str) -> Child {
         #[cfg(windows)]
         let mut command = {

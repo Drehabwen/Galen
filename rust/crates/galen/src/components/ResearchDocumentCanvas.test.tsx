@@ -64,6 +64,7 @@ describe("ResearchDocumentCanvas preview dispatch", () => {
     );
     const article = screen.getByTestId("artifact-rendered-preview");
     expect(article.querySelector("h1")?.textContent).toBe("标题");
+    expect(article.parentElement?.classList.contains("artifact-preview-scroll")).toBe(true);
   });
 
   it("renders plain text through ReactMarkdown", () => {
@@ -93,11 +94,19 @@ describe("ResearchDocumentCanvas preview dispatch", () => {
       />,
     );
     const document = await screen.findByTestId("artifact-pdf-document");
+    expect(document.classList.contains("artifact-preview-scroll")).toBe(true);
     expect(document.querySelectorAll("canvas")).toHaveLength(2);
     expect(screen.getByText("第 1 / 2 页")).toBeTruthy();
     expect(renderPage).toHaveBeenCalledTimes(2);
     fireEvent.click(screen.getByRole("button", { name: "下一页" }));
     expect(screen.getByText("第 2 / 2 页")).toBeTruthy();
+
+    const pages = document.querySelectorAll<HTMLElement>(".artifact-pdf-page");
+    Object.defineProperty(pages[0], "offsetTop", { configurable: true, value: 0 });
+    Object.defineProperty(pages[1], "offsetTop", { configurable: true, value: 500 });
+    Object.defineProperty(document, "scrollTop", { configurable: true, value: 0 });
+    fireEvent.scroll(document);
+    expect(screen.getByText("第 1 / 2 页")).toBeTruthy();
   });
 
   it("renders images through an img tag", () => {

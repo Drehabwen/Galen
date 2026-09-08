@@ -13,7 +13,7 @@ import type { useResearchTask } from "./useResearchTask";
 
 type ChatController = ReturnType<typeof useChat>;
 type ResearchController = ReturnType<typeof useResearchTask>;
-export type CanvasTab = "plan" | "doc";
+export type CanvasTab = "insight" | "plan" | "evidence" | "doc";
 
 export function useArtifactDelivery(
   backendAvailable: boolean,
@@ -108,6 +108,17 @@ export function useArtifactDelivery(
     [readArtifact, research.nodes],
   );
 
+  const acceptArtifact = useCallback((artifact: ArtifactRecord) => {
+    setArtifacts((current) => mergeDeliveredArtifact(current, artifact));
+  }, []);
+
+  const clearTopicView = useCallback(() => {
+    setPreview(null);
+    setError(null);
+    setLoading(false);
+    setCanvasTab("plan");
+  }, []);
+
   return {
     canvasTab,
     setCanvasTab,
@@ -117,5 +128,7 @@ export function useArtifactDelivery(
     artifacts,
     previewNodeArtifact,
     openRegisteredArtifact,
+    acceptArtifact,
+    clearTopicView,
   };
 }

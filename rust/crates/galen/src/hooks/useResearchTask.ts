@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { ResearchTask } from "../domain/researchTask";
+import type { PiSnapshot, ResearchTask } from "../domain/researchTask";
 import type { SessionNode } from "../domain/sessionTypes";
 
 export interface TaskEvidenceInput {
@@ -15,11 +15,7 @@ export interface TaskEvidenceInput {
 }
 
 export function normalizeResearchNodes(nodes: SessionNode[]): SessionNode[] {
-  return nodes.map((node) => ({
-    ...node,
-    approvalRequired: false,
-    status: node.status === "pending_approval" ? "pending" : node.status,
-  }));
+  return nodes.map((node) => ({ ...node }));
 }
 
 export function useResearchTask(
@@ -34,14 +30,11 @@ export function useResearchTask(
   const workspaceScopeRef = useRef(workspaceRoot);
   workspaceScopeRef.current = workspaceRoot;
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
-  const skipNextSaveRef = useRef(false);
 
   const acceptSnapshot = useCallback((snapshot: ResearchTask) => {
     const normalizedNodes = normalizeResearchNodes(snapshot.nodes);
-    // Snapshots emitted by the host are authoritative. Synchronize both the
-    // task metadata and the canvas nodes, while preventing the mirror state
-    // from being written straight back as a redundant revision.
-    skipNextSaveRef.current = true;
+    // Snapshots emitted by the host are authoritative. The webview mirrors
+    // them but never writes node transitions back implicitly.
     revisionRef.current = snapshot.revision;
     setTask({ ...snapshot, nodes: normalizedNodes });
     setNodes(normalizedNodes);
@@ -62,10 +55,6 @@ export function useResearchTask(
       return null;
     }
     const restoredNodes = normalizeResearchNodes(snapshot.nodes);
-    const needsNormalization = snapshot.nodes.some(
-      (node) => node.status === "pending_approval" || node.approvalRequired,
-    );
-    skipNextSaveRef.current = !needsNormalization;
     revisionRef.current = snapshot.revision;
     setTask({ ...snapshot, nodes: restoredNodes });
     setNodes(restoredNodes);
@@ -91,34 +80,6 @@ export function useResearchTask(
     };
   }, [backendAvailable, workspaceRoot, restore]);
 
-  useEffect(() => {
-    if (!confirmed || !task || nodes.length === 0) return;
-    if (skipNextSaveRef.current) {
-      skipNextSaveRef.current = false;
-      return;
-    }
-    const taskId = task.taskId;
-    const nextNodes = nodes;
-    saveQueueRef.current = saveQueueRef.current
-      .catch(() => undefined)
-      .then(async () => {
-        const saved = await invoke<ResearchTask>("save_research_task_nodes", {
-          taskId,
-          expectedRevision: revisionRef.current,
-          nodes: nextNodes,
-        });
-        acceptSnapshot(saved);
-        setError(null);
-      })
-      .catch(async (cause) => {
-        const message = String(cause);
-        setError(message);
-        if (message.includes("RESEARCH_TASK_CONFLICT")) {
-          await restore().catch(() => undefined);
-        }
-      });
-  }, [acceptSnapshot, confirmed, nodes, restore, task?.taskId]);
-
   const createTask = useCallback(
     async (title: string, goal: string, initialNodes: SessionNode[]) => {
       const normalized = normalizeResearchNodes(initialNodes);
@@ -127,21 +88,11 @@ export function useResearchTask(
         goal,
         nodes: normalized,
       });
-      skipNextSaveRef.current = true;
       acceptSnapshot(created);
-      setNodes(normalized);
-      setConfirmed(true);
-      setError(null);
       return created;
     },
     [acceptSnapshot],
   );
-
-  const patchNode = useCallback((id: string, patch: Partial<SessionNode>) => {
-    setNodes((current) =>
-      current.map((node) => (node.id === id ? { ...node, ...patch } : node)),
-    );
-  }, []);
 
   const appendEvidence = useCallback(
     (evidence: TaskEvidenceInput) => {
@@ -158,19 +109,124 @@ export function useResearchTask(
     [acceptSnapshot],
   );
 
+  const runPiCommand = useCallback(
+    (
+      command: string,
+      args: Record<string, unknown>,
+    ): Promise<PiSnapshot> => {
+      const operation = saveQueueRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          const snapshot = await invoke<PiSnapshot>(command, args);
+          acceptSnapshot(snapshot.task);
+          setError(null);
+          return snapshot;
+        })
+        .catch(async (cause) => {
+          const message = String(cause);
+          setError(message);
+          if (
+            message.includes("RESEARCH_TASK_CONFLICT") ||
+            message.includes("PI_TASK_CONFLICT")
+          ) {
+            await restore().catch(() => undefined);
+          }
+          throw cause;
+        });
+      saveQueueRef.current = operation.then(
+        () => undefined,
+        () => undefined,
+      );
+      return operation;
+    },
+    [acceptSnapshot, restore],
+  );
+
+  const startNode = useCallback(
+    (nodeId: string) => {
+      if (!task) return Promise.reject(new Error("当前没有活动研究任务"));
+      return runPiCommand("pi_start_node", {
+        taskId: task.taskId,
+        expectedRevision: revisionRef.current,
+        nodeId,
+        idempotencyKey: crypto.randomUUID(),
+      });
+    },
+    [runPiCommand, task],
+  );
+
+  const completeNode = useCallback(
+    (
+      nodeId: string,
+      result: string,
+      evidence: string[],
+      outputs: string[] = [],
+    ) => {
+      if (!task) return Promise.reject(new Error("当前没有活动研究任务"));
+      return runPiCommand("pi_complete_node", {
+        taskId: task.taskId,
+        expectedRevision: revisionRef.current,
+        nodeId,
+        result,
+        evidence,
+        outputs,
+        idempotencyKey: crypto.randomUUID(),
+      });
+    },
+    [runPiCommand, task],
+  );
+
+  const approveNode = useCallback(
+    (nodeId: string) => {
+      if (!task) return Promise.reject(new Error("当前没有活动研究任务"));
+      return runPiCommand("pi_approve_node", {
+        taskId: task.taskId,
+        expectedRevision: revisionRef.current,
+        nodeId,
+        idempotencyKey: crypto.randomUUID(),
+      });
+    },
+    [runPiCommand, task],
+  );
+
+  const assignNode = useCallback(
+    (nodeId: string, owner?: string) => {
+      if (!task) return Promise.reject(new Error("当前没有活动研究任务"));
+      return runPiCommand("pi_assign_node", {
+        taskId: task.taskId,
+        expectedRevision: revisionRef.current,
+        nodeId,
+        owner,
+        idempotencyKey: crypto.randomUUID(),
+      });
+    },
+    [runPiCommand, task],
+  );
+
   const flushWrites = useCallback(() => saveQueueRef.current, []);
+
+  const reset = useCallback(() => {
+    revisionRef.current = 0;
+    setTask(null);
+    setNodes([]);
+    setConfirmed(false);
+    setError(null);
+  }, []);
 
   return {
     task,
     nodes,
-    setNodes,
     confirmed,
     createTask,
-    patchNode,
+    startNode,
+    completeNode,
+    approveNode,
+    assignNode,
     appendEvidence,
     acceptSnapshot,
     flushWrites,
     restore,
+    reset,
     error,
   };
 }

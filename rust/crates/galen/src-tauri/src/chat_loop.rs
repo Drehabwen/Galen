@@ -832,7 +832,7 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
                         }
                         Err(error) => Err(error),
                     };
-            let (text, is_error) = match result {
+                let (text, is_error) = match result {
                     Ok(ok) => (ok, false),
                     Err(error) => (error, true),
                 };

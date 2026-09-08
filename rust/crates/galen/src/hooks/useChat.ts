@@ -31,6 +31,7 @@ export function useChat(workspaceRoot: string | null) {
   const [researchTaskUpdate, setResearchTaskUpdate] = useState<ResearchTask | null>(null);
   const [latestRunMetrics, setLatestRunMetrics] = useState<ChatRunSummary | null>(null);
   const [toolProgress, setToolProgress] = useState<ToolProgress | null>(null);
+  const [toolProgressHistory, setToolProgressHistory] = useState<ToolProgress[]>([]);
   const currentModel = useRef<string>("");
   const sendingRef = useRef(false);
   const doneHandledRef = useRef(false); // prevent duplicate done handling
@@ -128,7 +129,16 @@ export function useChat(workspaceRoot: string | null) {
         if (!cancelled) setLatestRunMetrics(e.payload);
       });
       const ul12 = await listen<ToolProgress>("chat-tool-progress", (e) => {
-        if (!cancelled) setToolProgress(e.payload);
+        if (!cancelled) {
+          setToolProgress(e.payload);
+          setToolProgressHistory((current) => {
+            const index = current.findIndex((item) => item.turn === e.payload.turn && item.tool === e.payload.tool);
+            const next = index >= 0
+              ? current.map((item, itemIndex) => itemIndex === index ? e.payload : item)
+              : [...current, e.payload];
+            return next.slice(-6);
+          });
+        }
       });
       unlisteners.push(ul1, ul2, ul3, ul4, ul5, ul6, ul7, ul8, ul9, ul10, ul11, ul12);
     };
@@ -170,6 +180,7 @@ export function useChat(workspaceRoot: string | null) {
       setStreaming("");
       setThinking("");
       setToolProgress(null);
+      setToolProgressHistory([]);
       setError(null);
 
       try {
@@ -214,6 +225,20 @@ export function useChat(workspaceRoot: string | null) {
     }
   }, [backendAvailable, workspaceRoot]);
 
+  const resetView = useCallback(() => {
+    setMessages([]);
+    setStreaming("");
+    setThinking("");
+    setThinkingHistory({});
+    setLatestArtifact(null);
+    setResearchTaskUpdate(null);
+    setLatestRunMetrics(null);
+    setToolProgress(null);
+    setToolProgressHistory([]);
+    setError(null);
+    setSearchResults([]);
+  }, []);
+
   return {
     messages,
     streaming,
@@ -229,7 +254,9 @@ export function useChat(workspaceRoot: string | null) {
     researchTaskUpdate,
     latestRunMetrics,
     toolProgress,
+    toolProgressHistory,
     send,
     clear,
+    resetView,
   };
 }

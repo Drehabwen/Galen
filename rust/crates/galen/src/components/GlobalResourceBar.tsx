@@ -53,7 +53,10 @@ export function GlobalResourceBar({ artifacts = [], onOpenArtifact }: GlobalReso
                       key={artifact.id}
                       type="button"
                       className="artifact-ledger-row"
-                      onClick={() => onOpenArtifact?.(artifact)}
+                      onClick={() => {
+                        onOpenArtifact?.(artifact);
+                        setActiveTab(null);
+                      }}
                     >
                       <span className="artifact-ledger-kind">{artifact.kind}</span>
                       <span className="artifact-ledger-path">{artifact.path}</span>

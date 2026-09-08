@@ -298,6 +298,7 @@ pub fn attach_artifact(
         .or_else(|| task.nodes.len().checked_sub(1))
         .ok_or("研究任务没有可绑定产物的节点")?;
     let node = &mut task.nodes[node_index];
+    let attached_node_id = node.id.clone();
     if !node.outputs.iter().any(|path| path == artifact_path) {
         node.outputs.push(artifact_path.to_string());
     }
@@ -313,6 +314,31 @@ pub fn attach_artifact(
     task.revision = task.revision.saturating_add(1);
     task.updated_at = now_timestamp();
     save_task(workspace, &task)?;
+    crate::pi_event::append_event(
+        workspace,
+        &task.task_id,
+        None,
+        crate::pi_event::PiEventKind::ProjectCreated,
+        &format!("project-created:{}", task.task_id),
+        serde_json::json!({
+            "title": task.title,
+            "goal": task.goal,
+            "revision": task.revision,
+            "recovered": true,
+        }),
+    )?;
+    crate::pi_event::append_event(
+        workspace,
+        &task.task_id,
+        Some(&attached_node_id),
+        crate::pi_event::PiEventKind::ArtifactAttached,
+        &format!("artifact-attached:{artifact_id}"),
+        serde_json::json!({
+            "artifactId": artifact_id,
+            "path": artifact_path,
+            "revision": task.revision,
+        }),
+    )?;
     Ok(task)
 }
 

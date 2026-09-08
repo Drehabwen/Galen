@@ -22,3 +22,13 @@ export interface ResearchTask {
   evidenceIds: string[];
   artifactIds: string[];
 }
+
+/** Derived execution view owned by the Rust PI kernel. */
+export interface PiSnapshot {
+  task: ResearchTask;
+  readyNodeIds: string[];
+  activeNodeIds: string[];
+  blockedNodeIds: string[];
+  awaitingDecisionNodeIds: string[];
+  lastEventSequence: number;
+}

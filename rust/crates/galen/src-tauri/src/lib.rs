@@ -17,11 +17,14 @@ pub mod evidence_search;
 pub mod mcp_client;
 pub mod modes;
 pub mod personas;
+pub mod pi_event;
+pub mod pi_kernel;
 pub mod probe;
 pub mod rag_eval;
 pub mod rehab_context;
 pub mod rehab_eval;
 pub mod research_task;
+pub mod review_flow;
 pub mod runtime_manager;
 pub mod search_run;
 pub mod skills;
@@ -79,6 +82,7 @@ pub fn run() {
             commands::workspace::list_workspace_files,
             commands::workspace::read_workspace_file,
             commands::workspace::read_artifact_bytes,
+            commands::workspace::write_cleaned_dataset,
             commands::analyze_clinical_case,
             commands::send_message,
             commands::get_chat_session,
@@ -86,6 +90,7 @@ pub fn run() {
             commands::revise_conversation_decision,
             commands::dismiss_conversation_decision,
             commands::clear_chat_session,
+            commands::start_new_research_topic,
             commands::get_runtime_status,
             commands::get_mcp_status,
             commands::get_memory_status,
@@ -95,12 +100,22 @@ pub fn run() {
             commands::test_model_connection,
             commands::append_evidence,
             commands::get_evidence,
+            commands::export_evidence_citations,
+            commands::get_review_flow,
+            commands::save_review_flow,
             commands::get_literature_coverage,
             commands::get_artifacts,
             commands::create_research_task,
             commands::get_active_research_task,
-            commands::save_research_task_nodes,
+            commands::get_pi_snapshot,
+            commands::get_pi_events,
+            commands::pi_start_node,
+            commands::pi_complete_node,
+            commands::pi_block_node,
+            commands::pi_approve_node,
+            commands::pi_assign_node,
             commands::rehab::import_rehab_case,
+            commands::rehab::import_governed_dataset_to_rehab_timeline,
             commands::rehab::get_rehab_case,
             commands::rehab::list_rehab_cases,
             commands::rehab::resolve_rehab_review,

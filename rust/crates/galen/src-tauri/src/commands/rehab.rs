@@ -9,8 +9,22 @@ pub fn import_rehab_case(
     case_id: String,
 ) -> Result<crate::rehab_context::RehabCaseBundle, String> {
     let backend = lock_mutex(&state.backend)?;
-    let root = backend.get_workspace_root().ok_or("Please select a workspace first")?;
+    let root = backend
+        .get_workspace_root()
+        .ok_or("Please select a workspace first")?;
     crate::rehab_context::import_ais_case(&root, &source_path, &case_id)
+}
+
+#[tauri::command]
+pub fn import_governed_dataset_to_rehab_timeline(
+    state: State<AppState>,
+    input: crate::rehab_context::GovernedTimelineImportInput,
+) -> Result<crate::rehab_context::GovernedTimelineImportOutput, String> {
+    let backend = lock_mutex(&state.backend)?;
+    let root = backend
+        .get_workspace_root()
+        .ok_or("Please select a workspace first")?;
+    crate::rehab_context::import_governed_timeline(&root, input)
 }
 
 #[tauri::command]
@@ -19,7 +33,9 @@ pub fn get_rehab_case(
     case_id: String,
 ) -> Result<crate::rehab_context::RehabCaseBundle, String> {
     let backend = lock_mutex(&state.backend)?;
-    let root = backend.get_workspace_root().ok_or("Please select a workspace first")?;
+    let root = backend
+        .get_workspace_root()
+        .ok_or("Please select a workspace first")?;
     crate::rehab_context::load_case_bundle(&root, &case_id)
 }
 
@@ -43,7 +59,9 @@ pub fn resolve_rehab_review(
     reviewer: String,
 ) -> Result<crate::rehab_context::RehabCaseBundle, String> {
     let backend = lock_mutex(&state.backend)?;
-    let root = backend.get_workspace_root().ok_or("Please select a workspace first")?;
+    let root = backend
+        .get_workspace_root()
+        .ok_or("Please select a workspace first")?;
     crate::rehab_context::resolve_review(&root, &case_id, &decision_id, &option_id, &reviewer)
 }
 
@@ -53,7 +71,9 @@ pub fn run_rehab_golden_journeys(
     source_path: String,
 ) -> Result<crate::rehab_eval::RehabGoldenEvalReport, String> {
     let backend = lock_mutex(&state.backend)?;
-    let root = backend.get_workspace_root().ok_or("Please select a workspace first")?;
+    let root = backend
+        .get_workspace_root()
+        .ok_or("Please select a workspace first")?;
     crate::rehab_eval::run_golden_journeys(&root, &source_path)
 }
 
@@ -62,6 +82,8 @@ pub fn get_agent_benchmark_report(
     state: State<AppState>,
 ) -> Result<crate::agent_benchmark::AgentBenchmarkReport, String> {
     let backend = lock_mutex(&state.backend)?;
-    let root = backend.get_workspace_root().ok_or("Please select a workspace first")?;
+    let root = backend
+        .get_workspace_root()
+        .ok_or("Please select a workspace first")?;
     crate::agent_benchmark::load_latest(&root)
 }

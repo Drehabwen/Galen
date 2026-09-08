@@ -119,6 +119,7 @@ pub mod packs {
                     "search_evidence",
                     "search_pubmed",
                     "fetch_article",
+                    "verify_citation",
                     "format_citation",
                     "search_rehab_literature",
                 ],
@@ -132,6 +133,7 @@ pub mod packs {
             registry.register(tools::evidence_search::SearchEvidence);
             registry.register(tools::medical::SearchPubMed);
             registry.register(tools::medical::FetchArticle);
+            registry.register(tools::medical::VerifyCitation);
             registry.register(tools::medical::FormatCitation);
             registry.register(tools::medical::SearchRehabLiterature);
         }
