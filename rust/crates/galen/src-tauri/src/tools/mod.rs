@@ -127,6 +127,16 @@ pub fn resolve_typst() -> Result<PathBuf, String> {
     })
 }
 
+/// Resolve the XeLaTeX engine used for camera-ready Chinese manuscripts.
+/// `xelatex` is preferred over `pdflatex` because it handles system CJK fonts
+/// without requiring the agent to transliterate a manuscript.
+pub fn resolve_xelatex() -> Result<PathBuf, String> {
+    resolve_binary("xelatex").ok_or_else(|| {
+        "XeLaTeX 未安装。请安装 TinyTeX、MiKTeX 或 TeX Live，并确保 `xelatex` 可在 PATH 中找到。"
+            .to_string()
+    })
+}
+
 // ---------------------------------------------------------------------------
 // ToolContext — shared execution context
 // ---------------------------------------------------------------------------
@@ -201,6 +211,8 @@ impl ToolRegistry {
     pub fn register_kernel(&mut self) {
         self.register(fs::CreateDirectory);
         self.register(fs::WriteFile);
+        self.register(fs::AppendFile);
+        self.register(fs::ReplaceText);
         self.register(fs::ReadFile);
         self.register(fs::ListFiles);
         self.register(fs::SavePaper);
@@ -653,7 +665,12 @@ mod tests {
     async fn discuss_mode_blocks_write_tools() {
         let registry = ToolRegistry::default();
         let ctx = test_ctx(ChatMode::Discuss);
-        let write_tools = ["write_file", "create_directory", "execute_command"];
+        let write_tools = [
+            "write_file",
+            "append_file",
+            "create_directory",
+            "execute_command",
+        ];
         for name in write_tools {
             let result = registry
                 .execute_dynamic(name, serde_json::json!({}), &ctx)
@@ -677,7 +694,12 @@ mod tests {
     async fn auto_mode_allows_write_tools() {
         let registry = ToolRegistry::default();
         let ctx = test_ctx(ChatMode::Auto);
-        for name in ["write_file", "create_directory", "execute_command"] {
+        for name in [
+            "write_file",
+            "append_file",
+            "create_directory",
+            "execute_command",
+        ] {
             let result = registry
                 .execute_dynamic(name, serde_json::json!({}), &ctx)
                 .await;
@@ -694,9 +716,22 @@ mod tests {
     fn registry_has_all_builtin_definitions() {
         let registry = ToolRegistry::default();
         let defs = registry.definitions();
-        assert_eq!(defs.len(), 20);
-        let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
-        for expected in &[
+        // Keep this assertion derived from the explicit registry contract.  A
+        // hard-coded count silently became stale when the kernel gained
+        // `list_files`, `save_paper`, and the recoverable file operations.
+        let expected = [
+            "create_directory",
+            "write_file",
+            "append_file",
+            "replace_text",
+            "read_file",
+            "list_files",
+            "save_paper",
+            "delete_file",
+            "delete_directory",
+            "move_file",
+            "search_files",
+            "execute_command",
             "search_pubmed",
             "fetch_article",
             "format_citation",
@@ -706,14 +741,14 @@ mod tests {
             "search_rehab_literature",
             "search_evidence",
             "create_research_plan",
-            "write_file",
-            "read_file",
-            "delete_file",
-            "execute_command",
-            "search_files",
             "compile_pdf_report",
-        ] {
-            assert!(names.contains(expected), "missing: {expected}");
+            "compile_latex_paper",
+        ];
+        assert_eq!(defs.len(), expected.len());
+        let names: std::collections::HashSet<&str> = defs.iter().map(|d| d.name.as_str()).collect();
+        assert_eq!(names.len(), expected.len(), "duplicate tool definitions");
+        for expected_name in expected {
+            assert!(names.contains(expected_name), "missing: {expected_name}");
         }
     }
 
@@ -735,9 +770,77 @@ mod tests {
     fn write_tools_mark_is_write() {
         let mut r = ToolRegistry::new();
         r.register(fs::WriteFile);
+        r.register(fs::AppendFile);
+        r.register(fs::ReplaceText);
         r.register(fs::ReadFile);
         assert!(r.tools.get("write_file").unwrap().is_write());
+        assert!(r.tools.get("append_file").unwrap().is_write());
+        assert!(r.tools.get("replace_text").unwrap().is_write());
         assert!(!r.tools.get("read_file").unwrap().is_write());
+    }
+
+    #[tokio::test]
+    async fn append_file_extends_a_manuscript_without_a_shell_workaround() {
+        let root = temp_workspace("append-manuscript");
+        let mut ctx = ToolContext::new(
+            Arc::new(medical_core::MedicalCore::new(None)),
+            Mutex::new(Some(root.clone())),
+        );
+        ctx.mode = ChatMode::Auto;
+        let registry = ToolRegistry::default();
+        registry
+            .execute_dynamic(
+                "write_file",
+                serde_json::json!({"path": "output/papers/manuscript.tex", "content": "\\documentclass{ctexart}\n"}),
+                &ctx,
+            )
+            .await
+            .unwrap();
+        registry
+            .execute_dynamic(
+                "append_file",
+                serde_json::json!({"path": "output/papers/manuscript.tex", "content": "\\begin{document}正文\\end{document}\n"}),
+                &ctx,
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(root.join("output/papers/manuscript.tex")).unwrap(),
+            "\\documentclass{ctexart}\n\\begin{document}正文\\end{document}\n"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn replace_text_makes_one_auditable_manuscript_revision() {
+        let root = temp_workspace("replace-manuscript");
+        let mut ctx = ToolContext::new(
+            Arc::new(medical_core::MedicalCore::new(None)),
+            Mutex::new(Some(root.clone())),
+        );
+        ctx.mode = ChatMode::Auto;
+        let registry = ToolRegistry::default();
+        registry
+            .execute_dynamic(
+                "write_file",
+                serde_json::json!({"path": "output/papers/manuscript.tex", "content": "\\usepackage{multirow}\n正文"}),
+                &ctx,
+            )
+            .await
+            .unwrap();
+        registry
+            .execute_dynamic(
+                "replace_text",
+                serde_json::json!({"path": "output/papers/manuscript.tex", "search": "\\usepackage{multirow}\n", "replace": ""}),
+                &ctx,
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(root.join("output/papers/manuscript.tex")).unwrap(),
+            "正文"
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 
     // ── Dispatch ──

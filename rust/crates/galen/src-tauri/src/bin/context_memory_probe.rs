@@ -16,6 +16,12 @@ const TURN_PROMPTS: [&str; 3] = [
     "现在做一次深入的方案复盘，不要调用工具：把随访从原来的 12 周修订为 16 周，但其他核心约束不变。请明确列出协议号、样本量、主要结局、旧随访、新随访，并回忆上一轮工具读取到的排除标准和内部证据代码；最后分析这次修订的利弊。",
 ];
 
+const FATIGUE_SCOPE_TURN_PROMPTS: [&str; 3] = [
+    "我们最初曾讨论过脑卒中上肢康复与中西医结合方向。现在先记录这段旧讨论：它不是当前研究范围。不要创建文件；只说明旧方向已经归档，等待新的项目定义。",
+    "现在正式切换到新项目：运动疲劳恢复研究，协议号 GALEN-FATIGUE-01。研究对象为 12 名健康受试者，连续采集 48 个训练后评估时点；核心变量为 HRV、反向跳 CMJ 和主观用力程度 RPE，观察窗为训练后 0、24、48、72 小时。此前对话中的全部历史方向均已归档，不属于当前项目，也不得出现在新文件或最终聊天中。请读取 inputs/fatigue-cohort.md，并据此使用工具生成 output/fatigue-protocol.md。文件必须包含协议号、样本与时点、三类核心变量、72 小时观察窗及数据字典中的证据代码。最终聊天只回复“已完成文件写入”。",
+    "承接当前项目，不要让我重复研究范围，也不要调用工具。请给出 GALEN-FATIGUE-01 的分析方案：明确研究对象、时点、HRV/CMJ/RPE 的纵向分析逻辑及数据字典证据代码。历史方向已经退出，最终回答不得提及它们。",
+];
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct TurnProbe {
@@ -39,6 +45,7 @@ struct Assertion {
 #[serde(rename_all = "camelCase")]
 struct ContextMemoryReport {
     probe: &'static str,
+    scenario: String,
     model: String,
     workspace: String,
     passed: bool,
@@ -64,7 +71,7 @@ fn option(args: &[String], name: &str) -> Option<String> {
         .cloned()
 }
 
-fn prepare_workspace(requested: Option<String>) -> Result<PathBuf, String> {
+fn prepare_workspace(requested: Option<String>, scenario: &str) -> Result<PathBuf, String> {
     let workspace = requested.map(PathBuf::from).unwrap_or_else(|| {
         std::env::temp_dir().join("galen-probes").join(format!(
             "context-memory-{}-{}",
@@ -89,6 +96,13 @@ fn prepare_workspace(requested: Option<String>) -> Result<PathBuf, String> {
         "# 资格标准\n\n- 排除：近 3 个月内接受过肉毒毒素注射。\n- 内部证据代码：E-TOOL-29。\n",
     )
     .map_err(|error| format!("写入探针输入失败: {error}"))?;
+    if scenario == "fatigue_scope" {
+        std::fs::write(
+            workspace.join("inputs/fatigue-cohort.md"),
+            "# GALEN-FATIGUE-01 数据字典\n\n- 受试者：12 名健康受试者。\n- 评估：48 个训练后评估时点；0、24、48、72 小时。\n- 核心变量：HRV、CMJ、RPE。\n- 数据字典证据代码：REHABID-FATIGUE-48。\n",
+        )
+        .map_err(|error| format!("写入疲劳探针输入失败: {error}"))?;
+    }
     Ok(workspace)
 }
 
@@ -126,6 +140,7 @@ async fn execute_turn(
     model_alias: &str,
     model_id: &str,
     turn: usize,
+    prompt: &str,
     timeout_seconds: u64,
     discussion_thinking: &str,
 ) -> Result<TurnProbe, String> {
@@ -135,7 +150,7 @@ async fn execute_turn(
     let response_sink = response.clone();
     let traces = Arc::new(Mutex::new(Vec::<ToolTrace>::new()));
     let trace_sink = traces.clone();
-    let prompt = TURN_PROMPTS[turn - 1].to_string();
+    let prompt = prompt.to_string();
     let mode = if turn == 2 {
         ChatMode::Auto
     } else {
@@ -222,6 +237,12 @@ async fn execute_turn(
 
 async fn run(args: &[String]) -> Result<ContextMemoryReport, String> {
     let router = ModelRouter::load().map_err(|error| format!("加载 models.toml 失败: {error}"))?;
+    let scenario = option(args, "--scenario").unwrap_or_else(|| "constraint_revision".to_string());
+    let turn_prompts = match scenario.as_str() {
+        "constraint_revision" => &TURN_PROMPTS,
+        "fatigue_scope" => &FATIGUE_SCOPE_TURN_PROMPTS,
+        _ => return Err("--scenario 仅支持 constraint_revision 或 fatigue_scope".to_string()),
+    };
     let model_alias = option(args, "--model").unwrap_or_else(|| router.default_alias().to_string());
     let model_id = router.resolve_model_id(&model_alias);
     let timeout_seconds = option(args, "--timeout")
@@ -236,13 +257,13 @@ async fn run(args: &[String]) -> Result<ContextMemoryReport, String> {
     ) {
         return Err("--discussion-thinking 必须是 off、low、medium 或 high".to_string());
     }
-    let workspace = prepare_workspace(option(args, "--workspace"))?;
+    let workspace = prepare_workspace(option(args, "--workspace"), &scenario)?;
     let output = option(args, "--output")
         .map(PathBuf::from)
         .unwrap_or_else(default_output);
 
     println!(
-        "probe=context-memory model={model_alias} workspace={}",
+        "probe=context-memory scenario={scenario} model={model_alias} workspace={}",
         workspace.display()
     );
     let mut turns = Vec::new();
@@ -254,6 +275,7 @@ async fn run(args: &[String]) -> Result<ContextMemoryReport, String> {
                 &model_alias,
                 &model_id,
                 turn,
+                turn_prompts[turn - 1],
                 timeout_seconds,
                 &discussion_thinking,
             )
@@ -261,7 +283,11 @@ async fn run(args: &[String]) -> Result<ContextMemoryReport, String> {
         );
     }
 
-    let artifact_path = workspace.join("output/context-protocol.md");
+    let artifact_path = workspace.join(if scenario == "fatigue_scope" {
+        "output/fatigue-protocol.md"
+    } else {
+        "output/context-protocol.md"
+    });
     let artifact = std::fs::read_to_string(&artifact_path).unwrap_or_default();
     let session_messages = chat_session::load_messages(&workspace, None)?;
     let turn2_tools = turns[1]
@@ -270,7 +296,7 @@ async fn run(args: &[String]) -> Result<ContextMemoryReport, String> {
         .map(|trace| trace.tool.as_str())
         .collect::<Vec<_>>();
     let final_response = &turns[2].response;
-    let assertions = vec![
+    let common_assertions = vec![
         assertion(
             "turn2_received_turn1_exchange",
             turns[1].history_message_count >= 2,
@@ -286,56 +312,113 @@ async fn run(args: &[String]) -> Result<ContextMemoryReport, String> {
             turn2_tools.contains(&"read_file") && turn2_tools.contains(&"write_file"),
             format!("tools={}", turn2_tools.join(",")),
         ),
-        assertion(
-            "tool_artifact_integrates_discussion_and_file",
-            contains_all(
-                &artifact,
-                &["GALEN-CONTEXT-73", "48", "FMA-UE", "12 周", "E-TOOL-29"],
-            ),
-            format!(
-                "artifact={} bytes={}",
-                artifact_path.display(),
-                artifact.len()
-            ),
-        ),
-        assertion(
-            "final_turn_retains_original_constraints",
-            contains_all(
-                final_response,
-                &["GALEN-CONTEXT-73", "48", "FMA-UE", "12 周"],
-            ),
-            "required=protocol,sample,outcome,old_followup",
-        ),
-        assertion(
-            "final_turn_applies_revision",
-            contains_all(final_response, &["16 周"]),
-            "required=new_followup",
-        ),
-        assertion(
-            "final_turn_retains_tool_acquired_fact",
-            contains_all(final_response, &["3 个月", "肉毒毒素", "E-TOOL-29"]),
-            "required=exclusion_and_internal_evidence_code",
-        ),
-        assertion(
-            "final_turn_response_is_complete",
-            response_looks_complete(final_response),
-            format!(
-                "last_character={:?}",
-                final_response.trim_end().chars().last()
-            ),
-        ),
-        assertion(
-            "durable_session_has_three_exchanges",
-            session_messages.len() == 6,
-            format!("session_messages={}", session_messages.len()),
-        ),
     ];
+    let scenario_assertions = if scenario == "fatigue_scope" {
+        vec![
+            assertion(
+                "tool_artifact_integrates_current_fatigue_scope",
+                contains_all(
+                    &artifact,
+                    &[
+                        "GALEN-FATIGUE-01",
+                        "12",
+                        "48",
+                        "HRV",
+                        "CMJ",
+                        "RPE",
+                        "72",
+                        "REHABID-FATIGUE-48",
+                    ],
+                ) && !["脑卒中", "中西医", "FMA-UE"]
+                    .iter()
+                    .any(|term| artifact.contains(term)),
+                format!(
+                    "artifact={} bytes={}",
+                    artifact_path.display(),
+                    artifact.len()
+                ),
+            ),
+            assertion(
+                "final_turn_retains_current_project_constraints",
+                contains_all(
+                    final_response,
+                    &[
+                        "GALEN-FATIGUE-01",
+                        "12",
+                        "48",
+                        "HRV",
+                        "CMJ",
+                        "RPE",
+                        "72",
+                        "REHABID-FATIGUE-48",
+                    ],
+                ),
+                "required=protocol,participants,assessments,variables,window,evidence_code",
+            ),
+            assertion(
+                "final_turn_excludes_retired_scope",
+                !["脑卒中", "中西医", "FMA-UE"]
+                    .iter()
+                    .any(|term| final_response.contains(term)),
+                "forbidden=脑卒中,中西医,FMA-UE",
+            ),
+        ]
+    } else {
+        vec![
+            assertion(
+                "tool_artifact_integrates_discussion_and_file",
+                contains_all(
+                    &artifact,
+                    &["GALEN-CONTEXT-73", "48", "FMA-UE", "12 周", "E-TOOL-29"],
+                ),
+                format!(
+                    "artifact={} bytes={}",
+                    artifact_path.display(),
+                    artifact.len()
+                ),
+            ),
+            assertion(
+                "final_turn_retains_original_constraints",
+                contains_all(
+                    final_response,
+                    &["GALEN-CONTEXT-73", "48", "FMA-UE", "12 周"],
+                ),
+                "required=protocol,sample,outcome,old_followup",
+            ),
+            assertion(
+                "final_turn_applies_revision",
+                contains_all(final_response, &["16 周"]),
+                "required=new_followup",
+            ),
+            assertion(
+                "final_turn_retains_tool_acquired_fact",
+                contains_all(final_response, &["3 个月", "肉毒毒素", "E-TOOL-29"]),
+                "required=exclusion_and_internal_evidence_code",
+            ),
+        ]
+    };
+    let mut assertions = common_assertions;
+    assertions.extend(scenario_assertions);
+    assertions.push(assertion(
+        "final_turn_response_is_complete",
+        response_looks_complete(final_response),
+        format!(
+            "last_character={:?}",
+            final_response.trim_end().chars().last()
+        ),
+    ));
+    assertions.push(assertion(
+        "durable_session_has_three_exchanges",
+        session_messages.len() == 6,
+        format!("session_messages={}", session_messages.len()),
+    ));
     let passed = assertions.iter().all(|item| item.pass);
     let total_input_tokens = turns.iter().map(|turn| turn.summary.input_tokens).sum();
     let total_output_tokens = turns.iter().map(|turn| turn.summary.output_tokens).sum();
     let total_duration_ms = turns.iter().map(|turn| turn.summary.total_ms).sum();
     let report = ContextMemoryReport {
         probe: "context-memory",
+        scenario,
         model: model_alias,
         workspace: workspace.display().to_string(),
         passed,

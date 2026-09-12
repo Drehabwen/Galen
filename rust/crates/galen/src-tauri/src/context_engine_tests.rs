@@ -287,6 +287,54 @@ mod context_tests {
     }
 
     #[test]
+    fn paper_pdf_delivery_exposes_the_real_generation_pipeline() {
+        let prompt = "基于已导入的 RehabID 队列数据生成正式论文 PDF，并交付到 output/papers/fatigue-recovery.pdf";
+        let contract = compile_task_contract(model_router::TaskKind::Chat, prompt);
+        assert_eq!(contract.class, TaskClass::PaperDelivery);
+        assert_eq!(contract.max_tool_turns, 24);
+        assert_eq!(
+            contract.artifact_paths,
+            vec!["output/papers/fatigue-recovery.pdf"]
+        );
+        let tools = contract.allowed_tools.unwrap();
+        assert!(tools.contains(&"read_file"));
+        assert!(tools.contains(&"write_file"));
+        assert!(tools.contains(&"append_file"));
+        assert!(tools.contains(&"compile_pdf_report"));
+        assert!(tools.contains(&"compile_latex_paper"));
+        assert!(tools.contains(&"verify_citation"));
+        assert!(contract.execution_policy.contains("真实研究交付"));
+        assert!(contract.execution_policy.contains("compile_pdf_report"));
+        assert!(contract.execution_policy.contains("compile_latex_paper"));
+        assert!(!contract.disable_deep_reasoning);
+    }
+
+    #[test]
+    fn paper_pdf_delivery_completes_only_after_compile_tool_returns_the_pdf() {
+        let contract = compile_task_contract(
+            model_router::TaskKind::Chat,
+            "基于导入数据生成正式论文 PDF 并交付 output/papers/fatigue-recovery.pdf",
+        );
+        let mut memory = WorkingMemory::default();
+        memory.observe_tool_result(
+            "write_file",
+            &serde_json::json!({"path": "output/papers/fatigue-recovery.typ", "content": "= manuscript"}),
+            "written",
+            false,
+            false,
+        );
+        assert!(!memory.delivery_complete(&contract));
+        memory.observe_tool_result(
+            "compile_pdf_report",
+            &serde_json::json!({"source": "output/papers/fatigue-recovery.typ", "output": "output/papers/fatigue-recovery.pdf"}),
+            r#"{"status":"delivered","file_path":"output/papers/fatigue-recovery.pdf"}"#,
+            false,
+            false,
+        );
+        assert!(memory.delivery_complete(&contract));
+    }
+
+    #[test]
     fn direct_answer_contract_removes_tools_thinking_and_dynamic_context() {
         let prompt = "请用不超过 180 字解释 FMA-UE 的用途。直接回答，不要创建文件。";
         let contract = compile_task_contract(model_router::TaskKind::QuickLookup, prompt);

@@ -98,6 +98,10 @@ pub struct ContextSpec {
     /// 摘要骨架必留字段（默认全部 8 个）
     #[serde(default)]
     pub require_fields: Vec<String>,
+    /// 公开的 seed 状态，仅用于构造评测历史；不得填入 evaluator-only gold。
+    /// 为空时 runner 使用与任务答案无关的通用历史。
+    #[serde(default)]
+    pub seed_facts: Vec<String>,
 }
 
 /// Galen 压缩摘要的固定骨架字段（与 summary_compression.rs::is_core_detail 对齐）。
@@ -570,7 +574,7 @@ impl RunRecord {
         let searchable = searchable_output(observation.workspace, observation.response);
         let mut retained_facts = 0;
         for fact in &case.required.facts {
-            let pass = searchable.contains(fact);
+            let pass = fact_present(&searchable, fact);
             retained_facts += usize::from(pass);
             add(
                 format!("required_fact:{fact}"),
@@ -1104,6 +1108,20 @@ fn compare_runs_impl(
         .chain(candidate.iter())
         .any(|run| run.context.summary_field_coverage.is_some());
     if has_ctx_metrics {
+        let candidate_context_runs = candidate
+            .iter()
+            .filter(|run| run.context.summary_field_coverage.is_some())
+            .collect::<Vec<_>>();
+        let activated = candidate_context_runs
+            .iter()
+            .filter(|run| run.context.compactions > 0)
+            .count();
+        if !candidate_context_runs.is_empty() && activated != candidate_context_runs.len() {
+            reasons.push(format!(
+                "候选上下文压缩实际启用 {activated}/{}，未覆盖全部候选运行",
+                candidate_context_runs.len()
+            ));
+        }
         let base_rate = baseline.iter().filter(|r| r.hard_gates_passed).count() as f64
             / baseline.len().max(1) as f64;
         let cand_rate = candidate.iter().filter(|r| r.hard_gates_passed).count() as f64
@@ -1730,19 +1748,63 @@ fn searchable_output(workspace: &Path, response: &str) -> String {
     let mut text = response.to_string();
     for relative in ["output", ".galen"] {
         let root = workspace.join(relative);
-        if let Ok(entries) = std::fs::read_dir(root) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_file() && path.metadata().is_ok_and(|meta| meta.len() <= 1_000_000) {
-                    if let Ok(content) = std::fs::read_to_string(path) {
-                        text.push('\n');
-                        text.push_str(&content);
-                    }
-                }
+        append_searchable_files(&root, &mut text);
+    }
+    text
+}
+
+fn append_searchable_files(root: &Path, text: &mut String) {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            append_searchable_files(&path, text);
+        } else if path.is_file() && path.metadata().is_ok_and(|meta| meta.len() <= 1_000_000) {
+            if let Ok(content) = std::fs::read_to_string(path) {
+                text.push('\n');
+                text.push_str(&content);
             }
         }
     }
-    text
+}
+
+/// Compare card facts semantically across ordinary presentation differences.
+///
+/// The benchmark asserts scientific content, not a particular typographic
+/// rendering.  A model may write ``12 名`` as ``12名`` or ``0 h`` as ``0h``;
+/// ASCII identifiers may also differ only in case.  Whitespace compaction and
+/// case-folding are deliberately the only general relaxations.  The small
+/// Chinese alias for ``timestamp`` is explicit because it is the normal label
+/// used in the Chinese data cards.
+fn fact_present(searchable: &str, fact: &str) -> bool {
+    if searchable.contains(fact) {
+        return true;
+    }
+    let compact = searchable
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect::<String>()
+        .to_lowercase();
+    let compact_fact = fact
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect::<String>()
+        .to_lowercase();
+    if compact.contains(&compact_fact) {
+        return true;
+    }
+    if fact == "timestamp" {
+        return searchable.contains("时间戳") || searchable.contains("时间字段");
+    }
+    fact == "来源"
+        && (searchable.contains("source")
+            || searchable.contains("Source")
+            || searchable.contains("PMID")
+            || searchable.contains("doi")
+            || searchable.contains("http://")
+            || searchable.contains("https://"))
 }
 
 fn is_previewable(path: &Path) -> bool {
@@ -1885,6 +1947,7 @@ mod tests {
             tools: EvalTools::default(),
             tool_trace: Vec::new(),
             context: EvalContext {
+                compactions: u32::from(coverage.is_some()),
                 summary_field_coverage: coverage,
                 ..EvalContext::default()
             },
@@ -2111,6 +2174,23 @@ mod tests {
             "应接受保留度达标且质量提升: {:?}",
             report.reasons
         );
+    }
+
+    #[test]
+    fn context_gate_rejects_candidate_when_compaction_did_not_activate() {
+        let baseline = (0..5)
+            .map(|i| reliability_record(true, i))
+            .collect::<Vec<_>>();
+        let mut candidate = (0..5)
+            .map(|i| reliability_record_with_coverage(true, i, Some((8, 8))))
+            .collect::<Vec<_>>();
+        candidate[0].context.compactions = 0;
+        let report = compare_runs(&baseline, &candidate);
+        assert!(matches!(report.decision, ComparisonDecision::Reject));
+        assert!(report
+            .reasons
+            .iter()
+            .any(|reason| reason.contains("压缩实际启用 4/5")));
     }
 
     #[test]

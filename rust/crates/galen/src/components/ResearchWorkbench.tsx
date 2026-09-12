@@ -1,15 +1,10 @@
 import { FormEvent, useState } from "react";
-import type { FileEntry } from "../types";
-
 interface ResearchWorkbenchProps {
   wsRoot: string | null;
-  files: FileEntry[];
-  currentFile: { path: string; content: string } | null;
   backendAvailable: boolean;
   reportAvailable?: boolean;
   onOpenReport?: () => void;
   onAgentPrompt: (prompt: string) => void;
-  onReadFile: (path: string) => void;
 }
 
 const STAGES = ["数据审查", "假设构建", "模型比较", "误差解释", "结果交付"];

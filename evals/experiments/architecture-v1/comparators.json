@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "experiment_id": "galen-architecture-v1",
+  "purpose": "Architecture-controlled ablation plus product-level reference comparison",
+  "primary_track": {
+    "name": "same_runtime",
+    "systems": [
+      "full_galen",
+      "stateless",
+      "no_data_contract",
+      "no_exec_contract",
+      "no_evidence_link",
+      "generic_same_runtime"
+    ],
+    "causal_claim_allowed": true
+  },
+  "reference_track": {
+    "name": "native_products",
+    "runtime_root": "evals/external-runtimes",
+    "credential_source": "evals/external-runtimes/config/ (local ignored secret files; never committed)",
+    "systems": [
+      {
+        "id": "codex_native",
+        "product": "Codex CLI",
+        "status": "installed_local",
+        "version": "0.154.0",
+        "executable": "evals/external-runtimes/node_modules/.bin/codex.cmd",
+        "deepseek_endpoint": "https://api.deepseek.com (Responses)",
+        "isolate": ["temporary_workspace", "ephemeral_session", "read_only_or_minimum_permissions", "separate_output_dir"],
+        "command_template": "codex exec --ephemeral --ignore-user-config --json --sandbox read-only --cd {workspace} - < {prompt_file}",
+        "config_mutation_allowed": false
+      },
+      {
+        "id": "claude_code_native",
+        "product": "Claude Code",
+        "status": "installed_local",
+        "version": "2.1.268",
+        "executable": "evals/external-runtimes/node_modules/.bin/claude.cmd",
+        "deepseek_endpoint": "https://api.deepseek.com/anthropic (Anthropic-compatible)",
+        "runtime_note": "npm engine warns Node >=22; packaged Windows executable passed --version; adapter_check remains required",
+        "isolate": ["temporary_workspace", "noninteractive_prompt", "fixed_permission_mode", "separate_output_dir"],
+        "command_template": "claude -p --output-format json --permission-mode {permission_mode} --max-turns {max_turns} --model {model} < {prompt_file>",
+        "config_mutation_allowed": false
+      },
+      {
+        "id": "opencode_native",
+        "product": "OpenCode",
+        "status": "installed_local",
+        "version": "1.18.30",
+        "executable": "evals/external-runtimes/node_modules/.bin/opencode.cmd",
+        "deepseek_endpoint": "https://api.deepseek.com/v1 (OpenAI-compatible)",
+        "isolate": ["temporary_workspace", "fixed_provider_model", "explicit_tool_permissions", "separate_output_dir"],
+        "command_template": "opencode run --format json --dir {workspace} < {prompt_file>",
+        "config_mutation_allowed": false
+      }
+    ],
+    "causal_claim_allowed": false,
+    "report_label": "system-level reference under the recorded operating point"
+  },
+  "fairness": {
+    "task_suite": "evals/cases/paired",
+    "same_fixture": true,
+    "same_timeout": true,
+    "same_budget": true,
+    "gold_visible_to_system": false,
+    "record_capability_gap_separately": true,
+    "no_global_config_changes": true,
+    "formal_repeats_per_case": 20,
+    "pilot_repeats_per_case": 5
+  },
+  "required_trace_fields": [
+    "system_id",
+    "system_version",
+    "model_id",
+    "provider",
+    "suite_manifest_sha256",
+    "case_id",
+    "repeat",
+    "started_at",
+    "finished_at",
+    "model_requests",
+    "tool_calls",
+    "latency",
+    "artifact_paths",
+    "hard_gate_components",
+    "failure_class"
+  ]
+}

@@ -225,6 +225,10 @@ export function useChat(workspaceRoot: string | null) {
     }
   }, [backendAvailable, workspaceRoot]);
 
+  const appendLocalMessage = useCallback((message: ChatMessage) => {
+    setMessages((current) => [...current, message]);
+  }, []);
+
   const resetView = useCallback(() => {
     setMessages([]);
     setStreaming("");
@@ -256,6 +260,7 @@ export function useChat(workspaceRoot: string | null) {
     toolProgress,
     toolProgressHistory,
     send,
+    appendLocalMessage,
     clear,
     resetView,
   };

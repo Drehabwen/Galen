@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "experiment_id": "galen-paired-v1",
+  "description": "Galen 上下文、工具经济性与康复科研数据治理的固定配对评测",
+  "profiles": {
+    "smoke": {
+      "context_repeat": 1,
+      "functional_repeat": 1
+    },
+    "formal": {
+      "context_repeat": 5,
+      "functional_repeat": 5
+    }
+  },
+  "context": {
+    "suite": "paired-context",
+    "cases": ["PCTX01", "PCTX02", "PCTX03", "PCTX04", "PCTX05"],
+    "baseline_variant": "full",
+    "candidate_variant": "fullpack"
+  },
+  "functional": {
+    "suites": ["paired-tools", "paired-data"],
+    "cases": [
+      "PTOOL01", "PTOOL02", "PTOOL03", "PTOOL04", "PTOOL05",
+      "PDATA01", "PDATA02", "PDATA03", "PDATA04", "PDATA05"
+    ],
+    "variant": "full"
+  },
+  "release_gates": {
+    "required_fact_recall": 1.0,
+    "stale_scope_leakage": 0.0,
+    "artifact_delivery_rate": 1.0,
+    "context_success_retention": 0.9,
+    "candidate_compaction_activation": 1.0,
+    "summary_field_coverage": 0.75,
+    "minimum_runs_per_case": 5,
+    "target_token_reduction": 0.3,
+    "maximum_ttfr_p90_regression": 0.1
+  }
+}

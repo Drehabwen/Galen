@@ -31,6 +31,12 @@ export function linkifyEvidenceIdentifiers(markdown: string): string {
 }
 
 export function ArtifactMarkdown({ children, onOpenArtifact, onOpenSource }: ArtifactMarkdownProps) {
+  // PLAN markers are a transport contract for the execution kernel, not user
+  // facing copy. Keep them in the durable message so the parser can recover a
+  // plan, but hide the delimiters in the rendered thread.
+  const displayMarkdown = children
+    .replace(/<!--\s*PLAN_START\s*-->/g, "")
+    .replace(/<!--\s*PLAN_END\s*-->/g, "");
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
@@ -70,7 +76,7 @@ export function ArtifactMarkdown({ children, onOpenArtifact, onOpenSource }: Art
         },
       }}
     >
-      {linkifyEvidenceIdentifiers(children)}
+      {linkifyEvidenceIdentifiers(displayMarkdown)}
     </ReactMarkdown>
   );
 }

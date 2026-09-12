@@ -6,6 +6,8 @@ import { TokenRing } from "./TokenRing";
 import type { ChatMessage, ChatRunSummary, ModelConfig } from "../types";
 import type { ArtifactRecord } from "../domain/artifact";
 import type { ToolProgress } from "../hooks/useChat";
+import type { ConnectorPreview } from "../domain/connectors";
+import type { RehabTimelineImportOutput } from "../domain/analysisResult";
 
 // ---------------------------------------------------------------------------
 // Block type detection from message content
@@ -72,6 +74,13 @@ interface ResearchExecutionThreadProps {
   onReject?: (messageId: number) => void;
   onViewEvidence?: (messageId: number) => void;
   onRevisionRequest?: (actionId: string, selectedText: string) => void;
+  connectorPreview?: ConnectorPreview | null;
+  connectorLoading?: boolean;
+  connectorError?: string | null;
+  connectorResult?: RehabTimelineImportOutput | null;
+  latestAssessments?: number;
+  onConfirmConnector?: () => void;
+  onDismissConnector?: () => void;
 }
 
 interface ModelSelectorProps {
@@ -250,6 +259,13 @@ export function ResearchExecutionThread({
   artifacts = [],
   onOpenArtifact,
   onOpenSource,
+  connectorPreview,
+  connectorLoading = false,
+  connectorError,
+  connectorResult,
+  latestAssessments,
+  onConfirmConnector,
+  onDismissConnector,
 }: ResearchExecutionThreadProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -564,6 +580,61 @@ export function ResearchExecutionThread({
             </div>
           );
         })}
+
+        {(connectorLoading || connectorPreview || connectorError || connectorResult) && (
+          <section className="connector-confirmation" aria-live="polite" aria-label="科研数据源操作">
+            <div className="connector-confirmation-rail" aria-hidden="true">
+              <span className={connectorResult ? "complete" : connectorError ? "error" : "active"} />
+            </div>
+            <div className="connector-confirmation-main">
+              <div className="connector-confirmation-kicker">
+                <span>RESEARCH DATA SOURCE</span>
+                <strong>{connectorResult ? "已写入 RehabID" : connectorLoading ? "正在发现" : connectorError ? "需要处理" : "等待确认"}</strong>
+              </div>
+              {connectorLoading && !connectorPreview && <p>正在读取康复师工作台最近一次数据备份…</p>}
+              {connectorError && <p className="connector-confirmation-error">{connectorError}</p>}
+              {connectorPreview && !connectorResult && (
+                <>
+                  <h3>{connectorPreview.sourceLabel}</h3>
+                  <p>{connectorPreview.message}</p>
+                  <span className="connector-confirmation-mode">
+                    {connectorPreview.connectionMode === "live_bridge" ? "本地数据桥 · 自动同步" : "最近备份 · 兼容模式"}
+                  </span>
+                  <div className="connector-confirmation-stats">
+                    <span><strong>{connectorPreview.cases.length}</strong> 个对象</span>
+                    <span><strong>{connectorPreview.sessionCount}</strong> 次接诊</span>
+                    <span><strong>{connectorPreview.timepointCount}</strong> 个时间点</span>
+                    <span><strong>{connectorPreview.measurementCount}</strong> 条观察</span>
+                  </div>
+                  {connectorPreview.cases.length > 0 && (
+                    <div className="connector-case-strip">
+                      {connectorPreview.cases.slice(0, 4).map((item) => (
+                        <span key={item.caseId}><strong>{item.caseId}</strong>{item.timepointCount} 个时间点</span>
+                      ))}
+                    </div>
+                  )}
+                  {latestAssessments && <small>本次只写入每个对象最近 {latestAssessments} 个评估时间点。</small>}
+                  <div className="connector-confirmation-actions">
+                    <button type="button" className="btn btn-primary" disabled={!connectorPreview.canImport || connectorLoading} onClick={onConfirmConnector}>确认获取</button>
+                    <button type="button" className="btn btn-ghost" onClick={onDismissConnector}>取消</button>
+                  </div>
+                </>
+              )}
+              {connectorResult && (
+                <>
+                  <h3>数据已进入研究时间轴</h3>
+                  <p>已建立 {connectorResult.caseIds.length} 个 RehabID，新增 {connectorResult.importedEventCount} 个时间点和 {connectorResult.importedObservationCount} 条观察记录。</p>
+                  <div className="connector-case-strip">
+                    {connectorResult.caseIds.map((caseId) => <span key={caseId}><strong>{caseId}</strong>可继续在对话中分析</span>)}
+                  </div>
+                  <div className="connector-confirmation-actions">
+                    <button type="button" className="btn btn-ghost" onClick={onDismissConnector}>完成</button>
+                  </div>
+                </>
+              )}
+            </div>
+          </section>
+        )}
 
         {artifacts.length > 0 && (
           <div className="thread-block thread-block-artifacts" aria-label="本次研究产物">

@@ -1,9 +1,8 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useChat } from "./hooks/useChat";
 import { ResearchExecutionThread } from "./components/ResearchExecutionThread";
 import { ResearchPlanCanvas } from "./components/ResearchPlanCanvas";
-import { ResearchDocumentCanvas } from "./components/ResearchDocumentCanvas";
 import { ResearchWorkbench } from "./components/ResearchWorkbench";
 import { SessionChat } from "./components/SessionChat";
 import { SessionInspectorDrawer } from "./components/SessionInspectorDrawer";
@@ -21,14 +20,25 @@ import { useWorkspaceSelection } from "./hooks/useWorkspaceSelection";
 import { ModelStatusPanel } from "./components/ModelStatusPanel";
 import { WorkbenchRail } from "./components/WorkbenchRail";
 import { AppTopBar } from "./components/AppTopBar";
-import { RehabContextPanel } from "./components/RehabContextPanel";
 import type { WorkbenchView } from "./components/WorkbenchRail";
 import { useRehabContext } from "./hooks/useRehabContext";
 import { SourceInspector, type VerifiableSource } from "./components/SourceInspector";
-import { EvidenceTrailPanel } from "./components/EvidenceTrailPanel";
-import { DataQualityPanel } from "./components/DataQualityPanel";
-import { InteractiveInsightCanvas } from "./components/InteractiveInsightCanvas";
+import { ConnectorDataCanvas } from "./components/ConnectorDataCanvas";
 import type { AnalysisResult, RehabTimelineImportOutput } from "./domain/analysisResult";
+import { parseConnectorIntent, type ConnectorIntent, type ConnectorPreview } from "./domain/connectors";
+
+// These views pull in PDF.js, spreadsheet parsing and evidence visualisation
+// code. Keep them out of the initial workbench chunk; the main execution
+// thread remains eager so the first interaction is immediate.
+const ResearchDocumentCanvas = lazy(() => import("./components/ResearchDocumentCanvas").then(({ ResearchDocumentCanvas: component }) => ({ default: component })));
+const EvidenceTrailPanel = lazy(() => import("./components/EvidenceTrailPanel").then(({ EvidenceTrailPanel: component }) => ({ default: component })));
+const DataQualityPanel = lazy(() => import("./components/DataQualityPanel").then(({ DataQualityPanel: component }) => ({ default: component })));
+const InteractiveInsightCanvas = lazy(() => import("./components/InteractiveInsightCanvas").then(({ InteractiveInsightCanvas: component }) => ({ default: component })));
+const RehabContextPanel = lazy(() => import("./components/RehabContextPanel").then(({ RehabContextPanel: component }) => ({ default: component })));
+
+function ViewLoading() {
+  return <div className="galen-view-loading" role="status" aria-live="polite">正在载入工作区…</div>;
+}
 
 // ---------------------------------------------------------------------------
 // App
@@ -91,6 +101,11 @@ export default function App() {
   const [activeView, setActiveView] = useState<WorkbenchView>("daily-workbench");
   const [sourceInspector, setSourceInspector] = useState<VerifiableSource | null>(null);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [connectorIntent, setConnectorIntent] = useState<ConnectorIntent | null>(null);
+  const [connectorPreview, setConnectorPreview] = useState<ConnectorPreview | null>(null);
+  const [connectorLoading, setConnectorLoading] = useState(false);
+  const [connectorError, setConnectorError] = useState<string | null>(null);
+  const [connectorResult, setConnectorResult] = useState<RehabTimelineImportOutput | null>(null);
 
   const packageName = workspace.name;
   const completedNodes = planNodes.filter((node) => node.status === "completed").length;
@@ -101,20 +116,75 @@ export default function App() {
   useAppShortcuts(modeState.modes, modeState.switchMode, chat.clear);
 
   // ---- Actions ----
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!input.trim() || chat.sending) return;
+    const message = input.trim();
+    const intent = parseConnectorIntent(message);
+    if (intent) {
+      setInput("");
+      setActiveView("execution-thread");
+      setConnectorIntent(intent);
+      setConnectorPreview(null);
+      setConnectorResult(null);
+      setConnectorError(null);
+      chat.appendLocalMessage({ role: "user", content: message, timestamp: Date.now() });
+      if (!chat.backendAvailable) {
+        setConnectorError("当前是浏览器预览模式；请启动 Galen 桌面端后再读取本地工作台数据。");
+        return;
+      }
+      setConnectorLoading(true);
+      try {
+        const preview = await invoke<ConnectorPreview>("discover_research_data_source", {
+          sourceId: intent.sourceId,
+          caseHint: intent.caseHint ?? null,
+        });
+        setConnectorPreview(preview);
+      } catch (cause) {
+        setConnectorError(String(cause));
+      } finally {
+        setConnectorLoading(false);
+      }
+      return;
+    }
     if (!model) {
       setShowWelcome(true);
       return;
     }
     chat.send(
-      input,
+      message,
       model || "",
       modeState.mode,
       "medical",
       thinkingLevel,
     );
     setInput("");
+  };
+
+  const handleConfirmConnector = async () => {
+    if (!connectorIntent || !connectorPreview || !connectorPreview.canImport) return;
+    if (!wsRoot) {
+      setConnectorError("请先选择研究工作区，再将数据写入 RehabID。");
+      return;
+    }
+    setConnectorLoading(true);
+    setConnectorError(null);
+    try {
+      const imported = await invoke<RehabTimelineImportOutput>("import_research_data_source", {
+        request: {
+          sourceId: connectorIntent.sourceId,
+          exportPath: connectorPreview.exportPath,
+          caseIds: connectorPreview.cases.map((item) => item.caseId),
+          latestAssessments: connectorIntent.latestAssessments ?? null,
+        },
+      });
+      setConnectorResult(imported);
+      delivery.acceptArtifact(imported.receipt);
+      if (imported.caseIds[0]) await rehabContext.openCase(imported.caseIds[0]);
+    } catch (cause) {
+      setConnectorError(String(cause));
+    } finally {
+      setConnectorLoading(false);
+    }
   };
 
   const handlePickWorkspace = () => workspace.pick(research.flushWrites);
@@ -126,6 +196,10 @@ export default function App() {
       execution.resetForNewTopic();
       delivery.clearTopicView();
       setAnalysisResult(null);
+      setConnectorIntent(null);
+      setConnectorPreview(null);
+      setConnectorError(null);
+      setConnectorResult(null);
       setSourceInspector(null);
       setInput("");
       setActiveView("execution-thread");
@@ -188,15 +262,16 @@ export default function App() {
 
       {/* ════ Body ════ */}
       <div className="galen-body">
-        <WorkbenchRail
-          activeView={activeView}
-          onViewChange={setActiveView}
-          canvasTab={delivery.canvasTab}
-          onCanvasTabChange={delivery.setCanvasTab}
-          completedNodes={completedNodes}
-          totalNodes={planNodes.length}
-        />
-        {activeView === "execution-thread" ? (
+        <Suspense fallback={<ViewLoading />}>
+          <WorkbenchRail
+            activeView={activeView}
+            onViewChange={setActiveView}
+            canvasTab={delivery.canvasTab}
+            onCanvasTabChange={delivery.setCanvasTab}
+            completedNodes={completedNodes}
+            totalNodes={planNodes.length}
+          />
+          {activeView === "execution-thread" ? (
           <>
             {/* ── Left: Main Thread (Chat) ── */}
             <div className="galen-chat-panel">
@@ -213,7 +288,7 @@ export default function App() {
                 workspaceSelected={Boolean(wsRoot)}
                 input={input}
                 onInputChange={setInput}
-                onSend={handleSend}
+                onSend={() => void handleSend()}
                 models={models}
                 selectedModel={model}
                 onModelChange={setModel}
@@ -228,6 +303,18 @@ export default function App() {
                 onViewEvidence={() => delivery.setCanvasTab("evidence")}
                 onApprove={handleThreadApprove}
                 onReject={handleThreadReject}
+                connectorPreview={connectorPreview}
+                connectorLoading={connectorLoading}
+                connectorError={connectorError}
+                connectorResult={connectorResult}
+                latestAssessments={connectorIntent?.latestAssessments}
+                onConfirmConnector={() => void handleConfirmConnector()}
+                onDismissConnector={() => {
+                  setConnectorIntent(null);
+                  setConnectorPreview(null);
+                  setConnectorError(null);
+                  setConnectorResult(null);
+                }}
               />
             </div>
 
@@ -262,6 +349,12 @@ export default function App() {
                   onEnterSession={execution.enterSession}
                   onApprove={execution.approveNode}
                   onAssign={execution.assignNode}
+                />
+              ) : connectorPreview || connectorResult ? (
+                <ConnectorDataCanvas
+                  preview={connectorPreview}
+                  result={connectorResult}
+                  latestAssessments={connectorIntent?.latestAssessments}
                 />
               ) : (
                 <>
@@ -359,8 +452,6 @@ export default function App() {
         ) : activeView === "daily-workbench" ? (
           <ResearchWorkbench
             wsRoot={wsRoot}
-            files={[]}
-            currentFile={null}
             backendAvailable={chat.backendAvailable}
             reportAvailable={Boolean(latestPdfArtifact)}
             onOpenReport={() => {
@@ -377,7 +468,6 @@ export default function App() {
                 "medical",
               );
             }}
-            onReadFile={() => {}}
           />
         ) : activeView === "data-quality" ? (
           <DataQualityPanel
@@ -408,7 +498,8 @@ export default function App() {
             onResolveReview={(decisionId, optionId) => void rehabContext.resolveReview(decisionId, optionId)}
             onRunGoldenJourneys={(sourcePath) => void rehabContext.runGoldenJourneys(sourcePath)}
           />
-        )}
+          )}
+        </Suspense>
       </div>
 
       {/* ════ Bottom: Context + Global Resource ════ */}

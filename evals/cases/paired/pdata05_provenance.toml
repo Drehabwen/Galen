@@ -1,0 +1,20 @@
+schema_version = 1
+id = "PDATA05"
+name = "数据来源与采集条件溯源"
+suite = "paired-data"
+risk_tier = "standard"
+prompt = "读取 inputs/study-constraints.md 和 inputs/fatigue-cohort.csv，生成 output/paired/provenance.md。必须在最终产物中原样保留证据代码 REHABID-FATIGUE-48；每个关键指标都要使用原样字段名保留 rehab_id、timestamp、source、collection_context 和 quality_status；不要将 rehab_id 改写成 RehabID 或其他同义词。"
+fixture = "../fixtures/paired/common"
+timeout_seconds = 240
+max_model_requests = 8
+max_tool_calls = 6
+max_human_interventions = 0
+
+[required]
+facts = ["REHABID-FATIGUE-48", "rehab_id", "timestamp", "source", "collection_context", "quality_status"]
+artifacts = ["output/paired/provenance.md"]
+tools = ["read_file", "write_file"]
+
+[forbidden]
+repeated_call_limit = 2
+response_patterns = ["来源未知但不影响结论"]

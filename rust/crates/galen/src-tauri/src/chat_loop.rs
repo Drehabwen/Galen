@@ -193,13 +193,14 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
 
     // Build cache-stable prefix
     let context_started = Instant::now();
+    let architecture_variant = crate::architecture_variant::current();
     let task_kind = model_router::TaskKind::from_intent(&user_message);
     let task_contract = compile_task_contract(task_kind, &user_message);
     let mut system_prompt = build_system_prompt_for_contract(&persona, mode, &task_contract);
     // Dynamic state is refreshed every turn while the cache-stable prefix stays unchanged.
     let first_turn = history.is_empty();
     let turn_context = build_turn_context(&user_message, mode, &workspace_root, first_turn);
-    let decision_context = {
+    let decision_context = if architecture_variant.state_layer_enabled() {
         let root = workspace_root
             .lock()
             .map_err(|_| "工作区状态锁已损坏".to_string())?
@@ -208,6 +209,8 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
             .transpose()?
             .flatten()
             .unwrap_or_default()
+    } else {
+        String::new()
     };
     let context_assembly_ms = context_started.elapsed().as_millis() as u64;
     timing_probe("run_chat:context_ready");
@@ -294,7 +297,12 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
     // a missing file from the workspace listing and falsely claim it ran the
     // requested probe. The real results are replayed through normal tool-use
     // messages and remain visible in the immutable trace.
-    for (index, path) in task_contract.ordered_read_paths.iter().enumerate() {
+    for (index, path) in task_contract
+        .ordered_read_paths
+        .iter()
+        .enumerate()
+        .filter(|_| architecture_variant.execution_contract_enabled())
+    {
         let tool_use_id = format!("contract-read-{}", index + 1);
         let input = serde_json::json!({ "path": path });
         let result = registry
@@ -356,7 +364,7 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
         }
 
         // ── Auto-compaction: fold middle when context grows too large ──
-        if compaction_count < MAX_COMPACTIONS {
+        if architecture_variant.state_layer_enabled() && compaction_count < MAX_COMPACTIONS {
             let total_bytes: usize = history
                 .iter()
                 .map(|m| {
@@ -436,18 +444,33 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
         let mut tools = if final_turn {
             // Force convergence: no tools available on the final turn.
             Vec::new()
-        } else {
+        } else if architecture_variant.execution_contract_enabled() {
             select_tools_for_contract(
                 registry.all_definitions_for_mode(ctx.mode).await,
                 &task_contract,
             )
+        } else {
+            // Generic baseline: expose the same provider/tool registry but do
+            // not apply Galen's task-specific allowlist or tool planner.
+            registry.all_definitions_for_mode(ctx.mode).await
         };
-        if !task_contract.ordered_read_paths.is_empty() {
+        if architecture_variant.execution_contract_enabled()
+            && !task_contract.ordered_read_paths.is_empty()
+        {
             tools.retain(|tool| tool.name != "read_file");
         }
-        if working_memory.consecutive_no_gain_turns >= 2 && !task_contract.artifact_paths.is_empty()
+        if architecture_variant.execution_contract_enabled()
+            && working_memory.consecutive_no_gain_turns >= 2
+            && !task_contract.artifact_paths.is_empty()
         {
-            tools.retain(|tool| tool.name == "write_file");
+            tools.retain(|tool| {
+                matches!(tool.name.as_str(), "write_file" | "append_file")
+                    || (task_contract.class == crate::task_contract::TaskClass::PaperDelivery
+                        && matches!(
+                            tool.name.as_str(),
+                            "compile_pdf_report" | "compile_latex_paper"
+                        ))
+            });
         }
         timing_probe(&format!("turn:{turn}:tools_ready:{}", tools.len()));
 
@@ -823,7 +846,7 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
             let (text, is_error, cache_hit) = if let Some((text, is_error)) = cached {
                 (text, is_error, true)
             } else {
-                let result =
+                let result = if architecture_variant.execution_contract_enabled() {
                     match validate_tool_call_against_contract(&task_contract, &tool.name, &input) {
                         Ok(()) => {
                             registry
@@ -831,7 +854,12 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
                                 .await
                         }
                         Err(error) => Err(error),
-                    };
+                    }
+                } else {
+                    registry
+                        .execute_dynamic(&tool.name, input.clone(), &ctx)
+                        .await
+                };
                 let (text, is_error) = match result {
                     Ok(ok) => (ok, false),
                     Err(error) => (error, true),
@@ -891,7 +919,9 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
         }
 
         working_memory.finish_turn(turn_gained_information);
-        if working_memory.delivery_complete(&task_contract) {
+        if architecture_variant.execution_contract_enabled()
+            && working_memory.delivery_complete(&task_contract)
+        {
             final_turn = true;
             tool_results.push(InputContentBlock::ToolResult {
                 tool_use_id: "__delivery_complete__".to_string(),
@@ -901,7 +931,9 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
                 }],
                 is_error: false,
             });
-        } else if working_memory.consecutive_no_gain_turns == 1 {
+        } else if architecture_variant.execution_contract_enabled()
+            && working_memory.consecutive_no_gain_turns == 1
+        {
             tool_results.push(InputContentBlock::ToolResult {
                 tool_use_id: "__no_gain_1__".to_string(),
                 content: vec![ToolResultContentBlock::Text {
@@ -910,7 +942,8 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
                 }],
                 is_error: false,
             });
-        } else if working_memory.consecutive_no_gain_turns >= 2
+        } else if architecture_variant.execution_contract_enabled()
+            && working_memory.consecutive_no_gain_turns >= 2
             && !task_contract.artifact_paths.is_empty()
         {
             tool_results.push(InputContentBlock::ToolResult {

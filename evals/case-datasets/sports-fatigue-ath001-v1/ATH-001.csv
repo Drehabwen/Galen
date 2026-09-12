@@ -1,0 +1,4 @@
+rehab_id,subject_id,timepoint,hrv_rmssd_ms,cmj_height_cm,rpe,pain_vas
+ATH-001,ATH-001,2026-09-01T08:00:00+08:00,72,42,3,1
+ATH-001,ATH-001,2026-09-03T08:00:00+08:00,55,37,7,3
+ATH-001,ATH-001,2026-09-04T08:00:00+08:00,64,40,5,2

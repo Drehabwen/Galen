@@ -79,6 +79,32 @@ pub struct ResearchTask {
     pub evidence_ids: Vec<String>,
     #[serde(default)]
     pub artifact_ids: Vec<String>,
+    /// Host-authoritative state used to assemble each turn.  This is kept
+    /// separate from the conversational transcript so scope revisions and
+    /// exclusions survive compaction and model changes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_context: Option<ActiveResearchContext>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ActiveResearchContext {
+    #[serde(default)]
+    pub research_question: String,
+    #[serde(default)]
+    pub scope: Vec<String>,
+    #[serde(default)]
+    pub constraints: Vec<String>,
+    #[serde(default)]
+    pub variables: Vec<String>,
+    #[serde(default)]
+    pub timepoints: Vec<String>,
+    #[serde(default)]
+    pub active_artifacts: Vec<String>,
+    #[serde(default)]
+    pub excluded_scope: Vec<String>,
+    #[serde(default)]
+    pub revision_note: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -119,14 +145,19 @@ fn create_task_unlocked(
         schema_version: SCHEMA_VERSION,
         revision: initial_revision(),
         task_id,
-        title,
-        goal,
+        title: title.clone(),
+        goal: goal.clone(),
         status,
         created_at: timestamp.clone(),
         updated_at: timestamp,
         nodes,
         evidence_ids: Vec::new(),
         artifact_ids: Vec::new(),
+        active_context: Some(ActiveResearchContext {
+            research_question: goal,
+            scope: vec![title],
+            ..Default::default()
+        }),
     };
     save_task(workspace, &task)?;
     save_active_pointer(workspace, &task.task_id)?;

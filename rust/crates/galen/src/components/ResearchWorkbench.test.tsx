@@ -12,13 +12,10 @@ describe("ResearchWorkbench", () => {
 
   it("presents the research lifecycle, evidence alignment, and outputs as the primary workspace", () => {
     render(
-      <ResearchWorkbench
+        <ResearchWorkbench
         wsRoot="D:\\DEV\\fatigue-shortcut-audit"
-        files={[]}
-        currentFile={null}
         backendAvailable
         onAgentPrompt={() => {}}
-        onReadFile={() => {}}
       />,
     );
 
@@ -36,11 +33,8 @@ describe("ResearchWorkbench", () => {
     render(
       <ResearchWorkbench
         wsRoot="D:\\DEV\\fatigue-shortcut-audit"
-        files={[]}
-        currentFile={null}
         backendAvailable
         onAgentPrompt={onAgentPrompt}
-        onReadFile={() => {}}
       />,
     );
 
@@ -59,13 +53,10 @@ describe("ResearchWorkbench", () => {
     render(
       <ResearchWorkbench
         wsRoot="D:\\DEV\\fatigue-shortcut-audit"
-        files={[]}
-        currentFile={null}
         backendAvailable
         reportAvailable
         onOpenReport={onOpenReport}
         onAgentPrompt={() => {}}
-        onReadFile={() => {}}
       />,
     );
 
@@ -77,13 +68,10 @@ describe("ResearchWorkbench", () => {
     render(
       <ResearchWorkbench
         wsRoot="D:\\DEV\\fatigue-shortcut-audit"
-        files={[]}
-        currentFile={null}
         backendAvailable
         reportAvailable={false}
         onOpenReport={() => {}}
         onAgentPrompt={() => {}}
-        onReadFile={() => {}}
       />,
     );
 

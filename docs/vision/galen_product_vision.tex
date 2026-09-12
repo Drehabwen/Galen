@@ -1,0 +1,797 @@
+\documentclass[11pt,a4paper,UTF8]{ctexart}
+
+\usepackage[a4paper,top=23mm,bottom=23mm,left=22mm,right=22mm,headheight=16pt]{geometry}
+\usepackage{fontspec}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit,calc,shapes.geometric}
+\usepackage{hyperref}
+\usepackage{bookmark}
+
+\setmainfont{Times New Roman}
+\setsansfont{Arial}
+\setmonofont{Consolas}
+
+\definecolor{GalenNavy}{HTML}{0E2338}
+\definecolor{GalenTeal}{HTML}{0F8B7D}
+\definecolor{GalenMint}{HTML}{E8F5F1}
+\definecolor{GalenBlue}{HTML}{2B68C5}
+\definecolor{GalenCoral}{HTML}{E27155}
+\definecolor{GalenInk}{HTML}{17242F}
+\definecolor{GalenMuted}{HTML}{5D6B75}
+\definecolor{GalenLine}{HTML}{D8E1E7}
+\definecolor{GalenPaper}{HTML}{F6F8F9}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=GalenBlue,
+  urlcolor=GalenTeal,
+  citecolor=GalenBlue,
+  pdftitle={Galen 产品愿景白皮书},
+  pdfauthor={Galen Project Team}
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\sffamily\small\color{GalenMuted}Galen Product Vision}
+\fancyhead[R]{\sffamily\small\color{GalenMuted}面向运动康复科研的数据治理与智能推理工作台}
+\fancyfoot[L]{\sffamily\scriptsize\color{GalenMuted}内部战略与对外叙事基线 / 2026.09}
+\fancyfoot[R]{\sffamily\scriptsize\color{GalenMuted}\thepage}
+\renewcommand{\headrulewidth}{0.35pt}
+\renewcommand{\footrulewidth}{0pt}
+\fancypagestyle{plain}{
+  \fancyhf{}
+  \fancyhead[L]{\sffamily\small\color{GalenMuted}Galen Product Vision}
+  \fancyhead[R]{\sffamily\small\color{GalenMuted}面向运动康复科研的数据治理与智能推理工作台}
+  \fancyfoot[L]{\sffamily\scriptsize\color{GalenMuted}内部战略与对外叙事基线 / 2026.09}
+  \fancyfoot[R]{\sffamily\scriptsize\color{GalenMuted}\thepage}
+  \renewcommand{\headrulewidth}{0.35pt}
+  \renewcommand{\footrulewidth}{0pt}
+}
+
+\ctexset{
+  section={format=\sffamily\Large\bfseries\color{GalenNavy},beforeskip=2.2ex,afterskip=1.0ex},
+  subsection={format=\sffamily\large\bfseries\color{GalenNavy},beforeskip=1.6ex,afterskip=.7ex},
+  subsubsection={format=\sffamily\normalsize\bfseries\color{GalenInk},beforeskip=1.3ex,afterskip=.5ex}
+}
+
+\setlist[itemize]{leftmargin=1.7em,itemsep=0.35em,topsep=0.45em}
+\setlist[enumerate]{leftmargin=1.9em,itemsep=0.45em,topsep=0.45em}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.25em}
+\renewcommand{\arraystretch}{1.35}
+\linespread{1.32}
+
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcommand{\en}[1]{\textsf{#1}}
+\newcommand{\product}[1]{\textsf{\bfseries\color{GalenTeal}#1}}
+
+\newsavebox{\visionboxsave}
+\newenvironment{visionbox}{%
+  \par\medskip\noindent\begin{lrbox}{\visionboxsave}%
+  \begin{minipage}{\dimexpr\linewidth-12mm-2\fboxrule\relax}\vspace{3mm}\hspace{3mm}%
+  \begin{minipage}{\dimexpr\linewidth-6mm\relax}%
+}{%
+  \end{minipage}\hspace{3mm}\vspace{3mm}\end{minipage}\end{lrbox}%
+  \fcolorbox{GalenTeal}{GalenMint}{\usebox{\visionboxsave}}\par\medskip
+}
+
+\newsavebox{\decisionboxsave}
+\newenvironment{decisionbox}{%
+  \par\medskip\noindent\begin{lrbox}{\decisionboxsave}%
+  \begin{minipage}{\dimexpr\linewidth-12mm-2\fboxrule\relax}\vspace{3mm}\hspace{3mm}%
+  \begin{minipage}{\dimexpr\linewidth-6mm\relax}%
+}{%
+  \end{minipage}\hspace{3mm}\vspace{3mm}\end{minipage}\end{lrbox}%
+  \fcolorbox{GalenLine}{GalenPaper}{\usebox{\decisionboxsave}}\par\medskip
+}
+
+\newcommand{\metric}[2]{%
+  \begin{minipage}[t]{0.47\linewidth}
+    {\sffamily\bfseries\color{GalenTeal}#1}\par
+    {\small\color{GalenMuted}#2}
+  \end{minipage}%
+}
+
+\begin{document}
+
+% --------------------------------------------------------------------------
+% Cover
+% --------------------------------------------------------------------------
+\begin{titlepage}
+\pagecolor{GalenNavy}
+\color{white}
+\begin{tikzpicture}[remember picture,overlay]
+  \fill[GalenTeal] ($(current page.north east)+(-37mm,0)$) rectangle (current page.north east);
+  \fill[GalenCoral] ($(current page.south west)+(0,25mm)$) rectangle ($(current page.south west)+(4mm,78mm)$);
+  \draw[white,opacity=.14,line width=.5pt] ($(current page.north west)+(20mm,-31mm)$) -- ($(current page.north east)+(-20mm,-31mm)$);
+  \foreach \x/\y/\r in {155/-75/20,174/-103/9,144/-122/12,170/-145/25}{
+    \draw[white,opacity=.09,line width=1pt] ($(current page.north west)+(\x mm,\y mm)$) circle (\r mm);
+  }
+\end{tikzpicture}
+
+\vspace*{18mm}
+{\sffamily\bfseries\fontsize{18}{20}\selectfont GALEN}\par
+\vspace{2mm}
+{\sffamily\small\color{white!68}REHABILITATION RESEARCH INTELLIGENCE}\par
+
+\vfill
+{\sffamily\bfseries\fontsize{34}{42}\selectfont 产品愿景白皮书}\par
+\vspace{8mm}
+{\sffamily\fontsize{19}{28}\selectfont 面向运动康复科研的\par 数据治理与智能推理工作台}\par
+
+\vspace{13mm}
+\begin{minipage}{0.77\textwidth}
+\color{white!78}\large
+让分散的康复数据成为连续、可信、可计算、可复用的科研资产。
+\end{minipage}
+
+\vfill
+\noindent\begin{tabularx}{\linewidth}{@{}Y r@{}}
+\sffamily\small 产品战略基线文档 & \sffamily\small Version 1.0 \\
+\sffamily\small Galen Project Team & \sffamily\small 2026 年 9 月 \\
+\end{tabularx}
+\end{titlepage}
+\nopagecolor
+
+% --------------------------------------------------------------------------
+% Front matter
+% --------------------------------------------------------------------------
+\thispagestyle{empty}
+\vspace*{9mm}
+{\sffamily\fontsize{25}{30}\selectfont\bfseries\color{GalenNavy}文档使命}\par
+\vspace{7mm}
+
+本文不是功能清单，也不是面向工程团队的接口说明。它回答 Galen 最重要的战略问题：我们为谁解决什么问题，为什么值得长期投入，产品应当如何形成闭环，以及未来扩展时什么必须保持不变。
+
+\begin{visionbox}
+\textbf{核心定义}\par\smallskip
+\centering
+\large\bfseries\color{GalenNavy}
+Galen 是面向运动康复科研的数据治理与智能推理工作台。\\[2mm]
+它连接多源数据，将其治理为 RehabID 纵向研究资产，\\
+再由 PI Agent 组织检索、分析、验证与成果交付。
+\end{visionbox}
+
+\vspace{4mm}
+这一定义包含三层承诺：第一，Galen 处理的是科研过程，而非单轮问答；第二，Galen 的基础是数据与来源，而非孤立的语言生成；第三，Galen 最终交付的是可验证成果，而不是一组留给用户执行的建议。
+
+\vspace{5mm}
+\begin{decisionbox}
+\textbf{本文适用对象：}项目团队、合作导师、赛事评委、潜在合作企业与早期测试成员。\par
+\textbf{本文不替代：}需求规格书、数据字典、系统架构详图、测试报告与技术佐证材料。
+\end{decisionbox}
+
+\clearpage
+\setcounter{tocdepth}{1}
+\tableofcontents
+\clearpage
+\pagestyle{fancy}
+\makeatletter
+\let\ps@plain\ps@fancy
+\makeatother
+
+% --------------------------------------------------------------------------
+\section{执行摘要：我们究竟在建设什么}
+
+康复科研拥有丰富但高度分散的数据。一次研究可能同时出现量表、动作视觉、关节活动度、HRV、力台、肌电、训练负荷、主观疲劳、血液指标与随访记录。这些数据由不同软件和设备产生，格式、时间尺度、命名规则与质量标准并不一致。研究者真正困难的工作，往往发生在统计分析之前：找到文件、理解字段、识别对象、对齐时间、处理缺失、保留来源、判断证据覆盖，并把每一步变成可复核的研究过程。
+
+通用大模型可以解释概念、生成代码和润色文本，却通常不拥有项目的持续状态，也不真正掌握外部数据。传统科研软件可以完成某一个环节，却要求研究者在多个工具之间搬运数据、重复说明上下文。Galen 所填补的不是又一个聊天入口，而是二者之间缺失的\textbf{科研执行层}。
+
+\begin{visionbox}
+\textbf{产品愿景：}让康复研究者用自然语言提出目标，Galen 自动连接获授权的数据源，完成数据发现、质量检查、标准化、纵向组织、分析、证据核验和成果生成；关键选择由研究者确认，所有结果能够回到原始数据与证据来源。
+\end{visionbox}
+
+当前阶段，Galen 以\textbf{运动疲劳的多模态纵向研究}作为首发场景。这一切口具有清晰的对象、指标、时间轴和验证方法，可以把 HRV、CMJ、RPE、VAS、血乳酸及训练负荷等数据汇聚到同一 RehabID 中，验证多源数据是否比单一指标更准确地表达个体恢复状态。
+
+长期看，运动疲劳不是边界，而是验证基础能力的第一块试验场。只要连接协议、状态模型、来源追踪和研究执行闭环成立，Galen 可以扩展到肌骨康复、神经康复、术后恢复、居家训练依从性和其他纵向康复研究，但每次扩展都应建立在真实数据与明确研究任务上。
+
+% --------------------------------------------------------------------------
+\section{问题定义：康复科研的断裂发生在哪里}
+
+\subsection{数据存在，但尚未成为研究资产}
+
+数据文件的数量不等于科研数据资产的质量。一个研究目录里可能有几十份 Excel、设备导出文件和评估报告，却无法立即回答以下问题：同一个受试者的记录能否可靠关联？不同时间点是否使用了相同采集条件？指标单位是否一致？某个异常值是生理变化、设备误差还是录入错误？统计图中的每个点能否返回原始记录？
+
+因此，真正的缺口不是“缺少更多数据”，而是缺少将数据转化为可信研究状态的机制。
+
+\begin{table}[htbp]
+\centering
+\caption{康复科研流程中的典型断裂}
+\begin{tabularx}{\textwidth}{@{}L{2.9cm} Y Y@{}}
+\toprule
+环节 & 当前常见状态 & 直接后果 \\
+\midrule
+数据获取 & 设备、量表、软件与文件各自导出 & 人工搬运、遗漏、版本混乱 \\
+对象关联 & 姓名、编号、设备 ID 各自存在 & 同一对象无法稳定合并，存在错配风险 \\
+时间对齐 & 基线、即刻、24h、随访等写法不一致 & 纵向比较错误或被迫手工整理 \\
+指标治理 & 字段名、单位、精度和缺失编码不统一 & 分析代码不可复用，结果不稳定 \\
+证据检索 & 数据库覆盖不透明，检索与结论分离 & 将局部证据误写成全局结论 \\
+结果交付 & 图表、文字、代码与原始数据相互脱节 & 难以复核、复现和继续迭代 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{研究上下文既不会正确记住，也不会正确更新}
+
+普通对话系统把研究上下文主要放在消息历史中。对话变长后，模型可能忘记稳定的研究范围；研究方向发生变化时，又可能被旧信息继续牵引。可靠科研不能依赖模型“尽量记住”。研究问题、纳入范围、排除方向、数据源、分析决定和待解决争议必须成为结构化、可编辑、可审计的项目状态。
+
+Galen 因此将上下文理解为一个持续维护的研究对象：
+
+\begin{center}
+\begin{tikzpicture}[
+  node distance=8mm and 10mm,
+  box/.style={rounded corners=2mm,draw=GalenLine,fill=white,minimum width=31mm,minimum height=12mm,align=center,font=\small\sffamily},
+  root/.style={box,draw=GalenTeal,fill=GalenMint,font=\bfseries\small\sffamily},
+  arrow/.style={-{Latex[length=2mm]},draw=GalenTeal,line width=.7pt}
+]
+\node[root] (p) {Research Project};
+\node[box,below left=of p] (q) {研究问题与范围};
+\node[box,below=of p] (d) {数据与 RehabID};
+\node[box,below right=of p] (e) {证据与来源覆盖};
+\node[box,below=of d] (x) {决策、任务与产物};
+\draw[arrow] (p)--(q); \draw[arrow] (p)--(d); \draw[arrow] (p)--(e);
+\draw[arrow] (q)--(x); \draw[arrow] (d)--(x); \draw[arrow] (e)--(x);
+\end{tikzpicture}
+\end{center}
+
+\subsection{用户需要结果，而不是工具语言}
+
+研究者希望完成检索、清洗、分析与写作，而不是学习每个数据库的查询语法或每个分析包的调用方式。系统能够执行的操作，就不应再次推回给用户。检索式、清洗规则和代码仍然需要保留，但它们应作为可展开的审计层，而不是普通用户完成任务的前置门槛。
+
+% --------------------------------------------------------------------------
+\section{产品定位与边界}
+
+\subsection{一句话定位}
+
+\begin{visionbox}
+\centering
+\Large\bfseries\color{GalenNavy}
+面向运动康复科研的数据治理与智能推理工作台
+\end{visionbox}
+
+这个定位有意避开“大而全的康复平台”。Galen 首先服务有真实数据和明确研究目标的康复研究者、小型科研团队与交叉学科学生团队。它的核心任务，是把多源数据转化为可计算的纵向状态，并推动研究从问题走向可核验成果。
+
+\subsection{三个层级的定位}
+
+\begin{longtable}{@{}L{2.6cm}L{4.4cm}L{8.2cm}@{}}
+\toprule
+层级 & 定义 & 说明 \\
+\midrule
+\endfirsthead
+\toprule
+层级 & 定义 & 说明 \\
+\midrule
+\endhead
+当前产品 & 运动康复科研工作台 & 围绕多模态、纵向数据完成治理、分析、证据与交付闭环。 \\
+首发场景 & 运动疲劳恢复研究 & 使用 HRV、CMJ、RPE、VAS、血乳酸、训练负荷等指标建立可验证案例。 \\
+长期基础设施 & 康复科研 Context Layer & 连接更多康复场景与设备，但保持数据来源、项目状态和成果追溯三条主线。 \\
+\bottomrule
+\end{longtable}
+
+\subsection{Galen 与现有产品的关系}
+
+\begin{table}[htbp]
+\centering
+\caption{产品生态中的角色分工}
+\begin{tabularx}{\textwidth}{@{}L{3.3cm} L{3.5cm} Y@{}}
+\toprule
+组成 & 角色 & 主要职责 \\
+\midrule
+康复师工作台 & 数据生产端 & 接诊、评估、记录、报告与日常业务流程 \\
+RehabGPT / 患者端 & 场外数据端 & 家庭训练反馈、量表、依从性与随访互动 \\
+设备与传感器 & 客观采集端 & 力、动作、生理、电信号与训练负荷数据 \\
+Galen & 科研中枢 & 数据连接、治理、RehabID、研究执行、证据核验和成果交付 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Galen 不取代康复师工作台。研究者仍在最适合的业务软件中完成日常工作；当需要形成研究数据集、比较时间点、建立队列、执行统计或生成论文材料时，通过 Galen 的连接器获得脱敏数据，并将其纳入研究项目。
+
+\subsection{明确不做什么}
+
+产品边界不是防御性声明，而是注意力分配原则。当前阶段不把以下事项作为主线：
+
+\begin{itemize}
+  \item 不建设另一套完整的接诊、排班、收费与病历业务系统；
+  \item 不把“能聊天”本身当作产品价值，不以通用问答数量衡量进展；
+  \item 不把 RAG、知识图谱或大模型名称作为独立卖点；
+  \item 不在数据缺口尚未明确时仓促制造硬件；
+  \item 不同时覆盖所有康复病种，而是先做穿一个可验证的研究闭环。
+\end{itemize}
+
+% --------------------------------------------------------------------------
+\section{目标用户与关键任务}
+
+\subsection{核心用户}
+
+\textbf{康复科研学生与青年研究者。}他们拥有专业问题和部分数据，但缺少稳定的数据治理、编程与统计协作能力。Galen 帮助其降低跨工具成本，并让研究过程保留可复核记录。
+
+\textbf{康复科研团队负责人。}他们需要看到项目范围、数据状态、执行进度、争议点和成果质量，而不是在多个聊天和文件夹中追踪任务。PI Agent 为其提供统一的项目控制面。
+
+\textbf{康复与工程交叉团队。}临床成员理解指标意义，工程成员掌握模型与软件，但双方经常缺少共同的数据结构和状态语言。RehabID 与来源协议成为协作接口。
+
+\subsection{用户真正雇用 Galen 完成的工作}
+
+\begin{enumerate}
+  \item \textbf{把数据接进来：}识别来源、对象、时间范围和授权边界；
+  \item \textbf{把数据变可信：}完成字段映射、单位统一、缺失与异常检查、版本与来源登记；
+  \item \textbf{把研究组织起来：}维护问题、范围、假设、任务、证据覆盖和关键决定；
+  \item \textbf{把分析做白：}选择并执行合适的方法，产生图表、效应量、敏感性分析与解释；
+  \item \textbf{把结果交付出去：}生成可预览、可下载、可追溯的数据、图表、报告与论文材料。
+\end{enumerate}
+
+\subsection{北极星用户旅程}
+
+\begin{center}
+\begin{tikzpicture}[
+  node distance=4.5mm,
+  flowstep/.style={rounded corners=1.5mm,draw=GalenLine,fill=white,minimum width=29mm,minimum height=13mm,align=center,font=\small\sffamily},
+  arrow/.style={-{Latex[length=1.8mm]},draw=GalenTeal,line width=.8pt}
+]
+\node[flowstep,fill=GalenMint,draw=GalenTeal] (a) {提出研究目标};
+\node[flowstep,right=of a] (b) {发现并确认数据};
+\node[flowstep,right=of b] (c) {自动治理与组织};
+\node[flowstep,right=of c] (d) {分析与证据核验};
+\node[flowstep,right=of d,fill=GalenNavy,text=white,draw=GalenNavy] (e) {获得可验证成果};
+\draw[arrow] (a)--(b); \draw[arrow] (b)--(c); \draw[arrow] (c)--(d); \draw[arrow] (d)--(e);
+\end{tikzpicture}
+\end{center}
+
+典型指令可以非常直接：“从康复师工作台获取 ATH-001 最近三次评估，清洗后写入当前研究，比较恢复趋势并生成图表。”Galen 应先发现可用数据并展示简洁确认卡；用户确认后，系统在当前对话内完成获取、治理、RehabID 写入和分析。页面不应迫使用户跳转到多个工具中心。
+
+% --------------------------------------------------------------------------
+\section{产品闭环：Connect, Govern, Reason, Deliver}
+
+Galen 的五项底层能力分别是 \en{Connect, Govern, Understand, Execute, Verify}。在产品层面，它们被收敛为四个用户能够感知的阶段。
+
+\begin{table}[htbp]
+\centering
+\caption{Galen 四段式科研闭环}
+\begin{tabularx}{\textwidth}{@{}L{2.5cm}L{3.3cm}Y L{3.1cm}@{}}
+\toprule
+阶段 & 核心问题 & 系统行为 & 用户看到的结果 \\
+\midrule
+Connect & 数据在哪里 & 发现工作台、设备、文件、数据库与研究服务 & 数据源确认卡与覆盖范围 \\
+Govern & 数据是否可信 & 映射、清洗、对齐、去标识、版本化、来源登记 & 质量摘要与 RehabID 时间轴 \\
+Reason & 能说明什么 & 规划分析、调用工具、比较时间点、检索证据、识别矛盾 & 交互图表、证据脉络与解释 \\
+Deliver & 如何成为成果 & 生成数据集、代码、图表、报告、引用与审计记录 & 一个链接即可预览的成果包 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Connect：数据源不是菜单，而是能力}
+
+连接器不应成为一个按钮密集的传统管理页面。正常交互由对话触发，系统在需要时展示唯一必要的确认动作。数据源目录位于侧栏或资源抽屉，用于查看连接状态、覆盖与历史，而非要求用户逐层导航。
+
+连接对象包括：
+
+\begin{itemize}
+  \item 自研软件：康复师工作台、RehabGPT 与其他评估应用；
+  \item 设备与传感器：HRV、力台、肌电、动作捕捉、功率车及未来专用硬件；
+  \item 文件与数据集：CSV、Excel、JSON、图片、PDF 与公开研究数据；
+  \item 研究服务：PubMed、Crossref、中文数据库、统计环境和外部 MCP 工具。
+\end{itemize}
+
+\subsection{Govern：数据治理是主产品，不是前置杂务}
+
+Galen 必须把清洗过程转变为清晰的研究资产：原始数据保持不变，标准化结果单独保存；每次转换记录规则、时间、输入哈希和输出版本；不确定映射进入待确认队列；对象、时间点、指标与单位形成统一 schema。
+
+\subsection{Reason：AI 的价值在执行和判断组织}
+
+PI Agent 不只是总结文本。它读取项目状态，拆解任务，选择工具，分派子任务，检查结果是否满足任务契约，并将冲突或高影响决策交给研究者。它可以调用文献检索、数据处理、统计分析、图表生成和文档编译能力，但这些工具围绕同一个项目状态协作。
+
+\subsection{Deliver：成果必须可打开、可验证、可继续}
+
+一次任务的完成条件不是“模型回复结束”，而是产物已经注册、能够预览、来源可追踪，并且下一个研究动作可以在同一项目中继续。PDF、图表、数据集、脚本和证据列表都应成为带版本的项目对象。
+
+% --------------------------------------------------------------------------
+\section{RehabID：从记录集合到连续研究状态}
+
+\subsection{RehabID 的定义}
+
+RehabID 是 Galen 中代表一个研究对象的稳定标识与纵向状态容器。它不是公开身份，也不是一张静态患者卡片。它把来自不同来源、不同时间点和不同模态的观察组织到同一个可追溯时间轴中。
+
+\begin{center}
+\begin{tikzpicture}[
+  node distance=5mm and 11mm,
+  source/.style={rounded corners=1.5mm,draw=GalenLine,fill=GalenPaper,minimum width=27mm,minimum height=9mm,align=center,font=\scriptsize\sffamily},
+  core/.style={rounded corners=3mm,draw=GalenTeal,fill=GalenMint,minimum width=44mm,minimum height=31mm,align=center,font=\bfseries\sffamily},
+  state/.style={rounded corners=1.5mm,draw=GalenLine,fill=white,minimum width=36mm,minimum height=10mm,align=center,font=\scriptsize\sffamily},
+  arrow/.style={-{Latex[length=1.8mm]},draw=GalenTeal,line width=.7pt}
+]
+\node[source] (s1) {康复师工作台};
+\node[source,below=of s1] (s2) {HRV / 力台 / 肌电};
+\node[source,below=of s2] (s3) {量表 / 主观反馈};
+\node[source,below=of s3] (s4) {公开数据与文件};
+\node[core,right=17mm of s2] (id) {RehabID\\[1mm]\small 对象 + 时间 + 指标\\来源 + 状态 + 版本};
+\node[state,right=17mm of id,yshift=16mm] (o1) {基线状态};
+\node[state,right=17mm of id] (o2) {干预与即时反应};
+\node[state,right=17mm of id,yshift=-16mm] (o3) {恢复与随访轨迹};
+\foreach \s in {s1,s2,s3,s4}{\draw[arrow] (\s.east)--(id.west);}
+\foreach \o in {o1,o2,o3}{\draw[arrow] (id.east)--(\o.west);}
+\end{tikzpicture}
+\end{center}
+
+\subsection{一级状态维度}
+
+为了兼顾完整性与可执行性，Galen 将康复状态收敛为六个一级维度。不同场景可以扩展具体指标，但不轻易增加一级维度。
+
+\begin{longtable}{@{}L{3.1cm}L{5.0cm}L{6.8cm}@{}}
+\toprule
+状态维度 & 典型数据 & 研究意义 \\
+\midrule
+\endfirsthead
+\toprule
+状态维度 & 典型数据 & 研究意义 \\
+\midrule
+\endhead
+生理恢复 & HRV、心率、睡眠、血乳酸、血液指标 & 描述自主神经、代谢与整体恢复背景 \\
+神经肌肉表现 & CMJ、力台、肌力、功率、动作速度 & 描述输出能力与疲劳后的功能变化 \\
+动作与功能 & ROM、步态、姿态、FMS、任务完成质量 & 描述动作控制和功能活动表现 \\
+症状与主观负荷 & VAS、RPE、疲劳感、疼痛部位 & 补足设备数据无法直接表达的体验状态 \\
+行为与依从性 & 训练完成率、可穿戴活动、家庭任务记录 & 解释干预暴露与实际执行程度 \\
+情境与干预 & 训练内容、治疗记录、采集条件、时间窗口 & 使状态变化具有可解释的前因与边界 \\
+\bottomrule
+\end{longtable}
+
+\subsection{来源与可信度}
+
+每一个观察值至少关联：来源 ID、采集时间、指标名、数值与单位、采集情境、验证状态和版本。来源冲突不被静默覆盖，而是形成明确的审查决定。这样，图表中的一个点可以回到清洗结果，再回到原始文件或设备记录。
+
+% --------------------------------------------------------------------------
+\section{PI Agent：Galen 的能力基座}
+
+\subsection{为什么是 PI，而不是普通助手}
+
+科研工作并不是一串独立问题。它包含目标、约束、假设、证据、不确定性、任务依赖、质量门槛和成果标准。PI Agent 的角色是维护这一完整结构，并让不同工具和子任务围绕同一个研究目标工作。
+
+\begin{visionbox}
+\textbf{PI Agent 的核心责任：}理解项目，不只是理解这一句话；推进任务，不只是提出步骤；核验结果，不只是生成文字；保留决定，不只是延长对话。
+\end{visionbox}
+
+\subsection{任务契约}
+
+每个重要研究任务应形成最小任务契约：目标、输入、纳入范围、排除范围、预期产物、验证标准、可用数据源和需要人工确认的节点。PI Agent 依据契约判断任务是否真正完成。
+
+\subsection{主对话与执行线程}
+
+主对话负责研究方向、范围变更、关键决策与最终汇总；检索、清洗、统计、图表和写作可以成为执行线程。用户不必管理多个聊天窗口，PI Agent 汇总各线程状态，并把需要研究者判断的内容带回主对话。
+
+\begin{center}
+\begin{tikzpicture}[
+  node distance=8mm and 15mm,
+  pi/.style={rounded corners=3mm,draw=GalenNavy,fill=GalenNavy,text=white,minimum width=43mm,minimum height=16mm,align=center,font=\bfseries\sffamily},
+  worker/.style={rounded corners=2mm,draw=GalenLine,fill=white,minimum width=32mm,minimum height=12mm,align=center,font=\small\sffamily},
+  arrow/.style={<->,>=Latex,draw=GalenTeal,line width=.7pt}
+]
+\node[pi] (pi) {PI Agent\\\small Project Control Plane};
+\node[worker,below left=of pi] (w1) {数据治理线程};
+\node[worker,below=of pi] (w2) {统计与可视化线程};
+\node[worker,below right=of pi] (w3) {证据与写作线程};
+\node[worker,below=12mm of w2,fill=GalenMint,draw=GalenTeal] (human) {研究者确认};
+\draw[arrow] (pi)--(w1); \draw[arrow] (pi)--(w2); \draw[arrow] (pi)--(w3);
+\draw[arrow] (w1)--(human); \draw[arrow] (w2)--(human); \draw[arrow] (w3)--(human);
+\end{tikzpicture}
+\end{center}
+
+\subsection{该记与该忘}
+
+研究范围和已确认决定进入结构化项目状态，跨会话保持；临时推理、失败尝试和已废弃方向不应继续污染当前任务。方向变更需要显式更新项目范围，并保留变更记录。这样，Galen 同时解决“该记的时候忘记”和“该忘的时候继续牵引”两个问题。
+
+% --------------------------------------------------------------------------
+\section{证据系统：从文献结果到可核验主张}
+
+\subsection{Evidence Coverage Awareness}
+
+Galen 在形成证据判断前，必须知道自己检索了哪些数据库、何时检索、使用何种策略、得到多少结果、哪些来源不可用。若只检索 PubMed，结论必须写成“基于当前 PubMed 检索结果”，而不能扩展为“目前没有证据”。
+
+\begin{table}[htbp]
+\centering
+\caption{证据覆盖状态的产品表达}
+\begin{tabularx}{\textwidth}{@{}L{3.2cm}L{3.0cm}Y@{}}
+\toprule
+来源 & 状态 & 对结论的影响 \\
+\midrule
+PubMed & 已检索 & 可支持国际生物医学文献范围内的判断 \\
+Crossref / Semantic Scholar & 已检索或补充 & 用于元数据核验、引用链接和跨领域补充 \\
+CNKI / 万方等中文来源 & 未连接或部分覆盖 & 结论必须声明中文证据覆盖限制 \\
+指南与注册平台 & 按任务检索 & 用于方法、标准和研究注册核验 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{论文级引用}
+
+研究建议中的关键主张应逐条关联可点击来源。最低可用标准包括：题名、作者、年份、来源、DOI/PMID/稳定链接、检索数据库和检索时间。引用真实性通过多源元数据核验、标识符解析和链接可达性检查共同保证。
+
+\subsection{证据脉络}
+
+证据脉络图不是装饰性知识图谱，而是“主张 - 证据 - 数据库覆盖 - 分析结果 - 研究决定”的可追踪关系。研究者可以从结论进入依据，也可以从一篇文献看到它支持或反驳了哪些主张。
+
+% --------------------------------------------------------------------------
+\section{首发场景：运动疲劳多模态纵向研究}
+
+\subsection{为什么选择运动疲劳}
+
+运动疲劳具有可重复诱发、可设置明确时间点、可组合主客观指标、可比较个体基线等特点，适合作为 Galen 数据治理与智能推理能力的首个验证场景。团队同时具备运动康复知识、人体实验条件和软件开发基础，能够形成真实数据而非纯演示。
+
+\subsection{示范研究闭环}
+
+\begin{enumerate}
+  \item 在基线采集 HRV、CMJ、RPE、VAS 与必要的人体测量信息；
+  \item 执行标准化疲劳任务，记录训练负荷和采集情境；
+  \item 在即刻、24h、48h 或其他预设时间点重复测量；
+  \item 将各设备与量表数据写入同一 RehabID 时间轴；
+  \item 计算相对个体基线的变化、恢复比例与指标间一致性；
+  \item 识别“生理恢复”和“神经肌肉恢复”不同步的个体模式；
+  \item 生成图表、数据质量报告、统计摘要和带证据的解释。
+\end{enumerate}
+
+\subsection{核心研究命题}
+
+第一阶段不承诺用单一模型预测所有人的疲劳状态，而是验证一个更基础、也更有价值的命题：
+
+\begin{visionbox}
+当不同来源的数据被可靠地组织到同一人的纵向时间轴后，多模态状态是否能够比孤立指标更完整地表达恢复过程，并支持可复核的下一步研究决策？
+\end{visionbox}
+
+\subsection{演示案例}
+
+受试者 ATH-001 在疲劳任务后出现 CMJ 下降、RPE 与 VAS 上升；24 小时后 HRV 部分恢复，但神经肌肉表现尚未回到个人基线。Galen 不只输出“存在疲劳”，而是展示各维度相对基线的恢复程度、数据质量、来源记录和证据边界，并形成下一时间点的研究建议。
+
+这一演示的价值在于展示完整链条，而不是展示一个看似聪明的结论：
+
+\begin{center}
+\product{真实采集} $\rightarrow$ \product{统一治理} $\rightarrow$ \product{纵向建模} $\rightarrow$ \product{分析解释} $\rightarrow$ \product{可追溯成果}
+\end{center}
+
+% --------------------------------------------------------------------------
+\section{交互与界面哲学：对话是控制面，画布是证据面}
+
+\subsection{对话驱动，但不是只有聊天气泡}
+
+用户通过对话表达研究目标、调整范围和触发操作。Galen 根据语义选择数据源和工具，并把运行结果投射到结构化画布中。对话负责“我要做什么”，画布负责“系统发现了什么、做了什么、结果是什么”。
+
+\subsection{按钮只出现在真正的决策点}
+
+按钮数量应由决策数量决定，而不是由功能数量决定。以下节点适合按钮：确认获取数据、选择冲突解释、批准高影响范围变更、打开证据与成果。可以自动执行的检索、字段映射、进度记录与产物注册，不需要每一步都让用户点击。
+
+\subsection{科研仪器日志作为视觉母题}
+
+主对话不是社交聊天流，而更像一份持续生成的“研究仪器日志”：每段内容有明确角色、时间与状态；工具调用、数据导入、质量判断、证据和产物形成连续记录。右侧画布随着任务变化展示时间轴、质量报告、图表、证据和 PDF 预览。
+
+\begin{decisionbox}
+\textbf{界面判断标准：}如果移除一个按钮后，用户仍能通过自然语言完成任务，就应优先移除；如果一个结果需要用户核验，就必须提供结构化视图和来源入口，而不能只留在聊天文本中。
+\end{decisionbox}
+
+% --------------------------------------------------------------------------
+\section{技术愿景：先进性来自系统能力，而非术语堆叠}
+
+\subsection{统一数据协议}
+
+Galen 使用稳定 schema 表达对象、事件、观察、单位、情境、来源和验证状态。连接器负责把外部数据映射到该协议，核心分析不再为每台设备重复编写业务逻辑。
+
+\subsection{事件溯源与不可变来源}
+
+数据导入、清洗、冲突裁决和成果生成被记录为事件。原始来源不被覆盖，派生结果与输入哈希、规则版本和运行时间绑定。这使研究状态可以重建，结果可以审计。
+
+\subsection{可执行 PI 编排}
+
+PI Agent 根据任务契约选择工具与执行线程，长任务具有细粒度进度、失败恢复与明确终止条件。模型可以替换，项目状态和工具契约保持稳定。真正的壁垒是可持续运行的研究闭环，而不是依赖某一个模型名称。
+
+\subsection{来源感知的证据检索}
+
+每次检索生成 SearchRun，记录数据库、查询、时间、结果数、错误类型和覆盖限制。文献实体通过 DOI、PMID 等标识符去重并提供稳定链接。最终主张引用的是经过核验的文献对象，而不是模型记忆中的题名。
+
+\subsection{可复用的分析资产}
+
+数据治理规则、分析脚本、图表定义和报告模板都应成为可版本化资产。同一研究更新数据后，可以复用流程并生成新版本，而不是从空白对话重新开始。
+
+% --------------------------------------------------------------------------
+\section{差异化与护城河}
+
+\begin{table}[htbp]
+\centering
+\caption{Galen 与常见工具形态的差异}
+\begin{tabularx}{\textwidth}{@{}L{3.0cm}Y Y Y@{}}
+\toprule
+比较维度 & 通用 AI 助手 & 单点科研软件 & Galen \\
+\midrule
+项目连续状态 & 主要依赖对话上下文 & 通常局限于单模块 & 结构化项目、决定、任务和产物 \\
+多源数据连接 & 依赖手工上传 & 支持特定格式或设备 & 连接器 + 统一数据协议 \\
+纵向个体建模 & 非核心能力 & 按单模块实现 & RehabID 作为基础对象 \\
+证据覆盖意识 & 常不透明 & 取决于数据库 & SearchRun + 数据库覆盖声明 \\
+成果可追溯 & 文本与来源容易分离 & 局部可追溯 & 数据、代码、图表、引用与产物统一登记 \\
+执行闭环 & 常给出步骤与建议 & 完成单项操作 & PI Agent 协调从目标到交付 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Galen 的护城河由四层共同构成：
+
+\begin{enumerate}
+  \item \textbf{场景理解：}运动康复专业知识与真实研究流程；
+  \item \textbf{数据结构：}RehabID、纵向事件模型与来源协议；
+  \item \textbf{执行系统：}PI Agent、任务契约、工具调用和成果注册；
+  \item \textbf{真实验证：}持续积累的多模态研究数据、质量规则和案例评测。
+\end{enumerate}
+
+任何单层都容易复制。四层在真实项目中共同运行，才形成产品难度和长期价值。
+
+% --------------------------------------------------------------------------
+\section{产品原则与关键决策}
+
+\begin{longtable}{@{}L{3.6cm}L{12.0cm}@{}}
+\toprule
+原则 & 具体含义 \\
+\midrule
+\endfirsthead
+\toprule
+原则 & 具体含义 \\
+\midrule
+\endhead
+以人和研究对象为中心 & Galen 监测的不是设备和指标，而是同一对象在时间中的状态。 \\
+结果优先 & 系统能执行的操作直接执行，用户首先看到结果，策略与代码作为可展开依据。 \\
+来源先于结论 & 所有关键结果知道来自哪里；覆盖不足时限制结论范围。 \\
+结构化状态先于长提示词 & 范围、决定、数据与任务由系统保存，而不是寄希望于模型记忆。 \\
+对话是入口，画布是结果 & 自然语言降低操作成本，结构化可视化保证研究可读性与可核验性。 \\
+先软件连接，后硬件补缺 & 优先接入已有设备；当关键状态长期无法采集时，再设计专用硬件。 \\
+窄切口验证，宽协议扩展 & 首发场景聚焦运动疲劳，底层协议保持对其他康复研究的扩展能力。 \\
+真实闭环胜过功能数量 & 一个从真实数据到可验证成果的案例，优先于十个未打通的功能入口。 \\
+\bottomrule
+\end{longtable}
+
+% --------------------------------------------------------------------------
+\section{阶段路线：从可运行闭环走向科研基础设施}
+
+\subsection{阶段一：打穿首个真实闭环}
+
+目标是让康复师工作台的脱敏评估数据能够被 Galen 发现，经用户确认后写入 RehabID，并在同一对话中完成质量摘要、纵向图表和可预览成果。验收不以页面完成度为准，而以真实数据链是否跑通为准。
+
+\begin{itemize}
+  \item 完成康复师工作台连接器与稳定导出协议；
+  \item 支持 HRV、CMJ、RPE、VAS 等运动疲劳核心字段；
+  \item 建立数据质量报告与幂等导入；
+  \item 对话内确认，导入后不强制跳转页面；
+  \item 形成一个可重复演示的 ATH-001 纵向案例。
+\end{itemize}
+
+\subsection{阶段二：形成研究项目操作系统}
+
+目标是让一个研究项目跨多次会话持续推进。PI Agent 能维护范围和决定，执行线程能够协作，文献主张与数据结果都可以回溯。
+
+\begin{itemize}
+  \item 项目状态、任务契约和决策版本化；
+  \item 数据治理模板与分析流程复用；
+  \item 多数据库检索覆盖与论文级引用；
+  \item 长任务进度、失败恢复和成果验收；
+  \item 面向团队的审阅、批准与交接机制。
+\end{itemize}
+
+\subsection{阶段三：拓展连接器与研究场景}
+
+在首发闭环稳定后，逐步接入力台、HRV、动作视觉、量表、公开数据集和患者端。扩展依据是研究价值和数据缺口，而不是追求连接器数量。
+
+\subsection{阶段四：形成开放的康复科研 Context Layer}
+
+Galen 向合作软件和设备提供稳定协议，使外部系统可以写入经过授权和去标识的数据；第三方分析工具与 Agent 可以读取同一研究状态并返回产物。此时 Galen 从单一应用成长为康复科研的数据与上下文基础设施。
+
+% --------------------------------------------------------------------------
+\section{成功标准：如何知道产品真的成立}
+
+\subsection{北极星指标}
+
+\begin{visionbox}
+\textbf{北极星指标：}从用户提出研究目标，到获得第一份可验证研究产物的时间，以及其中需要人工搬运数据和重复解释上下文的次数。
+\end{visionbox}
+
+\subsection{阶段性量化指标}
+
+\begin{table}[htbp]
+\centering
+\caption{首发版本建议验收指标}
+\begin{tabularx}{\textwidth}{@{}L{4.2cm}L{3.0cm}Y@{}}
+\toprule
+指标 & 目标方向 & 含义 \\
+\midrule
+连接成功率 & 持续提高 & 支持范围内的数据源能够稳定发现与读取 \\
+对象与时间点映射准确率 & 接近人工复核结果 & RehabID 不错配，纵向事件不被错误合并 \\
+关键字段来源覆盖率 & 可计算、可展示 & 图表与结论中的关键值具有来源定位 \\
+首次可验证产物时间 & 显著缩短 & 从需求到图表、数据集或报告的端到端效率 \\
+用户重复说明次数 & 趋近于零 & 项目状态和范围能够跨对话保持 \\
+人工返工率 & 持续下降 & 清洗、引用、链接和产物预览具有稳定质量 \\
+真实任务完成率 & 高于功能点击率 & 以研究任务闭环而不是功能使用次数衡量价值 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{评测资产}
+
+Galen 需要建立可重复运行的黄金任务集，包括：数据源发现、脏数据治理、中文时间点对齐、重复导入、文献真实性核验、数据库覆盖不足表达、长任务中断恢复和 PDF 产物预览。每次版本迭代都应回答“真实任务是否更可靠”，而不是只回答“新增了多少功能”。
+
+% --------------------------------------------------------------------------
+\section{商业与合作愿景}
+
+Galen 的早期价值首先通过科研效率和成果质量证明，而非立即覆盖医院完整业务。适合的合作入口包括高校康复实验室、运动队与体能机构的科研项目、康复设备企业的研究验证、以及拥有多源数据但缺少统一研究流程的创新团队。
+
+对设备或平台企业而言，Galen 不与其争夺硬件入口，而是把设备数据变成可解释、可比较、可用于论文和产品验证的研究资产。对大模型企业而言，Galen 提供康复场景中最缺失的数据结构、项目状态和工具执行层，使通用模型获得可靠的领域上下文。
+
+\begin{decisionbox}
+\textbf{合作表达：}我们不是再造一个通用模型，也不是替代现有康复软件。我们把分散的康复数据和工具连接成可运行的科研闭环，让合作方的数据、设备和模型真正进入研究过程。
+\end{decisionbox}
+
+% --------------------------------------------------------------------------
+\section{长期愿景：让康复过程成为可理解的连续状态}
+
+康复本质上发生在时间中。一次评估只能描述一个切片，真正影响研究和干预的是变化：基线如何形成，疲劳如何出现，恢复是否同步，干预是否有效，依从性如何解释差异。今天，这些变化散落在设备、量表、软件和人的记忆中。
+
+Galen 的长期愿景，是建立康复对象的连续多模态状态系统。设备是感知器官，软件是工作入口，RehabID 是状态容器，PI Agent 是研究执行者，证据与来源系统保证结果能够被核验。随着数据积累，系统可以逐步研究个体基线、变化检测、干预反应和跨模态模式，但始终以真实数据链和可复核成果为基础。
+
+\begin{visionbox}
+\centering
+\large\bfseries\color{GalenNavy}
+Galen 监测的不是设备，也不是孤立指标，而是人。\\[2mm]
+Galen 生成的不是回答，而是能够继续生长的研究状态与成果。
+\end{visionbox}
+
+这个愿景足够大，但当前动作必须足够小：连接正确的康复师工作台，导入一组真实脱敏数据，建立一个可靠 RehabID，完成一次纵向分析，并让评委或研究者点击一个链接就能检查结果与依据。只要这条链路真正成立，Galen 就拥有继续扩展的坚实起点。
+
+% --------------------------------------------------------------------------
+\appendix
+\section{对外叙事基线}
+
+\subsection{30 秒版本}
+
+康复研究的数据往往散落在量表、力台、HRV、动作视觉和不同软件中。Galen 是面向运动康复科研的数据治理与智能推理工作台：它连接这些数据，把它们组织成同一对象的 RehabID 时间轴，再由 PI Agent 完成分析、证据核验和成果交付。我们首先用运动疲劳多模态研究验证这套闭环，让分散数据成为连续、可信、可计算的科研资产。
+
+\subsection{三分钟版本的结构}
+
+\begin{enumerate}
+  \item 从一个真实研究对象的多源数据断裂开始；
+  \item 说明现有聊天助手与单点软件为什么无法维护完整研究状态；
+  \item 展示 Galen 的 Connect - Govern - Reason - Deliver 闭环；
+  \item 现场演示康复师工作台数据进入 RehabID 并形成纵向图表；
+  \item 展示真实实验、数据质量和证据链接；
+  \item 以开放连接器和康复科研 Context Layer 收束长期价值。
+\end{enumerate}
+
+\section{术语表}
+
+\begin{longtable}{@{}L{3.6cm}L{12.0cm}@{}}
+\toprule
+术语 & 定义 \\
+\midrule
+\endfirsthead
+\toprule
+术语 & 定义 \\
+\midrule
+\endhead
+Galen & 面向运动康复科研的数据治理与智能推理工作台。 \\
+PI Agent & 维护研究项目状态、拆解任务、编排工具并核验成果的主智能体。 \\
+RehabID & 研究对象的稳定标识与纵向多模态状态容器。 \\
+Connector & 将软件、设备、文件或研究服务接入 Galen 统一协议的适配层。 \\
+Research Project State & 研究问题、范围、数据、证据、决定、任务和产物构成的结构化项目状态。 \\
+SearchRun & 一次文献检索的数据库、查询、时间、结果、错误与覆盖记录。 \\
+Artifact & 数据集、代码、图表、报告、PDF 等可登记、预览和追溯的研究产物。 \\
+Task Contract & 规定目标、输入、范围、产物和验收标准的研究任务契约。 \\
+\bottomrule
+\end{longtable}
+
+\vfill
+\begin{center}
+\color{GalenLine}\rule{0.72\textwidth}{0.4pt}\par
+\vspace{4mm}
+{\sffamily\small\color{GalenMuted}Galen Project Team}\par
+{\sffamily\footnotesize\color{GalenMuted}From fragmented rehabilitation data to verifiable research outcomes.}
+\end{center}
+
+\end{document}

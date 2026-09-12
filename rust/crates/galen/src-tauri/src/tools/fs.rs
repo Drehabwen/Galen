@@ -94,6 +94,180 @@ impl GalenTool for WriteFile {
     }
 }
 
+// ── AppendFile ──
+// Large manuscripts should not need a shell workaround merely because one
+// model tool payload cannot hold an entire source file. The agent writes the
+// first section with `write_file`, then appends bounded sections with this
+// first-class workspace tool; every revision remains an Artifact update.
+pub struct AppendFile;
+#[async_trait]
+impl GalenTool for AppendFile {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: "append_file".into(),
+            description: Some(
+                "Append content to a workspace file and register the updated artifact. Use after write_file for long documents."
+                    .into(),
+            ),
+            input_schema: json!({"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"},"node_id":{"type":"string","description":"Optional research node receiving this artifact."}},"required":["path","content"]}),
+        }
+    }
+    fn is_write(&self) -> bool {
+        true
+    }
+    async fn execute(&self, input: Value, ctx: &ToolContext) -> Result<String, String> {
+        let path = input["path"].as_str().ok_or("Missing 'path'")?;
+        let content = input["content"].as_str().ok_or("Missing 'content'")?;
+        let preferred_node_id = input["node_id"].as_str().map(str::to_string);
+        let target = resolve_workspace_path(&ctx.workspace_root, path)?;
+        let workspace = ctx
+            .workspace_root
+            .lock()
+            .map_err(|error| format!("Workspace lock error: {error}"))?
+            .clone()
+            .ok_or("请先选择工作区")?;
+        let target_for_write = target.clone();
+        let content_owned = content.to_string();
+        tokio::task::spawn_blocking(move || {
+            if let Some(parent) = target_for_write.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            use std::io::Write;
+            let mut file = fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&target_for_write)?;
+            file.write_all(content_owned.as_bytes())?;
+            file.flush()
+        })
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(|error| error.to_string())?;
+
+        let active_task_id =
+            crate::research_task::load_active_task(&workspace)?.map(|task| task.task_id);
+        let artifact = crate::artifact::register_file(
+            &workspace,
+            path,
+            active_task_id,
+            preferred_node_id.clone(),
+        )?;
+        let task = crate::research_task::attach_artifact(
+            &workspace,
+            &artifact.id,
+            &artifact.path,
+            preferred_node_id.as_deref(),
+        )?;
+        let node_id = task
+            .nodes
+            .iter()
+            .find(|node| node.outputs.iter().any(|output| output == &artifact.path))
+            .map(|node| node.id.clone())
+            .ok_or("产物已追加，但未能绑定研究节点")?;
+        let artifact =
+            crate::artifact::link_artifact(&workspace, &artifact.id, &task.task_id, &node_id)?;
+        ctx.send_event(ChatEvent::ResearchTaskUpdated(task.clone()));
+        ctx.send_event(ChatEvent::ArtifactCreated(artifact.clone()));
+        Ok(json!({
+            "status": "delivered",
+            "file_path": target.to_string_lossy(),
+            "bytes_appended": content.len(),
+            "artifact": artifact,
+            "research_task": task,
+        })
+        .to_string())
+    }
+}
+
+// ── ReplaceText ──
+// A manuscript revision must not require an unrestricted shell command. This
+// tool makes a narrow, auditable replacement in an existing workspace file.
+pub struct ReplaceText;
+#[async_trait]
+impl GalenTool for ReplaceText {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: "replace_text".into(),
+            description: Some(
+                "Replace one exact text fragment in an existing workspace file. The expected match count defaults to 1; use it for targeted manuscript revisions."
+                    .into(),
+            ),
+            input_schema: json!({"type":"object","properties":{"path":{"type":"string"},"search":{"type":"string","description":"Exact existing text to replace."},"replace":{"type":"string","description":"Replacement text; may be empty."},"expected_matches":{"type":"integer","minimum":1,"description":"Exact number of occurrences expected; defaults to 1."},"node_id":{"type":"string","description":"Optional research node receiving the updated artifact."}},"required":["path","search","replace"]}),
+        }
+    }
+    fn is_write(&self) -> bool {
+        true
+    }
+    async fn execute(&self, input: Value, ctx: &ToolContext) -> Result<String, String> {
+        let path = input["path"].as_str().ok_or("Missing 'path'")?;
+        let search = input["search"].as_str().ok_or("Missing 'search'")?;
+        let replace = input["replace"].as_str().ok_or("Missing 'replace'")?;
+        if search.is_empty() {
+            return Err("'search' must not be empty".into());
+        }
+        let expected_matches = input["expected_matches"].as_u64().unwrap_or(1) as usize;
+        let preferred_node_id = input["node_id"].as_str().map(str::to_string);
+        let target = resolve_workspace_path(&ctx.workspace_root, path)?;
+        let workspace = ctx
+            .workspace_root
+            .lock()
+            .map_err(|error| format!("Workspace lock error: {error}"))?
+            .clone()
+            .ok_or("请先选择工作区")?;
+
+        let target_for_write = target.clone();
+        let search_owned = search.to_string();
+        let replace_owned = replace.to_string();
+        let actual_matches = tokio::task::spawn_blocking(move || -> Result<usize, String> {
+            let content = fs::read_to_string(&target_for_write).map_err(|error| error.to_string())?;
+            let matches = content.matches(&search_owned).count();
+            if matches != expected_matches {
+                return Err(format!(
+                    "Targeted replacement aborted: expected {expected_matches} exact match(es), found {matches}."
+                ));
+            }
+            fs::write(&target_for_write, content.replace(&search_owned, &replace_owned))
+                .map_err(|error| error.to_string())?;
+            Ok(matches)
+        })
+        .await
+        .map_err(|error| error.to_string())??;
+
+        let active_task_id =
+            crate::research_task::load_active_task(&workspace)?.map(|task| task.task_id);
+        let artifact = crate::artifact::register_file(
+            &workspace,
+            path,
+            active_task_id,
+            preferred_node_id.clone(),
+        )?;
+        let task = crate::research_task::attach_artifact(
+            &workspace,
+            &artifact.id,
+            &artifact.path,
+            preferred_node_id.as_deref(),
+        )?;
+        let node_id = task
+            .nodes
+            .iter()
+            .find(|node| node.outputs.iter().any(|output| output == &artifact.path))
+            .map(|node| node.id.clone())
+            .ok_or("产物已更新，但未能绑定研究节点")?;
+        let artifact =
+            crate::artifact::link_artifact(&workspace, &artifact.id, &task.task_id, &node_id)?;
+        ctx.send_event(ChatEvent::ResearchTaskUpdated(task.clone()));
+        ctx.send_event(ChatEvent::ArtifactCreated(artifact.clone()));
+        Ok(json!({
+            "status": "delivered",
+            "file_path": target.to_string_lossy(),
+            "matches_replaced": actual_matches,
+            "artifact": artifact,
+            "research_task": task,
+        })
+        .to_string())
+    }
+}
+
 // ── ReadFile ──
 pub struct ReadFile;
 #[async_trait]

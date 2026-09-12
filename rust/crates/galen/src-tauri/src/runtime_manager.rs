@@ -12,6 +12,7 @@ pub struct RuntimeStatus {
     pub python: RuntimeInfo,
     pub r: RuntimeInfo,
     pub typst: RuntimeInfo,
+    pub xelatex: RuntimeInfo,
     pub deno: RuntimeInfo,
     pub uvx: RuntimeInfo,
 }
@@ -119,6 +120,14 @@ fn detect_typst() -> RuntimeInfo {
     )
 }
 
+fn detect_xelatex() -> RuntimeInfo {
+    if let Ok(path) = crate::tools::resolve_xelatex() {
+        let version = get_version(&path.to_string_lossy());
+        return RuntimeInfo::found(path, version);
+    }
+    RuntimeInfo::missing("请安装 TinyTeX、MiKTeX 或 TeX Live，并确保 `xelatex` 可在 PATH 中找到。")
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -128,6 +137,7 @@ pub fn detect_all() -> RuntimeStatus {
         python: detect_python(),
         r: detect_r(),
         typst: detect_typst(),
+        xelatex: detect_xelatex(),
         deno: detect_runtime("deno", "Deno", "Deno 随 Galen 打包，如缺失请重新安装"),
         uvx: detect_runtime("uvx", "uv", "uv 已随 Galen 打包，如缺失请重新安装 Galen。"),
     }
@@ -149,6 +159,7 @@ pub fn status_summary(status: &RuntimeStatus) -> String {
     lines.push(format!("- Python: {}", status_line(&status.python)));
     lines.push(format!("- R:      {}", status_line(&status.r)));
     lines.push(format!("- Typst:  {}", status_line(&status.typst)));
+    lines.push(format!("- XeLaTeX: {}", status_line(&status.xelatex)));
 
     lines.join("\n")
 }

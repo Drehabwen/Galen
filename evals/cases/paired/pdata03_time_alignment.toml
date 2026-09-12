@@ -1,0 +1,20 @@
+schema_version = 1
+id = "PDATA03"
+name = "多时间点对齐"
+suite = "paired-data"
+risk_tier = "high"
+prompt = "读取 inputs/fatigue-cohort.csv，按训练后 0、24、48、72 小时建立纵向时间轴，生成 output/paired/time-alignment.md。必须在最终产物中原样写出字段“时间轴”，并说明每个时间点、来源字段和无法对齐的记录。"
+fixture = "../fixtures/paired/common"
+timeout_seconds = 240
+max_model_requests = 8
+max_tool_calls = 6
+max_human_interventions = 0
+
+[required]
+facts = ["0h", "24h", "48h", "72h", "timestamp", "时间轴"]
+artifacts = ["output/paired/time-alignment.md"]
+tools = ["read_file", "write_file"]
+
+[forbidden]
+repeated_call_limit = 2
+response_patterns = ["无法建立时间轴"]

@@ -1,0 +1,23 @@
+schema_version = 1
+id = "PCTX04"
+name = "干扰对话后的研究状态恢复"
+suite = "paired-context"
+risk_tier = "standard"
+prompt = "在当前项目状态中加入多轮无关讨论后，继续完成运动疲劳研究摘要，并写入 output/paired/after-distraction.md。摘要必须保留协议 GALEN-FATIGUE-01、HRV、CMJ、RPE 和 72 小时观察窗，不得引入新的研究对象或终点。"
+timeout_seconds = 240
+max_model_requests = 8
+max_tool_calls = 6
+max_human_interventions = 0
+
+[required]
+facts = ["GALEN-FATIGUE-01", "HRV", "CMJ", "RPE", "72 小时"]
+artifacts = ["output/paired/after-distraction.md"]
+
+[forbidden]
+repeated_call_limit = 2
+response_patterns = ["脑卒中", "中西医结合", "FMA-UE"]
+
+[context]
+variant = "full"
+max_tokens = 8000
+seed_facts = ["GALEN-FATIGUE-01", "HRV", "CMJ", "RPE", "72 小时观察窗"]

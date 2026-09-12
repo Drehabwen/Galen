@@ -167,11 +167,12 @@ pub mod packs {
         fn manifest(&self) -> CapabilityManifest {
             CapabilityManifest {
                 id: "galen.pdf-report",
-                name: "PDF Report",
-                version: "0.1.0",
+                name: "Paper PDF Delivery",
+                version: "0.2.0",
                 layer: CapabilityLayer::Domain,
-                description: "Compile Typst sources into registered PDF artifacts.",
-                tool_names: &["compile_pdf_report"],
+                description:
+                    "Compile Typst reports or XeLaTeX manuscripts into registered PDF artifacts.",
+                tool_names: &["compile_pdf_report", "compile_latex_paper"],
                 ui_slots: &[CapabilityUiSlot::ResourceBar],
                 context_modules: &["artifact_delivery"],
             }
@@ -179,6 +180,7 @@ pub mod packs {
 
         fn register(&self, registry: &mut ToolRegistry) {
             registry.register(tools::report::CompilePdfReport);
+            registry.register(tools::report::CompileLatexPaper);
         }
     }
 }

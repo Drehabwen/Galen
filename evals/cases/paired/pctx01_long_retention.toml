@@ -1,0 +1,23 @@
+schema_version = 1
+id = "PCTX01"
+name = "长上下文关键事实保持"
+suite = "paired-context"
+risk_tier = "standard"
+prompt = "承接当前运动疲劳研究上下文，经过多轮讨论后生成 output/paired/context-retention.md。最终产物必须保留协议号 GALEN-FATIGUE-01、样本量 12 名、核心变量 HRV、CMJ、RPE，以及观察时点 0、24、48、72 小时。"
+timeout_seconds = 240
+max_model_requests = 8
+max_tool_calls = 6
+max_human_interventions = 0
+
+[required]
+facts = ["GALEN-FATIGUE-01", "12 名", "HRV", "CMJ", "RPE", "72 小时"]
+artifacts = ["output/paired/context-retention.md"]
+
+[forbidden]
+repeated_call_limit = 2
+response_patterns = ["FMA-UE", "中西医结合"]
+
+[context]
+variant = "full"
+max_tokens = 8000
+seed_facts = ["GALEN-FATIGUE-01", "12 名", "HRV", "CMJ", "RPE", "观察时点 0、24、48、72 小时"]

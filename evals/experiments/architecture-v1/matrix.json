@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "experiment_id": "galen-architecture-v1",
+  "status": "runner_hooked_partial_validation",
+  "protocol": "evals/experiments/architecture-v1/COMPARISON_PROTOCOL.md",
+  "comparators": "evals/experiments/architecture-v1/comparators.json",
+  "suite_manifest": "evals/experiments/architecture-v1/suite_manifest.json",
+  "task_suite": "evals/cases/paired",
+  "repeats_per_case": 5,
+  "formal_repeats_per_case": 20,
+  "groups": ["PCTX", "PDATA", "PTOOL"],
+  "fixed": {
+    "same_model": true,
+    "same_provider": true,
+    "same_tools": true,
+    "same_temperature": true,
+    "same_timeout_seconds": true,
+    "same_tool_budget": true,
+    "same_fixture": true
+  },
+  "variants": [
+    {
+      "id": "stateless",
+      "state_layer": false,
+      "data_contract": true,
+      "execution_contract": true,
+      "evidence_link": true
+    },
+    {
+      "id": "no_data_contract",
+      "state_layer": true,
+      "data_contract": false,
+      "execution_contract": true,
+      "evidence_link": true
+    },
+    {
+      "id": "no_exec_contract",
+      "state_layer": true,
+      "data_contract": true,
+      "execution_contract": false,
+      "evidence_link": true
+    },
+    {
+      "id": "no_evidence_link",
+      "state_layer": true,
+      "data_contract": true,
+      "execution_contract": true,
+      "evidence_link": false
+    },
+    {
+      "id": "generic_same_runtime",
+      "state_layer": false,
+      "data_contract": false,
+      "execution_contract": false,
+      "evidence_link": false
+    },
+    {
+      "id": "full_galen",
+      "state_layer": true,
+      "data_contract": true,
+      "execution_contract": true,
+      "evidence_link": true
+    }
+  ],
+  "metrics": {
+    "primary": ["hard_gate_pass_rate", "wilson_lower_95", "pass_k"],
+    "secondary": ["fact_recall", "stale_scope_leakage", "evidence_link_validity", "artifact_preview_rate", "tool_calls", "total_latency_ms", "recovery_cost"]
+  },
+  "planned_outputs": [
+    "runs/<run_id>/records.jsonl",
+    "runs/<run_id>/metrics.csv",
+    "runs/<run_id>/manifest.json",
+    "reports/architecture-ablation-v1.md",
+    "output/pdf/galen-architecture-v0.2/galen_architecture_paper.pdf"
+  ]
+}

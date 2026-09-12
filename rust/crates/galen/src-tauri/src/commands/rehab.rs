@@ -3,6 +3,26 @@ use tauri::State;
 use super::{lock_mutex, AppState};
 
 #[tauri::command]
+pub fn discover_research_data_source(
+    source_id: String,
+    case_hint: Option<String>,
+) -> Result<crate::connectors::ConnectorPreview, String> {
+    crate::connectors::discover_latest(&source_id, case_hint.as_deref())
+}
+
+#[tauri::command]
+pub fn import_research_data_source(
+    state: State<AppState>,
+    request: crate::connectors::ConnectorImportRequest,
+) -> Result<crate::rehab_context::GovernedTimelineImportOutput, String> {
+    let backend = lock_mutex(&state.backend)?;
+    let root = backend
+        .get_workspace_root()
+        .ok_or("请先选择研究工作区，再将数据写入 RehabID。")?;
+    crate::connectors::import_from_export(&root, request)
+}
+
+#[tauri::command]
 pub fn import_rehab_case(
     state: State<AppState>,
     source_path: String,

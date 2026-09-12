@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { BottomDrawerItem } from "./ui/primitives";
 import type { ArtifactRecord } from "../domain/artifact";
+import { FIRST_PARTY_CONNECTORS } from "../domain/connectors";
 
 const RESOURCES = [
   { id: "logs", icon: "☰", label: "全局日志" },
   { id: "versions", icon: "⇄", label: "版本" },
   { id: "evidence_lib", icon: "⊗", label: "证据库" },
   { id: "code_repo", icon: "</>", label: "代码仓库" },
+  { id: "connectors", icon: "↔", label: "连接器" },
   { id: "artifacts_lib", icon: "⬡", label: "产物库" },
 ] as const;
 
@@ -38,7 +40,28 @@ export function GlobalResourceBar({ artifacts = [], onOpenArtifact }: GlobalReso
       </div>
       {activeTab && (
         <div className="global-resource-content">
-          {activeTab === "artifacts_lib" ? (
+          {activeTab === "connectors" ? (
+            <div className="connector-ledger">
+              <div className="artifact-ledger-heading">
+                <span>科研数据源</span>
+                <strong>{FIRST_PARTY_CONNECTORS.length}</strong>
+              </div>
+              <p className="connector-ledger-intro">这里仅显示数据源状态。需要数据时，直接在主对话中说“从康复师工作台获取 ATH-001 最近三次评估”。</p>
+              <div className="connector-ledger-list">
+                {FIRST_PARTY_CONNECTORS.map((connector) => (
+                  <div className="connector-ledger-card" key={connector.id}>
+                    <div className="connector-ledger-card-head">
+                      <strong>{connector.label}</strong>
+                      <span className={`connector-status connector-status-${connector.status}`}>{connector.status === "ready" ? "可导入" : "需适配"}</span>
+                    </div>
+                    <p>{connector.notes}</p>
+                    <div className="connector-ledger-meta">格式：{connector.exportFormats.join(" / ")} · 写入：{connector.normalizedEntities.join("、")}</div>
+                    <div className="connector-ledger-mode">{connector.status === "ready" ? "可由对话调用" : "等待适配"}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : activeTab === "artifacts_lib" ? (
             <div className="artifact-ledger">
               <div className="artifact-ledger-heading">
                 <span>交付记录</span>

@@ -102,11 +102,28 @@ fn copy_fixture(source: &Path, destination: &Path) -> Result<(), String> {
 }
 
 fn prepare_workspace(case: &EvalCase, eval_root: &Path, run_index: u32) -> Result<PathBuf, String> {
-    let workspace = std::env::temp_dir().join("galen-evals").join(format!(
-        "{}-{}-{run_index}",
-        case.id,
-        std::process::id()
-    ));
+    // The runner launches one evaluator process per architecture variant. On
+    // Windows, a just-exited process id may be reused immediately, so
+    // `case + pid + repeat` is not a safe workspace identity. The runner
+    // supplies a run/variant tag; keep a conservative fallback for direct CLI
+    // usage and sanitize it before using it as a path component.
+    let run_tag = std::env::var("GALEN_EVAL_RUN_TAG")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| format!("pid-{}", std::process::id()));
+    let safe_tag = run_tag
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_') {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    let workspace = std::env::temp_dir()
+        .join("galen-evals")
+        .join(format!("{}-{safe_tag}-{run_index}", case.id));
     if workspace.exists() {
         return Err(format!(
             "拒绝覆盖已存在的评测工作区: {}",
@@ -125,10 +142,14 @@ fn prepare_workspace(case: &EvalCase, eval_root: &Path, run_index: u32) -> Resul
 /// 构造超阈值 seed 会话（可复现）：约 60K tokens 的长历史，模拟真实大会话，
 /// 使压缩引擎的经济性（token 节省率）可被量化评估。
 fn build_seed_session(case: &EvalCase) -> Session {
-    let facts = if case.required.facts.is_empty() {
-        "样本量 48、主要结局 FMA-UE、随机 12 周".to_string()
+    // Never derive the simulated transcript from `required.facts`: those are
+    // evaluator-only gold labels and injecting them into the model-visible
+    // history creates label leakage.  A case may opt into public seed facts
+    // through `[context].seed_facts`; otherwise use answer-independent noise.
+    let facts = if case.context.seed_facts.is_empty() {
+        "研究流程、数据采集与产物交付约束（以当前用户请求为准）".to_string()
     } else {
-        case.required.facts.join("、")
+        case.context.seed_facts.join("、")
     };
     // 填充块：放大会话体积到真实长会话量级（约 1500 字符/条）
     const FILL: &str = "本研究属于运动康复与神经康复交叉领域，重点关注功能结局的纵向变化轨迹。\
@@ -217,14 +238,23 @@ fn to_input_messages(messages: &[ConversationMessage]) -> Vec<InputMessage> {
         .collect()
 }
 
-/// 按 case 的上下文变体构造历史消息，返回 (history, 摘要骨架字段覆盖率)。
-fn build_context_history(case: &EvalCase) -> (Vec<InputMessage>, Option<(usize, usize)>) {
-    match case.context.variant {
-        ContextVariant::None => (Vec::new(), None),
+/// 按 case 的上下文变体构造历史消息，返回
+/// (history, 摘要骨架字段覆盖率, 运行前装配阶段压缩次数)。
+fn build_context_history(
+    case: &EvalCase,
+    state_layer_enabled: bool,
+) -> (Vec<InputMessage>, Option<(usize, usize)>, u32) {
+    let (mut history, coverage, assembly_compactions) = match case.context.variant {
+        ContextVariant::None => (Vec::new(), None, 0),
         // 完整 seed 上下文（不压缩）：作为压缩引擎的真实对照基线
-        ContextVariant::Full => (to_input_messages(&build_seed_session(case).messages), None),
+        ContextVariant::Full => (
+            to_input_messages(&build_seed_session(case).messages),
+            None,
+            0,
+        ),
         // SkeletonOnly：仅注入摘要（System 消息，无保留尾部）；
-        // Compacted：摘要 System 消息 + 保留尾部；FullPack 暂同 Compacted（ResearchContextPack 后续接入）。
+        // Compacted：摘要 System 消息 + 保留尾部；FullPack 在压缩结果上
+        // 叠加一份确定性的主动研究状态，归档旧对话不再进入模型可见上下文。
         ContextVariant::Compacted | ContextVariant::SkeletonOnly | ContextVariant::FullPack => {
             let session = build_seed_session(case);
             let config = CompactionConfig {
@@ -232,8 +262,14 @@ fn build_context_history(case: &EvalCase) -> (Vec<InputMessage>, Option<(usize, 
                 max_estimated_tokens: case.context.max_tokens.unwrap_or(50_000),
             };
             let result = compact_session(&session, config);
+            let active_pack = active_context_pack(case);
+            let coverage_text = if matches!(case.context.variant, ContextVariant::FullPack) {
+                &active_pack
+            } else {
+                &result.summary
+            };
             let coverage = Some(summary_field_coverage(
-                &result.summary,
+                coverage_text,
                 &case.context.require_fields,
             ));
             let messages = if matches!(case.context.variant, ContextVariant::SkeletonOnly) {
@@ -244,12 +280,49 @@ fn build_context_history(case: &EvalCase) -> (Vec<InputMessage>, Option<(usize, 
                     }],
                     usage: None,
                 }]
+            } else if matches!(case.context.variant, ContextVariant::FullPack) {
+                vec![ConversationMessage {
+                    role: MessageRole::System,
+                    blocks: vec![ContentBlock::Text { text: active_pack }],
+                    usage: None,
+                }]
             } else {
                 result.compacted_session.messages
             };
-            (to_input_messages(&messages), coverage)
+            let assembly_compactions = u32::from(result.removed_message_count > 0);
+            (to_input_messages(&messages), coverage, assembly_compactions)
         }
+    };
+    // The state-layer arm must be observable in the benchmark. A deterministic
+    // active-context pack stands in for the host's durable ResearchTask. The
+    // stale transcript is archived rather than appended to the model-visible
+    // history; otherwise a model can simply copy superseded facts back into a
+    // current artifact. Stateless/generic variants intentionally receive only
+    // the transcript, preserving the ablation contrast.
+    if state_layer_enabled {
+        history = vec![InputMessage {
+            role: "system".to_string(),
+            content: vec![InputContentBlock::Text {
+                text: active_context_pack(case),
+            }],
+        }];
     }
+    (history, coverage, assembly_compactions)
+}
+
+/// The candidate's durable state layer.  It is deliberately deterministic:
+/// benchmark facts must not depend on a second summarizer call, and archived
+/// transcript terms must not be copied back into the active scope.
+fn active_context_pack(case: &EvalCase) -> String {
+    // The durable state layer is assembled from public task input only.  Gold
+    // facts and expected artifacts live on the evaluator side and must never
+    // be copied into the model context, otherwise the ablation overstates the
+    // value of statefulness.
+    let prompt = case.prompt.trim();
+    format!(
+        "【ACTIVE_RESEARCH_CONTEXT v1】\n- Scope: 当前任务范围以本条和用户最新消息为准\n- Current work: 完成当前任务并交付产物\n- Pending work: 无，按用户请求执行\n- Key files referenced: 仅使用当前任务声明的文件\n- Tools mentioned: 按当前用户请求选择工具\n- Recent user requests: 当前用户消息\n- Previously compacted context: 已归档，仅供审计\n- Newly compacted context: 无\n当前研究任务：{}\n当前用户请求（公开输入）：{}\n版本规则：只采用公开任务输入中的事实；历史对话已归档，不得将归档内容写入回答或产物。\n输出规则：保留公开输入中的原始写法，完成任务后交付真实产物。",
+        case.name, prompt
+    )
 }
 
 async fn run_once(
@@ -262,7 +335,9 @@ async fn run_once(
     let router = ModelRouter::load().map_err(|error| format!("加载 models.toml 失败: {error}"))?;
     let model_id = router.resolve_model_id(model_alias);
     let workspace = prepare_workspace(case, eval_root, run_index)?;
-    let (history, summary_field_coverage) = build_context_history(case);
+    let state_layer_enabled = galen_lib::architecture_variant::current().state_layer_enabled();
+    let (history, summary_field_coverage, assembly_compactions) =
+        build_context_history(case, state_layer_enabled);
     let response = Arc::new(Mutex::new(String::new()));
     let response_sink = response.clone();
     let traces: Arc<Mutex<Vec<ToolTrace>>> = Arc::new(Mutex::new(Vec::new()));
@@ -298,7 +373,7 @@ async fn run_once(
         ),
     )
     .await;
-    let (run_ok, summary) = match result {
+    let (run_ok, mut summary) = match result {
         Ok(Ok(summary)) => (true, summary),
         Ok(Err(error)) => {
             eprintln!("{} 第 {run_index} 次运行失败: {error}", case.id);
@@ -309,6 +384,12 @@ async fn run_once(
             (false, ChatRunSummary::default())
         }
     };
+    // run_chat 只能看到已经装配好的 history，因此它自己的计数不包含
+    // 运行前 fullpack/compacted 处理。把装配压缩合并进统一指标，避免
+    // “摘要已生成但 compactions=0”的观测盲区。
+    summary.compaction_count = summary
+        .compaction_count
+        .saturating_add(assembly_compactions);
     let response = response
         .lock()
         .map(|value| value.clone())

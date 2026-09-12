@@ -42,6 +42,31 @@ cargo run -p galen --bin eval -- rag-compare --baseline ../evals/baselines/rag-a
 cargo run -p galen --bin eval -- report --agent ../evals/runs/m02.jsonl --rag ../evals/runs/rag-ais-candidate.json --output ../evals/reports/galen-eval.md --title "Galen AIS 测评报告"
 ```
 
+## 固定配对实验
+
+`experiments/paired-v1/` 是当前用于改进 Galen 上下文、工具经济性和科研数据治理的统一入口。它会校验 15 张固定任务卡，运行上下文 `full`/`fullpack` 配对，执行工具与数据功能基线，并生成逐次记录、失败断言、聚合指标、比较结果和可读报告。
+
+```powershell
+# 只校验，不调用模型
+& .\evals\experiments\paired-v1\run.ps1 -ValidateOnly
+
+# 一次端到端冒烟
+& .\evals\experiments\paired-v1\run.ps1 -Profile smoke
+
+# 正式实验：每张卡至少重复 5 次
+& .\evals\experiments\paired-v1\run.ps1 -Profile formal
+```
+
+指标定义见 `cases/paired/METRICS_SPEC.md`。工具与数据组目前明确标为功能基线；在加入真正的策略开关前，不作为相对优越性结论。
+
+面向正式架构论文的同运行时消融矩阵见 `experiments/architecture-v1/README.md` 与
+`experiments/architecture-v1/matrix.json`。该矩阵固定 provider、模型、工具、预算和
+fixture，只切换项目状态、数据契约、执行契约和证据链接四个机制。
+
+架构结果写入论文前，先运行 `python scripts/validate_architecture_run.py <run-dir>`。
+该校验会检查六个变体、15 张任务卡、重复次数、JSONL case_id 和 matrix hash；不完整或
+`dry_run` 的目录只能作为调试记录，不能作为论文数字来源。
+
 ## 外部 Agent 框架适配器
 
 ```powershell

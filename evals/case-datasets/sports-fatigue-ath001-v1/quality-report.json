@@ -1,0 +1,19 @@
+{
+  "case_id": "ATH-001",
+  "schema_version": 1,
+  "status": "passed_with_notes",
+  "source": "synthetic_demo",
+  "checks": {
+    "required_fields": "passed",
+    "units_normalized": "passed",
+    "timepoints_ordered": "passed",
+    "duplicate_measurements": 0,
+    "missing_measurements": 0,
+    "out_of_range_values": 0
+  },
+  "notes": [
+    "演示样例为合成数据，不代表真实受试者。",
+    "HRV 和 CMJ 以个人基线进行纵向比较。",
+    "RPE 与疼痛为主观量表，不能单独作为疲劳结论。"
+  ]
+}

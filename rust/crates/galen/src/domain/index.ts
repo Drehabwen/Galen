@@ -19,3 +19,11 @@ export type {
   WorkflowStage,
   ActiveDomain,
 } from "./registry";
+export { analyzeSportsFatigue } from "./sportsFatigue";
+export type {
+  FatigueAnalysis,
+  FatigueFeature,
+  FatigueTimepoint,
+} from "./sportsFatigue";
+export { FIRST_PARTY_CONNECTORS, getFirstPartyConnector } from "./connectors";
+export type { ConnectorKind, FirstPartyConnector } from "./connectors";

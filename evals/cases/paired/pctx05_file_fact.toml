@@ -1,0 +1,24 @@
+schema_version = 1
+id = "PCTX05"
+name = "工具读取事实并进入最终产物"
+suite = "paired-context"
+risk_tier = "high"
+prompt = "请读取 inputs/study-constraints.md，承接其中的运动疲劳研究约束，生成 output/paired/file-fact.md。最终产物必须保留协议号、样本量、HRV/CMJ/RPE、72 小时观察窗和证据代码 REHABID-FATIGUE-48。"
+fixture = "../fixtures/paired/common"
+timeout_seconds = 240
+max_model_requests = 8
+max_tool_calls = 6
+max_human_interventions = 0
+
+[required]
+facts = ["GALEN-FATIGUE-01", "12 名", "HRV", "CMJ", "RPE", "72 小时", "REHABID-FATIGUE-48"]
+artifacts = ["output/paired/file-fact.md"]
+tools = ["read_file", "write_file"]
+
+[forbidden]
+repeated_call_limit = 2
+response_patterns = ["FMA-UE", "中西医结合"]
+
+[context]
+variant = "full"
+max_tokens = 8000

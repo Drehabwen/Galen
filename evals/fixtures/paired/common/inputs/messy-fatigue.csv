@@ -1,0 +1,5 @@
+rehabId,recorded_at,timepoint,rmssd,cmj_height,RPE,source,quality_status
+ATH-001,2026-08-20T08:00:00Z,0h,61,36.8,4,wearable,verified
+ATH-001,2026-08-20T08:00:00Z,0h,61,36.8,4,wearable,verified
+ATH-002,2026-08-21T08:00:00Z,24h,,29.7,8,ring,missing
+ATH-002,2026-08-22T08:00:00Z,48h,50,32.2,,ring,missing

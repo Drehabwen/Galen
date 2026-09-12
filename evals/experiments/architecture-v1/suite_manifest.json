@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "experiment_id": "galen-architecture-v1",
+  "suite_id": "paired-v1",
+  "status": "frozen_for_protocol",
+  "case_count": 15,
+  "groups": {
+    "PCTX": 5,
+    "PDATA": 5,
+    "PTOOL": 5
+  },
+  "cases_sha256": "0b18106ab19ddcbf48fd27fbfa77e7f3b554f11e312c2d550cff45463676e95b",
+  "cases": [
+    {"id": "PCTX01", "file": "evals/cases/paired/pctx01_long_retention.toml", "sha256": "db2431e5910e6e5dc6317d1496c6ca7bd11b50e4d3b07ee94e63719083403de6"},
+    {"id": "PCTX02", "file": "evals/cases/paired/pctx02_revision.toml", "sha256": "565b07a0bf44fcc776a163c61a12a202400e219690d3f4dab2f559a23fb17c9a"},
+    {"id": "PCTX03", "file": "evals/cases/paired/pctx03_scope_switch.toml", "sha256": "852effb9c2be1b8342d5c659a00af5ea417137203f301f2851c732f429ae6453"},
+    {"id": "PCTX04", "file": "evals/cases/paired/pctx04_distraction.toml", "sha256": "0f302bf9254efca1fcc10fc05253abccbcf3435672cfd98430fecddfc17219c6"},
+    {"id": "PCTX05", "file": "evals/cases/paired/pctx05_file_fact.toml", "sha256": "6278ea058ae15ecc01149a73d69e93f6030dce869a0af18aa54b608abdc8ed74"},
+    {"id": "PDATA01", "file": "evals/cases/paired/pdata01_schema.toml", "sha256": "2a25d28e0248f488d0fcd2f08cf36d1f5cf1096fb91b6dd185bd738b1620beb7"},
+    {"id": "PDATA02", "file": "evals/cases/paired/pdata02_quality.toml", "sha256": "a6348a2f4359173378b2f2d0f0e7ba3691a7a4a66f66488a8cd4196171285ae8"},
+    {"id": "PDATA03", "file": "evals/cases/paired/pdata03_time_alignment.toml", "sha256": "4c0ec46a3b1c2b858927255290f2e98b7677a9c84e4711a84b5e649c889d85d2"},
+    {"id": "PDATA04", "file": "evals/cases/paired/pdata04_conflict.toml", "sha256": "adc709a28f51b52b92c1e9cf542f240a397e8bce3537a538938c2412f31a7ac3"},
+    {"id": "PDATA05", "file": "evals/cases/paired/pdata05_provenance.toml", "sha256": "c7b4aae64afb33c17aa4200222c9904026cc9ff68fdb26c2c56fa2c62f835f69"},
+    {"id": "PTOOL01", "file": "evals/cases/paired/ptool01_read_write.toml", "sha256": "fdbf73b8e9b01e5f5803afe2ed69febbd7660c49036362e72bc92829ad076d43"},
+    {"id": "PTOOL02", "file": "evals/cases/paired/ptool02_evidence_task.toml", "sha256": "d9837569b00034cc2937a05e9e492377438e982b6981889acaafc2bd4db2b392"},
+    {"id": "PTOOL03", "file": "evals/cases/paired/ptool03_cross_file.toml", "sha256": "7534b9ad59e24a7c70a4a5c696cd58e78a1cd9d3842f85a4c02e98f524fb33d3"},
+    {"id": "PTOOL04", "file": "evals/cases/paired/ptool04_failure_recovery.toml", "sha256": "95810c8aca442d96e7dcf9ef514e34d33141e3c615d3dba7b5f0542d3aa6f96e"},
+    {"id": "PTOOL05", "file": "evals/cases/paired/ptool05_deliverable.toml", "sha256": "f4b6b07b6ba8ba416c2c52c442126c905d6001cc3d0fe11b19c653788d9b6784"}
+  ],
+  "evaluator": {
+    "validator": "scripts/validate_architecture_run.py",
+    "runner": "scripts/run_architecture_ablation.py",
+    "metrics_spec": "evals/cases/paired/METRICS_SPEC.md"
+  },
+  "gold_visibility": "evaluator_only",
+  "note": "This manifest freezes task-card bytes for formal comparison. Any task-card change requires a new suite_id and rerun."
+}

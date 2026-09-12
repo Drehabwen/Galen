@@ -35,6 +35,8 @@ rust/.omc/
 rust/.sandbox-home/
 # Bundled runtimes (download/build artifacts, not source)
 rust/crates/galen/src-tauri/binaries/
+evals/external-runtimes/node_modules/
+evals/external-runtimes/config/
 tmp/
 # Private/copyrighted evaluation sources. Keep only hashes and source locators in Git.
 evals/private/

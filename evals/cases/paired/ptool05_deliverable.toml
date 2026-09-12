@@ -1,0 +1,20 @@
+schema_version = 1
+id = "PTOOL05"
+name = "分析到可预览产物交付"
+suite = "paired-tools"
+risk_tier = "standard"
+prompt = "读取 inputs/fatigue-cohort.csv，完成一次最小数据检查，并生成 output/paired/deliverable.md。产物必须包含记录数量、三个核心变量和数据质量结论，且可以被预览。"
+fixture = "../fixtures/paired/common"
+timeout_seconds = 240
+max_model_requests = 8
+max_tool_calls = 6
+max_human_interventions = 0
+
+[required]
+facts = ["48", "HRV", "CMJ", "RPE", "quality_status"]
+artifacts = ["output/paired/deliverable.md"]
+tools = ["read_file", "write_file"]
+
+[forbidden]
+repeated_call_limit = 2
+response_patterns = ["无法生成产物"]

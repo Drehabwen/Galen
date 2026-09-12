@@ -50,6 +50,15 @@ pub(crate) fn build_turn_context(
     workspace_root: &Mutex<Option<PathBuf>>,
     first_turn: bool,
 ) -> String {
+    let architecture_variant = crate::architecture_variant::current();
+    if !architecture_variant.state_layer_enabled() {
+        return build_turn_context_without_state(
+            user_message,
+            mode,
+            first_turn,
+            architecture_variant,
+        );
+    }
     // L1：按任务意图装配技能模块
     let task_kind = model_router::TaskKind::from_intent(user_message);
     let contract = compile_task_contract(task_kind, user_message);
@@ -60,30 +69,39 @@ pub(crate) fn build_turn_context(
     let skills = crate::skills::assemble_skills_for_intent(task_kind, user_message);
     // L2：项目画像
     let plan = plan_progress_summary(workspace_root);
+    let active_research_context = active_research_context_summary(workspace_root);
     let memory = memory_index(workspace_root);
-    let evidence = workspace_root_path(workspace_root)
-        .map(|root| crate::evidence::evidence_chain_summary(&root, 8))
-        .unwrap_or_default();
-    let literature_coverage = match workspace_root_path(workspace_root) {
-        Some(root) => {
-            let provider_source = crate::commands::configured_literature_providers();
-            match crate::commands::literature_coverage_for_workspace_from_provider_source(
-                &root,
-                &provider_source,
-            ) {
-                Ok(coverage) => render_literature_coverage_context(&coverage),
-                Err(_) => render_literature_coverage_unavailable_context(),
-            }
-        }
-        None => {
-            let provider_source = crate::commands::configured_literature_providers();
-            render_literature_coverage_context(
-                &crate::commands::literature_coverage_from_provider_source(
-                    None,
+    let evidence = if architecture_variant.evidence_link_enabled() {
+        workspace_root_path(workspace_root)
+            .map(|root| crate::evidence::evidence_chain_summary(&root, 8))
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let literature_coverage = if !architecture_variant.evidence_link_enabled() {
+        String::new()
+    } else {
+        match workspace_root_path(workspace_root) {
+            Some(root) => {
+                let provider_source = crate::commands::configured_literature_providers();
+                match crate::commands::literature_coverage_for_workspace_from_provider_source(
+                    &root,
                     &provider_source,
-                    &[],
-                ),
-            )
+                ) {
+                    Ok(coverage) => render_literature_coverage_context(&coverage),
+                    Err(_) => render_literature_coverage_unavailable_context(),
+                }
+            }
+            None => {
+                let provider_source = crate::commands::configured_literature_providers();
+                render_literature_coverage_context(
+                    &crate::commands::literature_coverage_from_provider_source(
+                        None,
+                        &provider_source,
+                        &[],
+                    ),
+                )
+            }
         }
     };
     let resume = if first_turn {
@@ -123,7 +141,21 @@ pub(crate) fn build_turn_context(
     } else {
         String::new()
     };
-    let execution_policy = task_execution_policy(user_message);
+    let execution_policy = if architecture_variant.execution_contract_enabled() {
+        task_execution_policy(user_message)
+    } else {
+        String::new()
+    };
+    let data_contract_policy = if architecture_variant.data_contract_enabled() {
+        "\n\n## 数据契约\n异构测量进入统一 RehabID 时间轴时，保留单位、来源、时间点和质量状态；遇到重复、缺失或冲突必须显式标记。"
+    } else {
+        ""
+    };
+    let evidence_policy = if architecture_variant.evidence_link_enabled() {
+        "\n\n## 证据引用纪律\n凡是推荐量表、纳排标准、统计方法、疗效判断或安全性判断，必须在同一条建议后给出已检索来源的可点击 Markdown 链接：`[PMID: 12345678](https://pubmed.ncbi.nlm.nih.gov/12345678/)`、`[DOI: 10.xxxx/yyy](https://doi.org/10.xxxx/yyy)` 或数据库稳定链接。只有工具返回「已验证」的记录可作为事实依据；模型记忆、用户口述或元数据冲突的引用必须先调用 verify_citation。没有直接来源时明确写“当前无直接来源”，不得用未检索来源把推测写成事实。"
+    } else {
+        ""
+    };
     let opening = if !first_turn {
         String::new()
     } else if matches!(mode, crate::modes::ChatMode::Auto) {
@@ -147,7 +179,73 @@ pub(crate) fn build_turn_context(
          写完 .typ 后立即用 typst compile 验证，报错则修复重试。")
     };
     format!(
-        "{mode_policy}\n\n{opening}{skills}{execution_policy}\n\n## 当前工作区\n{workspace}\n\n工作区使用规则：没有选择工作区时，仍可进行讨论、外部文献检索和方案起草；只有读取本地文件、保存证据/产物或执行工作区命令时才需要先选择工作区。检索结果无法落盘时要如实说明，不要因此阻断检索。\n\n## 当前科研环境\n{env_summary}\n\n{plan}\n\n{memory}{evidence}\n\n{literature_coverage}\n\n## 证据引用纪律\n凡是推荐量表、纳排标准、统计方法、疗效判断或安全性判断，必须在同一条建议后给出已检索来源的可点击 Markdown 链接：`[PMID: 12345678](https://pubmed.ncbi.nlm.nih.gov/12345678/)`、`[DOI: 10.xxxx/yyy](https://doi.org/10.xxxx/yyy)` 或数据库稳定链接。只有工具返回「已验证」的记录可作为事实依据；模型记忆、用户口述或元数据冲突的引用必须先调用 verify_citation。没有直接来源时明确写“当前无直接来源”，不得用未检索来源把推测写成事实。{resume}{plan_format}"
+        "{mode_policy}\n\n{opening}{skills}{execution_policy}{data_contract_policy}\n\n{active_research_context}\n\n## 当前工作区\n{workspace}\n\n工作区使用规则：没有选择工作区时，仍可进行讨论、外部文献检索和方案起草；只有读取本地文件、保存证据/产物或执行工作区命令时才需要先选择工作区。检索结果无法落盘时要如实说明，不要因此阻断检索。\n\n## 当前科研环境\n{env_summary}\n\n{plan}\n\n{memory}{evidence}\n\n{literature_coverage}{evidence_policy}{resume}{plan_format}"
+    )
+}
+
+/// Build the deliberately thin context used by the stateless and generic
+/// same-runtime ablations. Skills remain available, but durable project state,
+/// workspace summaries, evidence ledgers and memory are not injected.
+fn build_turn_context_without_state(
+    user_message: &str,
+    mode: crate::modes::ChatMode,
+    first_turn: bool,
+    variant: crate::architecture_variant::ArchitectureVariant,
+) -> String {
+    let task_kind = model_router::TaskKind::from_intent(user_message);
+    let contract = compile_task_contract(task_kind, user_message);
+    let mode_policy = crate::modes::mode_prompt(mode);
+    let skills = crate::skills::assemble_skills_for_intent(task_kind, user_message);
+    let execution_policy = if variant.execution_contract_enabled() {
+        contract.execution_policy
+    } else {
+        ""
+    };
+    let opening = if first_turn && matches!(mode, crate::modes::ChatMode::Auto) {
+        "\n\n## 自动执行协议\n直接完成用户目标，完成后收敛输出。"
+    } else {
+        ""
+    };
+    let data_policy = if variant.data_contract_enabled() {
+        "\n\n## 数据契约\n保留输入数据的原始单位和来源。"
+    } else {
+        ""
+    };
+    let evidence_policy = if variant.evidence_link_enabled() {
+        "\n\n## 证据引用纪律\n外部事实需附可核验来源链接；没有直接来源时明确说明。"
+    } else {
+        ""
+    };
+    format!(
+        "{mode_policy}\n\n{opening}{skills}{execution_policy}{data_policy}{evidence_policy}\n\n## 当前研究状态\n本次架构消融关闭了持久化项目状态；只依据本轮用户输入完成任务。"
+    )
+}
+
+/// Render the authoritative project state before transcript-derived memory.
+/// Archived scope is explicitly non-authoritative to prevent stale leakage.
+fn active_research_context_summary(workspace_root: &Mutex<Option<PathBuf>>) -> String {
+    let Some(root) = workspace_root_path(workspace_root) else {
+        return "## 当前研究状态\n尚未选择研究工作区；不要从旧对话推断当前课题范围。".to_string();
+    };
+    let Ok(Some(task)) = crate::research_task::load_or_migrate_active_task(&root) else {
+        return "## 当前研究状态\n暂无宿主权威 ResearchTask；将用户本轮明确内容视为临时状态。"
+            .to_string();
+    };
+    let Some(ctx) = task.active_context else {
+        return format!("## 当前研究状态\n研究任务：{}\n目标：{}\n版本：{}\n未声明结构化范围；不要把归档对话当作当前约束。", task.title, task.goal, task.revision);
+    };
+    let list = |items: &[String]| {
+        if items.is_empty() {
+            "未声明".to_string()
+        } else {
+            items.join("、")
+        }
+    };
+    format!(
+        "## 当前研究状态（宿主权威，优先于聊天记忆）\n任务：{}\n研究问题：{}\n范围：{}\n约束：{}\n变量：{}\n时间点：{}\n当前产物：{}\n版本：{} {}\n归档范围（默认不得用于当前回答）：{}\n规则：若用户修订范围，更新当前状态并停止沿用旧范围。",
+        task.title, ctx.research_question, list(&ctx.scope), list(&ctx.constraints),
+        list(&ctx.variables), list(&ctx.timepoints), list(&ctx.active_artifacts), task.revision,
+        ctx.revision_note, list(&ctx.excluded_scope)
     )
 }
 

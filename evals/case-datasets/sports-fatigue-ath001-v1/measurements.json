@@ -1,0 +1,18 @@
+{
+  "case_id": "ATH-001",
+  "schema_version": 1,
+  "measurements": [
+    {"timepoint":"2026-09-01T08:00:00+08:00","metric":"hrv_ms","value":72,"unit":"ms"},
+    {"timepoint":"2026-09-01T08:00:00+08:00","metric":"cmj_cm","value":42,"unit":"cm"},
+    {"timepoint":"2026-09-01T08:00:00+08:00","metric":"rpe","value":3,"unit":"0-10"},
+    {"timepoint":"2026-09-01T08:00:00+08:00","metric":"pain","value":1,"unit":"0-10"},
+    {"timepoint":"2026-09-03T08:00:00+08:00","metric":"hrv_ms","value":55,"unit":"ms"},
+    {"timepoint":"2026-09-03T08:00:00+08:00","metric":"cmj_cm","value":37,"unit":"cm"},
+    {"timepoint":"2026-09-03T08:00:00+08:00","metric":"rpe","value":7,"unit":"0-10"},
+    {"timepoint":"2026-09-03T08:00:00+08:00","metric":"pain","value":3,"unit":"0-10"},
+    {"timepoint":"2026-09-04T08:00:00+08:00","metric":"hrv_ms","value":64,"unit":"ms"},
+    {"timepoint":"2026-09-04T08:00:00+08:00","metric":"cmj_cm","value":40,"unit":"cm"},
+    {"timepoint":"2026-09-04T08:00:00+08:00","metric":"rpe","value":5,"unit":"0-10"},
+    {"timepoint":"2026-09-04T08:00:00+08:00","metric":"pain","value":2,"unit":"0-10"}
+  ]
+}

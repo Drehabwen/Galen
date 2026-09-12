@@ -1,0 +1,23 @@
+schema_version = 1
+id = "PCTX02"
+name = "单字段修订后的约束一致性"
+suite = "paired-context"
+risk_tier = "standard"
+prompt = "当前项目仍为 GALEN-FATIGUE-01，样本量 12 名，变量为 HRV、CMJ、RPE。请把观察窗从 72 小时修订为 96 小时，其他约束保持不变，并将修订后的方案写入 output/paired/revision.md。"
+timeout_seconds = 240
+max_model_requests = 8
+max_tool_calls = 6
+max_human_interventions = 0
+
+[required]
+facts = ["GALEN-FATIGUE-01", "12 名", "HRV", "CMJ", "RPE", "96 小时"]
+artifacts = ["output/paired/revision.md"]
+
+[forbidden]
+repeated_call_limit = 2
+response_patterns = ["观察窗为 72 小时", "样本量 48"]
+
+[context]
+variant = "full"
+max_tokens = 8000
+seed_facts = ["GALEN-FATIGUE-01", "12 名", "HRV", "CMJ", "RPE", "观察窗 72 小时"]

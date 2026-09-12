@@ -6,6 +6,8 @@ const DATA_TOOLS: &[&str] = &[
     "search_files",
     "create_directory",
     "write_file",
+    "append_file",
+    "replace_text",
     "execute_command",
 ];
 const LITERATURE_TOOLS: &[&str] = &[
@@ -26,6 +28,21 @@ const FOCUSED_ARTIFACT_TOOLS: &[&str] = &[
     "read_file",
     "write_file",
 ];
+const PAPER_DELIVERY_TOOLS: &[&str] = &[
+    "create_research_plan",
+    "list_files",
+    "read_file",
+    "search_files",
+    "search_pubmed",
+    "fetch_article",
+    "verify_citation",
+    "format_citation",
+    "write_file",
+    "append_file",
+    "replace_text",
+    "compile_pdf_report",
+    "compile_latex_paper",
+];
 const WORKSPACE_TOOLS: &[&str] = &[
     "list_files",
     "read_file",
@@ -33,8 +50,8 @@ const WORKSPACE_TOOLS: &[&str] = &[
     "create_directory",
     "write_file",
 ];
-pub(crate) const READ_WRITE_TOOLS: &[&str] = &["read_file", "write_file"];
-pub(crate) const WRITE_ONLY_TOOLS: &[&str] = &["write_file"];
+pub(crate) const READ_WRITE_TOOLS: &[&str] = &["read_file", "write_file", "replace_text"];
+pub(crate) const WRITE_ONLY_TOOLS: &[&str] = &["write_file", "replace_text"];
 const LOOKUP_TOOLS: &[&str] = &[
     "search_evidence",
     "search_pubmed",
@@ -63,6 +80,7 @@ pub(crate) enum TaskClass {
     LocalData,
     Workspace,
     FocusedPlanArtifact,
+    PaperDelivery,
     ArtifactCreation,
     RehabQuery,
 }
@@ -125,7 +143,7 @@ impl WorkingMemory {
                 .unwrap_or_default(),
         );
         match tool_name {
-            "write_file" => {
+            "write_file" | "append_file" | "replace_text" => {
                 if !path.is_empty() {
                     self.delivered_artifacts.insert(path.clone());
                 }
@@ -135,6 +153,24 @@ impl WorkingMemory {
                     .unwrap_or_default();
                 self.observed_resources
                     .insert(format!("write:{path}:{}", stable_text_hash(content)))
+            }
+            "compile_pdf_report" | "compile_latex_paper" => {
+                let delivered = serde_json::from_str::<serde_json::Value>(output)
+                    .ok()
+                    .and_then(|value| {
+                        value
+                            .get("file_path")?
+                            .as_str()
+                            .map(normalize_contract_path)
+                    });
+                if let Some(delivered) = delivered.filter(|path| !path.is_empty()) {
+                    self.delivered_artifacts.insert(delivered.clone());
+                    self.observed_resources
+                        .insert(format!("compile:{delivered}"))
+                } else {
+                    self.observed_resources
+                        .insert(format!("result:{tool_name}:{}", stable_text_hash(output)))
+                }
             }
             "read_file" => self.observed_resources.insert(format!("read:{path}")),
             "list_files" | "search_files" => {
@@ -205,6 +241,13 @@ pub(crate) fn compile_task_contract(
             1,
             "\n\n## 快速回答契约\n这是无需检索或工作区操作的直接回答。禁止调用工具；用最短路径给出核心定义、用途和方向性解释，严格遵守用户字数要求。",
         )
+    } else if is_pdf_paper_delivery_task(&lower) {
+        (
+            TaskClass::PaperDelivery,
+            Some(PAPER_DELIVERY_TOOLS),
+            24,
+            "\n\n## 论文 PDF 交付契约\n这是一次真实研究交付，不得把预置文档、样例正文或模型记忆伪装为本次分析结果。先读取已导入数据或其明确来源，核对对象数、时间点、指标、单位和缺失情况；结果段只能使用实际读取到的数值。描述性统计只能使用工作区内可追溯的既有分析结果；需另行计算时，先完成数据分析节点并读取其结果。涉及外部事实的引言与讨论，必须先检索并验证引用。用户明确要求 LaTeX、`.tex` 或正式黑白论文时，写入 XeLaTeX 源稿（`.tex`）并调用 compile_latex_paper；否则写入 Typst 源稿（`.typ`）并调用 compile_pdf_report。若完整源稿超过一次工具调用容量，先用 write_file 写入目标源稿的首段，再用 append_file 依次追加后续部分；若编译错误需精确修订既有源稿，先读取再用 replace_text，不得改用 shell 或临时碎片文件绕过工作区 Artifact。只有工具返回已登记的 PDF Artifact 后才可称为完成。若数据不足，交付中应准确呈现已有数据与缺口，不得补造结果。",
+        )
     } else if is_explicit_read_write_artifact_task(&lower) {
         (
             TaskClass::ArtifactCreation,
@@ -220,9 +263,27 @@ pub(crate) fn compile_task_contract(
             "\n\n## 本任务数据边界\n仅查询用户明确要求的患者/量表数据；保持只读，返回最小必要字段。",
         )
     } else if is_local_data_task(&lower) && !literature_task {
-        (TaskClass::LocalData, Some(DATA_TOOLS), 28, "")
+        (
+            TaskClass::LocalData,
+            Some(DATA_TOOLS),
+            28,
+            if artifact_paths.is_empty() {
+                ""
+            } else {
+                "\n\n## 数据产物收尾契约\n先读取用户指定数据，再完成规范化/对齐/质量判断；写入最终 Artifact 前检查用户要求的字段名、时间点、来源标识和质量状态都已逐字出现。必须调用 write_file 写入用户指定路径，写入成功且非空后才能结束，不得只在聊天中描述结果。"
+            },
+        )
     } else if literature_task {
-        (TaskClass::Literature, Some(LITERATURE_TOOLS), 20, "")
+        (
+            TaskClass::Literature,
+            Some(LITERATURE_TOOLS),
+            20,
+            if artifact_paths.is_empty() {
+                ""
+            } else {
+                "\n\n## 文献交付收尾契约\n先读取用户指定的研究约束，再执行检索与引用核验；每条关键结论都要保留来源标识或可打开链接。检索完成后必须调用 write_file 写入用户指定的最终 Artifact，确认写入成功且非空后才能结束，不得只返回检索摘要或把写文件留给用户。"
+            },
+        )
     } else if is_focused_plan_artifact_task(&lower) {
         (
             TaskClass::FocusedPlanArtifact,
@@ -252,6 +313,7 @@ pub(crate) fn compile_task_contract(
         TaskClass::DirectAnswer => 768,
         TaskClass::QuickLookup => 1_200,
         TaskClass::FocusedPlanArtifact | TaskClass::ArtifactCreation => 1_200,
+        TaskClass::PaperDelivery => 4_096,
         TaskClass::LocalData | TaskClass::Workspace | TaskClass::RehabQuery => 1_800,
         TaskClass::Literature => 2_600,
         TaskClass::OpenEnded if allowed_tools == Some(NO_TOOLS) => 2_400,
@@ -373,10 +435,25 @@ pub(crate) fn is_explicit_artifact_creation_task(text: &str) -> bool {
     let create_intent = ["创建", "生成", "写入", "保存"]
         .iter()
         .any(|needle| text.contains(needle));
-    let artifact_path = ["output/", "output\\", "artifact", ".md", ".json", ".csv"]
+    let artifact_path = [
+        "output/", "output\\", "artifact", ".md", ".json", ".csv", ".typ", ".pdf",
+    ]
+    .iter()
+    .any(|needle| text.contains(needle));
+    create_intent && artifact_path
+}
+
+fn is_pdf_paper_delivery_task(text: &str) -> bool {
+    let paper_intent = ["论文", "manuscript", "研究报告", "研究性分析"]
         .iter()
         .any(|needle| text.contains(needle));
-    create_intent && artifact_path
+    let pdf_intent = ["pdf", ".pdf", "正式稿", "正式论文"]
+        .iter()
+        .any(|needle| text.contains(needle));
+    let delivery_intent = ["生成", "创建", "写入", "交付", "导出", "编译"]
+        .iter()
+        .any(|needle| text.contains(needle));
+    paper_intent && pdf_intent && delivery_intent
 }
 
 fn is_explicit_read_write_artifact_task(text: &str) -> bool {

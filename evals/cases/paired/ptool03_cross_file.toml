@@ -1,0 +1,20 @@
+schema_version = 1
+id = "PTOOL03"
+name = "跨文件合并的最小调用路径"
+suite = "paired-tools"
+risk_tier = "standard"
+prompt = "分别读取 inputs/study-constraints.md 和 inputs/fatigue-cohort.csv，合并为一份数据字典，写入 output/paired/cross-file.md。只读取每个文件一次，并在产物中标注来源文件名。"
+fixture = "../fixtures/paired/common"
+timeout_seconds = 240
+max_model_requests = 8
+max_tool_calls = 5
+max_human_interventions = 0
+
+[required]
+facts = ["study-constraints.md", "fatigue-cohort.csv", "rehab_id", "timestamp"]
+artifacts = ["output/paired/cross-file.md"]
+tools = ["read_file", "write_file"]
+
+[forbidden]
+repeated_call_limit = 1
+response_patterns = ["重复读取", "未找到输入文件"]

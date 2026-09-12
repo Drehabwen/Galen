@@ -26,6 +26,27 @@ fn setup_workspace(dir: &Path) {
     std::fs::write(dir.join("GALEN.md"), memory).unwrap();
 }
 
+fn import_rehab_workbench_snapshot(workspace: &Path) -> Result<(), String> {
+    let preview = galen_lib::connectors::discover_latest("rehab-workbench", None)?;
+    let imported = galen_lib::connectors::import_from_export(
+        workspace,
+        galen_lib::connectors::ConnectorImportRequest {
+            source_id: preview.source_id,
+            export_path: preview.export_path,
+            case_ids: preview.cases.into_iter().map(|case| case.case_id).collect(),
+            latest_assessments: None,
+        },
+    )?;
+    println!(
+        "== 已从康复师工作台导入：{} 个 RehabID，{} 个时间点，{} 条数值观察；回执 {} ==",
+        imported.case_ids.len(),
+        imported.imported_event_count,
+        imported.imported_observation_count,
+        imported.receipt.path,
+    );
+    Ok(())
+}
+
 async fn run_stage(
     router: ModelRouter,
     model_alias: String,
@@ -126,6 +147,7 @@ fn main() {
         let args: Vec<String> = std::env::args().skip(1).collect();
         let mut model_alias_arg: Option<String> = None;
         let mut ws_arg: Option<String> = None;
+        let mut import_rehab_workbench = false;
         let mut message_parts: Vec<String> = Vec::new();
         let mut i = 0;
         while i < args.len() {
@@ -137,6 +159,10 @@ fn main() {
                 "--ws" if i + 1 < args.len() => {
                     ws_arg = Some(args[i + 1].clone());
                     i += 2;
+                }
+                "--import-rehab-workbench" => {
+                    import_rehab_workbench = true;
+                    i += 1;
                 }
                 _ => {
                     message_parts.push(args[i].clone());
@@ -181,6 +207,12 @@ fn main() {
         };
         std::fs::create_dir_all(ws.join("output")).unwrap_or_default();
         println!("== 工作区: {} ==", ws.display());
+        if import_rehab_workbench {
+            if let Err(error) = import_rehab_workbench_snapshot(&ws) {
+                eprintln!("导入康复师工作台快照失败: {error}");
+                std::process::exit(1);
+            }
+        }
 
         // 第一阶段：执行用户任务
         let (res1, mut traces) = run_stage(
@@ -230,8 +262,14 @@ fn main() {
         // ---- 第二层：行为断言（结构化工具体验） ----
         let report = analyze(&traces, &ws, &model_alias, run_ok);
         let json = serde_json::to_string_pretty(&report).unwrap_or_default();
+        let trace_path = ws.join("output").join("driver-tool-trace.json");
+        let _ = std::fs::write(
+            &trace_path,
+            serde_json::to_string_pretty(&traces).unwrap_or_default(),
+        );
         let report_path = "D:/DEV/tmp/driver-report.json";
         let _ = std::fs::write(report_path, &json);
+        println!("== 工具轨迹已写入 {} ==", trace_path.display());
         println!("\n== 行为报告已写入 {report_path} ==");
         println!("{json}");
 

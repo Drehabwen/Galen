@@ -1,0 +1,20 @@
+schema_version = 1
+id = "PDATA02"
+name = "重复记录与缺失值识别"
+suite = "paired-data"
+risk_tier = "standard"
+prompt = "读取 inputs/messy-fatigue.csv，找出重复记录和缺失字段，生成 output/paired/quality.md。必须使用原样字段名分别列出 duplicate、missing、受影响的 rehab_id、quality_status 和处理建议；不得用同义词替代这些字段名。"
+fixture = "../fixtures/paired/common"
+timeout_seconds = 240
+max_model_requests = 8
+max_tool_calls = 6
+max_human_interventions = 0
+
+[required]
+facts = ["duplicate", "missing", "ATH-002", "quality_status"]
+artifacts = ["output/paired/quality.md"]
+tools = ["read_file", "write_file"]
+
+[forbidden]
+repeated_call_limit = 2
+response_patterns = ["数据完整无缺失"]

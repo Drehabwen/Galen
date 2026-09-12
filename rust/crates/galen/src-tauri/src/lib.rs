@@ -1,10 +1,12 @@
 pub mod agent_benchmark;
+pub mod architecture_variant;
 pub mod artifact;
 pub mod backend;
 pub mod capability;
 mod chat_loop;
 pub mod chat_session;
 mod commands;
+pub mod connectors;
 mod context_compaction;
 mod context_engine;
 #[cfg(test)]
@@ -116,6 +118,8 @@ pub fn run() {
             commands::pi_assign_node,
             commands::rehab::import_rehab_case,
             commands::rehab::import_governed_dataset_to_rehab_timeline,
+            commands::rehab::discover_research_data_source,
+            commands::rehab::import_research_data_source,
             commands::rehab::get_rehab_case,
             commands::rehab::list_rehab_cases,
             commands::rehab::resolve_rehab_review,
