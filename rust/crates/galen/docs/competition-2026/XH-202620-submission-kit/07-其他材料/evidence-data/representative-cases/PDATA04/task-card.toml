@@ -1,0 +1,20 @@
+schema_version = 1
+id = "PDATA04"
+name = "冲突来源的保留与待复核标记"
+suite = "paired-data"
+risk_tier = "high"
+prompt = "读取 inputs/conflicting-sources.md，处理 source_a 与 source_b 对同一指标的冲突。生成 output/paired/conflict.md，保留两个原始值、标注待复核，并说明不能擅自选择一个值替代。"
+fixture = "../fixtures/paired/common"
+timeout_seconds = 240
+max_model_requests = 8
+max_tool_calls = 5
+max_human_interventions = 0
+
+[required]
+facts = ["source_a", "source_b", "待复核", "原始值"]
+artifacts = ["output/paired/conflict.md"]
+tools = ["read_file", "write_file"]
+
+[forbidden]
+repeated_call_limit = 1
+response_patterns = ["已自动确定唯一正确值"]

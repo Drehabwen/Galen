@@ -5,20 +5,26 @@ interface ConnectorDataCanvasProps {
   preview: ConnectorPreview | null;
   result: RehabTimelineImportOutput | null;
   latestAssessments?: number;
+  onContinueResearch?: () => void;
 }
 
-export function ConnectorDataCanvas({ preview, result, latestAssessments }: ConnectorDataCanvasProps) {
+export function ConnectorDataCanvas({ preview, result, latestAssessments, onContinueResearch }: ConnectorDataCanvasProps) {
   const imported = Boolean(result);
   const caseIds = result?.caseIds ?? preview?.cases.map((item) => item.caseId) ?? [];
   const eventCount = result?.importedEventCount ?? preview?.timepointCount ?? 0;
   const observationCount = result?.importedObservationCount ?? preview?.measurementCount ?? 0;
+  const sourceLabel = preview?.sourceLabel ?? "康复数据源";
+  const previewTitle = `${sourceLabel}数据预览`;
+  const sourceProvenance = preview?.connectionMode === "live_bridge"
+    ? `${sourceLabel} · 本地数据桥`
+    : sourceLabel;
 
   return (
     <div className={`connector-data-canvas ${imported ? "is-imported" : ""}`}>
       <header className="connector-data-canvas-header">
         <div>
           <span>REHABID DATA RECEIPT</span>
-          <h1>{imported ? "研究数据已就位" : "工作台数据预检"}</h1>
+          <h1>{imported ? "研究数据已就位" : previewTitle}</h1>
           <p>{imported ? "数据已标准化并进入当前研究的纵向时间轴。" : "确认前只展示范围与结构，不写入研究数据。"}</p>
         </div>
         <strong>{imported ? "IMPORTED" : "PREVIEW"}</strong>
@@ -50,7 +56,7 @@ export function ConnectorDataCanvas({ preview, result, latestAssessments }: Conn
       <section className="connector-data-provenance">
         <div>
           <span>来源</span>
-          <strong>{preview?.connectionMode === "live_bridge" ? "康复师工作台 · 本地数据桥" : preview?.sourceLabel ?? "康复师工作台"}</strong>
+          <strong>{sourceProvenance}</strong>
         </div>
         <div>
           <span>身份字段</span>
@@ -64,7 +70,7 @@ export function ConnectorDataCanvas({ preview, result, latestAssessments }: Conn
 
       <footer>
         <span className="connector-data-signal" aria-hidden="true" />
-        {imported ? "PI-Galen 现在可以在后续对话中调用这些时间点与观察记录。" : "范围确认后，Galen 才会建立 RehabID 及来源回执。"}
+        {imported ? <><span>RehabID 时间轴已就位，可直接交给 PI-Galen 推进研究。</span>{onContinueResearch && <button type="button" onClick={onContinueResearch}>进入 PI 对话 →</button>}</> : "范围确认后，Galen 才会建立 RehabID 及来源回执。"}
       </footer>
     </div>
   );

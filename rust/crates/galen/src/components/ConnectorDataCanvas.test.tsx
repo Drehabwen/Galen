@@ -23,9 +23,21 @@ const preview: ConnectorPreview = {
 describe("ConnectorDataCanvas", () => {
   afterEach(() => cleanup());
 
+  it("keeps the preview title and provenance aligned with a personal connector", () => {
+    const personalPreview: ConnectorPreview = {
+      ...preview,
+      sourceId: "rehabgpt",
+      sourceLabel: "RehabGPT 患者端",
+      cases: [{ caseId: "RID-CHILD-014", displayName: "RID-CHILD-014", sessionCount: 14, assessmentCount: 4, timepointCount: 14, measurementCount: 68 }],
+    };
+    render(<ConnectorDataCanvas preview={personalPreview} result={null} />);
+    expect(screen.getByText("RehabGPT 患者端数据预览")).toBeTruthy();
+    expect(screen.getByText("RehabGPT 患者端 · 本地数据桥")).toBeTruthy();
+  });
+
   it("moves from preview to an auditable RehabID receipt", () => {
     const { rerender } = render(<ConnectorDataCanvas preview={preview} result={null} latestAssessments={3} />);
-    expect(screen.getByText("工作台数据预检")).toBeTruthy();
+    expect(screen.getByText("康复师工作台数据预览")).toBeTruthy();
     expect(screen.getByText("ATH-001")).toBeTruthy();
     expect(screen.getByText("等待确认")).toBeTruthy();
 

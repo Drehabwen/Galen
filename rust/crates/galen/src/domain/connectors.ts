@@ -40,7 +40,7 @@ export const FIRST_PARTY_CONNECTORS: FirstPartyConnector[] = [
     id: "rehabgpt",
     label: "RehabGPT 患者端",
     kind: "http_api",
-    status: "adapter_needed",
+    status: "ready",
     sourcePath: "D:/DEV/RehabGPT-",
     endpoints: [
       "/api/chatbot/assessment-history/:name",
@@ -84,16 +84,20 @@ export interface ConnectorPreview {
 }
 
 export interface ConnectorIntent {
-  sourceId: "rehab-workbench";
+  sourceId: "rehab-workbench" | "rehabgpt";
   caseHint?: string;
   latestAssessments?: number;
 }
 
 export function parseConnectorIntent(text: string): ConnectorIntent | null {
   const normalized = text.trim();
-  const mentionsSource = /康复师工作台|Rehab\s*工作台|Rehab\s*评估系统/i.test(normalized);
+  const sourceId = /RehabGPT|小柱|患者端/i.test(normalized)
+    ? "rehabgpt"
+    : /康复师工作台|Rehab\s*工作台|Rehab\s*评估系统/i.test(normalized)
+      ? "rehab-workbench"
+      : null;
   const requestsData = /获取|读取|导入|同步|接入|连接/.test(normalized) && /数据|评估|记录|RehabID/i.test(normalized);
-  if (!mentionsSource || !requestsData) return null;
+  if (!sourceId || !requestsData) return null;
   const caseHint = normalized.match(/\b[A-Z]{2,}(?:[-_][A-Z0-9]+)+\b/i)?.[0];
   const latestAssessments = /最近(?:三|3)次/.test(normalized)
     ? 3
@@ -102,5 +106,5 @@ export function parseConnectorIntent(text: string): ConnectorIntent | null {
       : /最近(?:一|1)次/.test(normalized)
         ? 1
         : undefined;
-  return { sourceId: "rehab-workbench", caseHint, latestAssessments };
+  return { sourceId, caseHint, latestAssessments };
 }

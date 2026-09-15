@@ -8,6 +8,17 @@ export type ResearchTaskStatus =
   | "deliverable"
   | "blocked";
 
+export interface ActiveResearchContext {
+  researchQuestion: string;
+  scope: string[];
+  constraints: string[];
+  variables: string[];
+  timepoints: string[];
+  activeArtifacts: string[];
+  excludedScope: string[];
+  revisionNote: string;
+}
+
 /** Canonical task snapshot returned by the Rust host. */
 export interface ResearchTask {
   schemaVersion: number;
@@ -21,6 +32,7 @@ export interface ResearchTask {
   nodes: SessionNode[];
   evidenceIds: string[];
   artifactIds: string[];
+  activeContext?: ActiveResearchContext;
 }
 
 /** Derived execution view owned by the Rust PI kernel. */

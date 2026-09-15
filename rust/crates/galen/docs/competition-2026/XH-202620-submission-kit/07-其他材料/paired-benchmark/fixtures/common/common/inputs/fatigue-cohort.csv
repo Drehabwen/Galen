@@ -1,0 +1,9 @@
+rehab_id,timestamp,timepoint,HRV_RMSSD_ms,CMJ_cm,RPE,source,collection_context,quality_status
+ATH-001,2026-08-20T08:00:00Z,0h,61.0,36.8,4,wearable,baseline,verified
+ATH-001,2026-08-21T08:00:00Z,24h,48.2,31.4,7,wearable,post-training,verified
+ATH-001,2026-08-22T08:00:00Z,48h,55.9,34.6,5,wearable,recovery,verified
+ATH-001,2026-08-23T08:00:00Z,72h,59.8,36.0,4,wearable,recovery,verified
+ATH-002,2026-08-20T08:00:00Z,0h,58.4,34.1,5,ring,baseline,verified
+ATH-002,2026-08-21T08:00:00Z,24h,44.1,29.7,8,ring,post-training,verified
+ATH-002,2026-08-22T08:00:00Z,48h,50.0,32.2,6,ring,recovery,verified
+ATH-002,2026-08-23T08:00:00Z,72h,56.3,33.6,5,ring,recovery,verified

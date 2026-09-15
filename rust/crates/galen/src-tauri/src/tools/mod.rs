@@ -741,6 +741,7 @@ mod tests {
             "search_rehab_literature",
             "search_evidence",
             "create_research_plan",
+            "update_research_context",
             "compile_pdf_report",
             "compile_latex_paper",
         ];

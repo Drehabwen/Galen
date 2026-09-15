@@ -1,0 +1,20 @@
+schema_version = 1
+id = "PDATA01"
+name = "数据字段与单位规范化"
+suite = "paired-data"
+risk_tier = "standard"
+prompt = "读取 inputs/messy-fatigue.csv，识别并修正字段命名和单位问题，生成 output/paired/schema.md。结果必须说明 rehab_id、timestamp、HRV 的 RMSSD 单位 ms、CMJ 单位 cm 和 RPE 量表。"
+fixture = "../fixtures/paired/common"
+timeout_seconds = 240
+max_model_requests = 8
+max_tool_calls = 6
+max_human_interventions = 0
+
+[required]
+facts = ["rehab_id", "timestamp", "RMSSD", "ms", "CMJ", "cm", "RPE"]
+artifacts = ["output/paired/schema.md"]
+tools = ["read_file", "write_file"]
+
+[forbidden]
+repeated_call_limit = 2
+response_patterns = ["单位无需确认"]

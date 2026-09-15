@@ -18,6 +18,7 @@ static EVENT_STORE_LOCK: Mutex<()> = Mutex::new(());
 #[serde(rename_all = "snake_case")]
 pub enum PiEventKind {
     ProjectCreated,
+    ContextUpdated,
     PlanUpdated,
     NodeAssigned,
     NodeStarted,

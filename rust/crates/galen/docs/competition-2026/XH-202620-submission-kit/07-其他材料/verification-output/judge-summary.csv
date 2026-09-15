@@ -1,0 +1,3 @@
+"System","Runs","Passed","PassRate","MeanToolCalls","MedianLatencySeconds"
+"Galen","75","74","98.7","2.11","9.2"
+"Codex + DeepSeek","75","21","28","6.12","19.3"

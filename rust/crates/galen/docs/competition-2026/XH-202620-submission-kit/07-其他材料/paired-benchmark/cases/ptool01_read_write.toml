@@ -1,0 +1,20 @@
+schema_version = 1
+id = "PTOOL01"
+name = "单次读取到方案交付"
+suite = "paired-tools"
+risk_tier = "standard"
+prompt = "读取 inputs/study-constraints.md，将其中的研究约束整理为一页方案，写入 output/paired/read-write.md。不要重复读取同一文件。"
+fixture = "../fixtures/paired/common"
+timeout_seconds = 180
+max_model_requests = 6
+max_tool_calls = 4
+max_human_interventions = 0
+
+[required]
+facts = ["GALEN-FATIGUE-01", "REHABID-FATIGUE-48"]
+artifacts = ["output/paired/read-write.md"]
+tools = ["read_file", "write_file"]
+
+[forbidden]
+repeated_call_limit = 1
+response_patterns = ["请用户重新提供"]

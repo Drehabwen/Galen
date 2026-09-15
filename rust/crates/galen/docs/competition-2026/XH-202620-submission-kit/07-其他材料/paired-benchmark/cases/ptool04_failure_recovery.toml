@@ -1,0 +1,25 @@
+schema_version = 1
+id = "PTOOL04"
+name = "工具失败后的单次恢复"
+suite = "paired-tools"
+risk_tier = "high"
+prompt = "先读取不存在的 inputs/missing.md。若失败，只记录一次错误；随后读取 inputs/brief.md，并把备用输入中的研究目标写入 output/paired/failure-recovery.md，注明已使用备用输入。"
+fixture = "../fixtures/paired/common"
+timeout_seconds = 240
+max_model_requests = 6
+max_tool_calls = 5
+max_human_interventions = 0
+
+[required]
+facts = ["备用输入", "运动疲劳", "GALEN-FATIGUE-01"]
+artifacts = ["output/paired/failure-recovery.md"]
+tools = ["read_file", "write_file"]
+tool_sequence = [
+  { tool = "read_file", input_contains = "inputs/missing.md", is_error = true },
+  { tool = "read_file", input_contains = "inputs/brief.md", is_error = false },
+  { tool = "write_file", input_contains = "output/paired/failure-recovery.md", is_error = false },
+]
+
+[forbidden]
+repeated_call_limit = 1
+response_patterns = ["请用户重新提供 missing.md", "重新读取 missing.md"]

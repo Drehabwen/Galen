@@ -1,0 +1,4 @@
+﻿case_id,run_index,galen_pass,codex_pass,galen_tools,codex_tools,folder
+PCTX03,1,true,false,1,2,evidence-data/representative-cases/PCTX03
+PDATA04,1,true,false,2,5,evidence-data/representative-cases/PDATA04
+PTOOL02,1,true,false,5,15,evidence-data/representative-cases/PTOOL02

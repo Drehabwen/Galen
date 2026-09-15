@@ -1,0 +1,192 @@
+{
+  "schema_version": 1,
+  "run_id": "PCTX03-1789150401992-1",
+  "case_id": "PCTX03",
+  "commit": "806ebf510c9fce17c4376f5eabd102f277898bf5-dirty",
+  "model": "deepseek-v4-flash",
+  "config_hash": "099e76e4d5e1c367",
+  "run_index": 1,
+  "started_at_ms": 1789150401992,
+  "workspace": "C:\\Users\\labops\\AppData\\Local\\Temp\\galen-evals\\PCTX03-large-full-galen-20260912-full_galen-1",
+  "final_response": "## 结论\n\n范围切换已完成并落盘。产物 `output/paired/scope-switch.md` 已生成（3335 字节，内容哈希 `c1ca584d48a4fb18`），内容**仅**取自当前运动疲劳范围的公开输入：协议 GALEN-FATIGUE-01、12 名健康受试者、核心变量 HRV / CMJ / RPE、观察窗 0 / 24 / 48 / 72 小时。旧讨论中的既有研究方向全部归档，未以任何形式写入产物。\n\n## 关键内容\n\n- **范围基线**：文件即范围切换后的权威基线，含明确的隔离规则——归档内容不参与、不引用、不复述。\n- **事实表**：协议编号、受试者数、三个核心变量、四个观察窗均按公开输入原始写法保留，未改写、未外推。\n- **结构化对应**：已建立 4 时点 × 3 变量的采集矩阵（12 受试者规模），因尚无数据落盘，单元格统一标记「待采集」，并附数据契约提示（保留单位、来源、时间点、质量状态；缺失/重复/冲突须显式标记）。\n- **范围边界**：明确列出在范围内（运动疲劳恢复轨迹、三变量在 0/24/48/72 h 的行为、12 名健康受试者范围内观测）与范围外（旧方向、未声明变量、超窗/超样本人群外推）。\n- **证据状态**：本轮未执行检索，PubMed 为 not searched，故产物不含任何文献结论或引用；覆盖范围限制已声明——仅基于已检索提供方，不声称全面覆盖。\n\n## 未解决的问题\n\n1. **测量口径未锁定**：HRV 指标与单位（RMSSD / SDNN / 频域）、CMJ 测量指标、RPE 量表版本（6–20 Borg 或 CR10）均未在公开输入中给出。\n2. **协议参数缺失**：疲劳诱导方式、强度与时长未给出。\n3. **时间轴参照点未定**：0 小时的起点是运动前基线还是运动后即刻，直接影响「恢复」的定义。\n4. **分析计划空白**：主要结局的优先顺序与统计方法尚未指定——按品味标准，方法应由问题决定，不应预设。\n\n以上四项已在产物第 6 节作为「待确认项」显式列出，未用假设替代。\n\n## 建议的下一步\n\n1. 补齐上述四项测量与协议参数，锁定口径后再行建库。\n2. 建立 GALEN-FATIGUE-01 统一时间轴数据表（12 × 4 × 3），落盘后按数据契约执行缺失/重复/冲突标记。\n3. 依据主要结局选择匹配的统计方法（重复测量框架需同时考虑样本量 12 的检出力限制与多重比较）。\n4. 若需证据支撑变量选择或恢复动力学假设，后续单独发起检索，并确保结论标注已验证来源与覆盖限制。\n\n**已知局限**：产物中的采集矩阵为结构占位，不构成任何数据或结果；文件不含经检索验证的文献依据，任何后续引用主张必须另行检索并核验后方可使用。",
+  "hard_gates_passed": true,
+  "quality_score": 1.0,
+  "dimensions": {
+    "capability": 1.0,
+    "repeatability": 1.0,
+    "state_safety": 1.0,
+    "delivery": 1.0,
+    "efficiency": 0.9087006944444443
+  },
+  "latency": {
+    "context_ms": 270,
+    "mcp_ms": 0,
+    "ttft_ms": 23023,
+    "ttfr_ms": 23023,
+    "total_ms": 31471
+  },
+  "usage": {
+    "input": 7474,
+    "output": 1658,
+    "cache_create": 2994,
+    "cache_read": 4480
+  },
+  "model_requests": 2,
+  "tools": {
+    "calls": 1,
+    "errors": 0,
+    "max_repeat": 1,
+    "names": [
+      "write_file"
+    ]
+  },
+  "tool_trace": [
+    {
+      "turn": 1,
+      "tool": "write_file",
+      "input": "{\"path\": \"output/paired/scope-switch.md\", \"content\": \"# Scope Switch Record — GALEN-FATIGUE-01\\n\\n## 1. 范围切换声明\\n\\n- **生效范围**：运动疲劳恢复（exercise-fatigue recovery）。\\n- **旧方向处置**：旧讨论中的既有研究方向全部归档，不再作为本任务输入。\\n- **隔离规则**：本文件内容仅由当前运动疲劳范围的公开任务输入生成；归档内容不参与、不引用、不复述。\\n- **裁定**：本文件即范围切换后的权威范围基线（scope baseline）。\\n\\",
+      "output": "{\"artifact\":{\"contentHash\":\"c1ca584d48a4fb18\",\"createdAt\":\"1789150397660\",\"id\":\"art-1789150397660-c1ca584d\",\"kind\":\"document\",\"mimeType\":\"text/markdown\",\"nodeId\":\"delivery\",\"path\":\"output/paired/scope-switch.md\",\"size\":3335,\"source\":\"agent\",\"taskId\":\"scope-switch-1789150397661985500\"},\"file_path\":\"\\\\\\\\?\\\\C:\\\\Users\\\\labops\\\\AppData\\\\Local\\\\Temp\\\\galen-evals\\\\PCTX03-large-full-galen-20260912-full_galen-1\\\\output\\\\paired\\\\scope-switch.md\",\"research_task\":{\"activeContext\":{\"activeArtifacts\":[],\"constraints\":[],\"excludedScope\":[],\"researchQuestion\":\"交付工作区产物 output/paired/scope-switch.md\",\"revisionNote\":\"\",\"scope\":[\"scope-switch\"],\"timepoints\":[],\"variables\":[]},\"artifactIds\":[\"art-1789150397660-c1ca584d\"],\"createdAt\":\"1789150397662\",\"evidenceIds\":[],\"goal\":\"交付工作区产物 output/paired/scope-switch.md\",\"nodes\":[{\"approvalRequired\":false,\"description\":\"由 Galen 自动创建并登记的工作区产物\",\"id\":\"delivery\",\"index\":\"01\",\"outputs\":[\"output/paired/scope-switch.md\"],\"owner\":\"Galen\",\"result\":\"已生成产物 output/paired/scope-switch.md\",\"riskLevel\":\"low\",\"status\":\"completed\",\"tags\":[\"auto-created\"],\"title\":\"直接交付\",\"type\":\"delivery\"}],\"revision\":2,\"schemaVersion\":2,\"status\":\"deliverable\",\"taskId\":\"scope-switch-1789150397661985500\",\"title\":\"scope-switch\",\"updatedAt\":\"1789150397666\"},\"status\":\"delivered\"}",
+      "is_error": false
+    },
+    {
+      "turn": 2,
+      "tool": "__convergence__",
+      "input": "",
+      "output": "final turn: tools stripped",
+      "is_error": false
+    }
+  ],
+  "context": {
+    "compactions": 0,
+    "required_facts": 6,
+    "retained_facts": 6,
+    "summary_field_coverage": null
+  },
+  "grounding": {
+    "required_evidence": 0,
+    "retrieved_required": 0,
+    "cited_required": 0,
+    "forbidden_hits": 0,
+    "local_search_calls": 0,
+    "external_search_calls": 0,
+    "retrieved_evidence_ids": []
+  },
+  "artifacts": {
+    "required": 1,
+    "valid": 1,
+    "previewable": 1,
+    "files": [
+      "output/paired/scope-switch.md"
+    ]
+  },
+  "assertions": [
+    {
+      "name": "run_completed",
+      "pass": true,
+      "hard_gate": true,
+      "detail": "Ok"
+    },
+    {
+      "name": "model_request_budget",
+      "pass": true,
+      "hard_gate": true,
+      "detail": "2/8"
+    },
+    {
+      "name": "tool_call_budget",
+      "pass": true,
+      "hard_gate": true,
+      "detail": "1/6"
+    },
+    {
+      "name": "no_repeated_call_loop",
+      "pass": true,
+      "hard_gate": true,
+      "detail": "max_repeat=1, limit=2"
+    },
+    {
+      "name": "required_fact:GALEN-FATIGUE-01",
+      "pass": true,
+      "hard_gate": true,
+      "detail": "retained"
+    },
+    {
+      "name": "required_fact:12 名",
+      "pass": true,
+      "hard_gate": true,
+      "detail": "retained"
+    },
+    {
+      "name": "required_fact:HRV",
+      "pass": true,
+      "hard_gate": true,
+      "detail": "retained"
+    },
+    {
+      "name": "required_fact:CMJ",
+      "pass": true,
+      "hard_gate": true,
+      "detail": "retained"
+    },
+    {
+      "name": "required_fact:RPE",
+      "pass": true,
+      "hard_gate": true,
+      "detail": "retained"
+    },
+    {
+      "name": "required_fact:72 小时",
+      "pass": true,
+      "hard_gate": true,
+      "detail": "retained"
+    },
+    {
+      "name": "forbidden_response_pattern:脑卒中",
+      "pass": true,
+      "hard_gate": true,
+      "detail": "checked final response"
+    },
+    {
+      "name": "forbidden_response_pattern:中西医结合",
+      "pass": true,
+      "hard_gate": true,
+      "detail": "checked final response"
+    },
+    {
+      "name": "forbidden_response_pattern:FMA-UE",
+      "pass": true,
+      "hard_gate": true,
+      "detail": "checked final response"
+    },
+    {
+      "name": "forbidden_artifact_pattern:脑卒中",
+      "pass": true,
+      "hard_gate": true,
+      "detail": "checked workspace deliverables"
+    },
+    {
+      "name": "forbidden_artifact_pattern:中西医结合",
+      "pass": true,
+      "hard_gate": true,
+      "detail": "checked workspace deliverables"
+    },
+    {
+      "name": "forbidden_artifact_pattern:FMA-UE",
+      "pass": true,
+      "hard_gate": true,
+      "detail": "checked workspace deliverables"
+    },
+    {
+      "name": "required_artifact:output/paired/scope-switch.md",
+      "pass": true,
+      "hard_gate": true,
+      "detail": "present and non-empty"
+    },
+    {
+      "name": "previewable_artifact:output/paired/scope-switch.md",
+      "pass": true,
+      "hard_gate": true,
+      "detail": "supported by Galen preview"
+    }
+  ]
+}

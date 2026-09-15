@@ -64,6 +64,7 @@ async fn execute_pubmed(input: Value, ctx: &ToolContext) -> ToolExecution {
             return ToolExecution::from_result(Err(format!("PubMed search error: {error}")))
         }
     };
+    let candidates = dedupe_papers(candidates);
     let ranked = rank_papers(&candidates, research_question, limit as usize);
     let papers = ranked
         .iter()
@@ -276,6 +277,7 @@ async fn execute_rehab_search(input: Value, ctx: &ToolContext) -> ToolExecution 
             return ToolExecution::from_result(Err(format!("PubMed search error: {error}")))
         }
     };
+    let candidates = dedupe_papers(candidates);
     let ranked = rank_papers(&candidates, topic, limit as usize);
     let papers = ranked
         .iter()
@@ -304,6 +306,37 @@ struct RankedPaper<'a> {
     score: u8,
     matched_terms: Vec<String>,
     verification: CitationVerification,
+}
+
+/// Collapse duplicate records before ranking or reporting counts. PubMed can
+/// return the same article more than once when print/epub records or repeated
+/// identifiers are present in a provider response.
+fn dedupe_papers(papers: Vec<Paper>) -> Vec<Paper> {
+    let mut seen = BTreeSet::new();
+    papers
+        .into_iter()
+        .filter(|paper| seen.insert(paper_identity(paper)))
+        .collect()
+}
+
+fn paper_identity(paper: &Paper) -> String {
+    if !paper.pmid.trim().is_empty() {
+        return format!("pmid:{}", normalize(&paper.pmid));
+    }
+    if let Some(doi) = paper.doi.as_deref().filter(|doi| !doi.trim().is_empty()) {
+        let doi = doi
+            .trim()
+            .trim_start_matches("https://doi.org/")
+            .trim_start_matches("http://doi.org/")
+            .trim_start_matches("doi:");
+        return format!("doi:{}", normalize(doi));
+    }
+    format!(
+        "fallback:{}|{}|{}",
+        normalize(&paper.title),
+        normalize(paper.journal.as_deref().unwrap_or_default()),
+        normalize(paper.year.as_deref().unwrap_or_default())
+    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -765,5 +798,18 @@ mod tests {
         assert_eq!(first.status, VerificationStatus::Verified);
         assert_eq!(first.fingerprint, second.fingerprint);
         assert_eq!(first.fingerprint.len(), 16);
+    }
+
+    #[test]
+    fn duplicate_print_and_epub_records_collapse_to_one_paper() {
+        let mut epub = paper("12345", "Same rehabilitation trial", "Abstract");
+        epub.doi = Some("https://doi.org/10.1000/ABC".to_string());
+        let mut print = paper("12345", "Same rehabilitation trial", "Abstract");
+        print.doi = Some("10.1000/abc".to_string());
+
+        let deduped = dedupe_papers(vec![epub, print]);
+
+        assert_eq!(deduped.len(), 1);
+        assert_eq!(deduped[0].pmid, "12345");
     }
 }

@@ -90,6 +90,7 @@ pub struct ResearchTask {
 #[serde(rename_all = "camelCase")]
 pub struct ActiveResearchContext {
     #[serde(default)]
+    #[serde(alias = "research_question")]
     pub research_question: String,
     #[serde(default)]
     pub scope: Vec<String>,
@@ -100,11 +101,84 @@ pub struct ActiveResearchContext {
     #[serde(default)]
     pub timepoints: Vec<String>,
     #[serde(default)]
+    #[serde(alias = "active_artifacts")]
     pub active_artifacts: Vec<String>,
     #[serde(default)]
+    #[serde(alias = "excluded_scope")]
     pub excluded_scope: Vec<String>,
     #[serde(default)]
+    #[serde(alias = "revision_note")]
     pub revision_note: String,
+}
+
+/// Merge a user/model context patch into the host-authoritative context.
+///
+/// Lists are additive and stable: existing search terms and constraints remain
+/// in place while new values are appended once. A caller can intentionally
+/// remove a value by putting its exact text in `excluded_scope`; this makes a
+/// scope change explicit instead of silently dropping filters during a later
+/// conversational turn.
+pub fn merge_active_context(
+    previous: &ActiveResearchContext,
+    patch: ActiveResearchContext,
+) -> ActiveResearchContext {
+    let excluded_scope = merge_unique(&previous.excluded_scope, &patch.excluded_scope);
+    let is_excluded = |value: &str| {
+        excluded_scope
+            .iter()
+            .any(|excluded| normalize_context_value(excluded) == normalize_context_value(value))
+    };
+
+    ActiveResearchContext {
+        research_question: if patch.research_question.trim().is_empty() {
+            previous.research_question.clone()
+        } else {
+            patch.research_question.trim().to_string()
+        },
+        scope: merge_unique(&previous.scope, &patch.scope)
+            .into_iter()
+            .filter(|value| !is_excluded(value))
+            .collect(),
+        constraints: merge_unique(&previous.constraints, &patch.constraints)
+            .into_iter()
+            .filter(|value| !is_excluded(value))
+            .collect(),
+        variables: merge_unique(&previous.variables, &patch.variables)
+            .into_iter()
+            .filter(|value| !is_excluded(value))
+            .collect(),
+        timepoints: merge_unique(&previous.timepoints, &patch.timepoints)
+            .into_iter()
+            .filter(|value| !is_excluded(value))
+            .collect(),
+        active_artifacts: merge_unique(&previous.active_artifacts, &patch.active_artifacts),
+        excluded_scope,
+        revision_note: if patch.revision_note.trim().is_empty() {
+            previous.revision_note.clone()
+        } else {
+            patch.revision_note.trim().to_string()
+        },
+    }
+}
+
+fn merge_unique(previous: &[String], patch: &[String]) -> Vec<String> {
+    let mut merged = Vec::with_capacity(previous.len() + patch.len());
+    for value in previous.iter().chain(patch.iter()) {
+        let value = value.trim();
+        if value.is_empty() {
+            continue;
+        }
+        if !merged.iter().any(|existing: &String| {
+            normalize_context_value(existing) == normalize_context_value(value)
+        }) {
+            merged.push(value.to_string());
+        }
+    }
+    merged
+}
+
+fn normalize_context_value(value: &str) -> String {
+    value.trim().to_lowercase()
 }
 
 #[derive(Debug, Deserialize)]
@@ -228,6 +302,32 @@ pub fn replace_nodes(
     }
     task.status = derive_status(&nodes);
     task.nodes = nodes;
+    task.schema_version = SCHEMA_VERSION;
+    task.revision = task.revision.saturating_add(1);
+    task.updated_at = now_timestamp();
+    save_task(workspace, &task)?;
+    Ok(task)
+}
+
+/// Apply a context patch with the same compare-and-swap revision discipline as
+/// node updates. This is the write path used when a later conversational turn
+/// adds a keyword or constraint to an existing research project.
+pub fn update_active_context(
+    workspace: &Path,
+    task_id: &str,
+    expected_revision: u64,
+    patch: ActiveResearchContext,
+) -> Result<ResearchTask, String> {
+    let _guard = lock_task_store()?;
+    let mut task = load_task(workspace, task_id)?;
+    if task.revision != expected_revision {
+        return Err(format!(
+            "RESEARCH_TASK_CONFLICT: task revision changed (expected {expected_revision}, current {})",
+            task.revision
+        ));
+    }
+    let previous = task.active_context.clone().unwrap_or_default();
+    task.active_context = Some(merge_active_context(&previous, patch));
     task.schema_version = SCHEMA_VERSION;
     task.revision = task.revision.saturating_add(1);
     task.updated_at = now_timestamp();
@@ -714,6 +814,75 @@ mod tests {
         assert_eq!(task.nodes[0].status, "completed");
         assert_eq!(task.nodes[1].status, "pending");
         assert_eq!(task.status, ResearchTaskStatus::Ready);
+        let _ = std::fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn context_patch_preserves_existing_search_constraints() {
+        let previous = ActiveResearchContext {
+            research_question: "居家上肢训练对脑卒中依从性的影响".to_string(),
+            scope: vec!["脑卒中".to_string(), "居家训练".to_string()],
+            constraints: vec!["年龄 18-65 岁".to_string(), "随机对照试验".to_string()],
+            variables: vec!["依从性".to_string()],
+            ..Default::default()
+        };
+        let patch = ActiveResearchContext {
+            research_question: "居家上肢训练对脑卒中依从性的影响".to_string(),
+            scope: vec!["上肢功能".to_string()],
+            constraints: vec!["中文或英文".to_string()],
+            ..Default::default()
+        };
+
+        let merged = merge_active_context(&previous, patch);
+
+        assert_eq!(
+            merged.constraints,
+            vec![
+                "年龄 18-65 岁".to_string(),
+                "随机对照试验".to_string(),
+                "中文或英文".to_string()
+            ]
+        );
+        assert_eq!(
+            merged.scope,
+            vec![
+                "脑卒中".to_string(),
+                "居家训练".to_string(),
+                "上肢功能".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn context_update_persists_merge_and_revision() {
+        let workspace = temp_workspace("context-update");
+        let created = create_task(
+            &workspace,
+            "脑卒中依从性综述".to_string(),
+            "评估居家上肢训练依从性".to_string(),
+            Vec::new(),
+        )
+        .unwrap();
+        let updated = update_active_context(
+            &workspace,
+            &created.task_id,
+            created.revision,
+            ActiveResearchContext {
+                constraints: vec!["随机对照试验".to_string()],
+                variables: vec!["依从性".to_string()],
+                revision_note: "补充纳入标准".to_string(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(updated.revision, created.revision + 1);
+        let reloaded = load_active_task(&workspace).unwrap().unwrap();
+        let context = reloaded.active_context.unwrap();
+        assert_eq!(context.research_question, "评估居家上肢训练依从性");
+        assert_eq!(context.scope, vec!["脑卒中依从性综述"]);
+        assert_eq!(context.constraints, vec!["随机对照试验"]);
+        assert_eq!(context.variables, vec!["依从性"]);
         let _ = std::fs::remove_dir_all(workspace);
     }
 }

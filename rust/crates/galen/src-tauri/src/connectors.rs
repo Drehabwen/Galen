@@ -6,6 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 const REHAB_WORKBENCH_ID: &str = "rehab-workbench";
+const REHABGPT_ID: &str = "rehabgpt";
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -74,30 +75,45 @@ pub fn discover_latest(
     source_id: &str,
     case_hint: Option<&str>,
 ) -> Result<ConnectorPreview, String> {
+    if source_id == REHABGPT_ID {
+        let bridge = rehabgpt_bridge_snapshot_path()?;
+        if !bridge.is_file() {
+            return Err("尚未发现 RehabGPT Connector Bridge。请先由 RehabGPT 写出最新的脱敏数据快照。".into());
+        }
+        return preview_export(
+            &bridge,
+            case_hint,
+            "live_bridge",
+            REHABGPT_ID,
+            "RehabGPT",
+        );
+    }
     if source_id != REHAB_WORKBENCH_ID {
         return Err(format!("尚未实现数据源：{source_id}"));
     }
     let bridge = galen_bridge_snapshot_path()?;
     if bridge.is_file() {
-        return preview_export(&bridge, case_hint, "live_bridge");
+        return preview_export(&bridge, case_hint, "live_bridge", REHAB_WORKBENCH_ID, "康复师工作台");
     }
     let downloads = dirs::download_dir().ok_or("无法定位系统下载目录。")?;
     let export = latest_rehab_export(&downloads)?.ok_or(
         "尚未发现康复师工作台导出。请在工作台的「系统设置 → 数据备份」中导出一次完整数据。",
     )?;
-    preview_export(&export, case_hint, "file_fallback")
+    preview_export(&export, case_hint, "file_fallback", REHAB_WORKBENCH_ID, "康复师工作台")
 }
 
 pub fn import_from_export(
     workspace: &Path,
     request: ConnectorImportRequest,
 ) -> Result<crate::rehab_context::GovernedTimelineImportOutput, String> {
-    if request.source_id != REHAB_WORKBENCH_ID {
-        return Err(format!("尚未实现数据源：{}", request.source_id));
-    }
-    let export_path = validate_connector_export(&request.export_path)?;
+    let (connector_id, connector_label) = match request.source_id.as_str() {
+        REHAB_WORKBENCH_ID => (REHAB_WORKBENCH_ID, "康复师工作台"),
+        REHABGPT_ID => (REHABGPT_ID, "RehabGPT"),
+        _ => return Err(format!("尚未实现数据源：{}", request.source_id)),
+    };
+    let export_path = validate_connector_export(&request.export_path, connector_id)?;
     let backup = read_backup(&export_path)?;
-    import_backup(workspace, &export_path, backup, request)
+    import_backup(workspace, &export_path, backup, request, connector_id, connector_label)
 }
 
 fn import_backup(
@@ -105,6 +121,8 @@ fn import_backup(
     export_path: &Path,
     backup: RehabBackup,
     request: ConnectorImportRequest,
+    connector_id: &str,
+    connector_label: &str,
 ) -> Result<crate::rehab_context::GovernedTimelineImportOutput, String> {
     let selected: BTreeSet<String> = request.case_ids.into_iter().collect();
     let mut measurements = extract_measurements(&backup);
@@ -123,7 +141,7 @@ fn import_backup(
         backup.exported_at,
         short_hash(export_path.to_string_lossy().as_bytes())
     );
-    let relative_dir = format!("output/connector-imports/rehab-workbench-{import_key}");
+    let relative_dir = format!("output/connector-imports/{connector_id}-{import_key}");
     let absolute_dir = workspace.join(&relative_dir);
     fs::create_dir_all(&absolute_dir)
         .map_err(|error| format!("创建连接器导入目录失败: {error}"))?;
@@ -138,8 +156,8 @@ fn import_backup(
     let quality = json!({
         "schemaVersion": 1,
         "source": {
-            "connectorId": REHAB_WORKBENCH_ID,
-            "application": "康复师工作台",
+            "connectorId": connector_id,
+            "application": connector_label,
             "fileName": export_path.file_name().and_then(|name| name.to_str()).unwrap_or("rehab-backup.json"),
             "sha256": format!("{:x}", Sha256::digest(&source_bytes)),
             "exportVersion": backup.version,
@@ -216,9 +234,28 @@ fn galen_bridge_snapshot_path() -> Result<PathBuf, String> {
         .ok_or_else(|| "无法定位本机应用数据目录。".into())
 }
 
-fn validate_connector_export(value: &str) -> Result<PathBuf, String> {
+fn rehabgpt_bridge_snapshot_path() -> Result<PathBuf, String> {
+    if let Ok(configured) = std::env::var("GALEN_REHABGPT_CONNECTOR_DIR") {
+        let configured = configured.trim();
+        if !configured.is_empty() {
+            return Ok(PathBuf::from(configured).join("latest.json"));
+        }
+    }
+    dirs::data_local_dir()
+        .map(|base| base.join("RehabGPT").join("GalenConnector").join("latest.json"))
+        .ok_or_else(|| "无法定位 RehabGPT 本地连接器目录。".into())
+}
+
+fn validate_connector_export(value: &str, source_id: &str) -> Result<PathBuf, String> {
     let requested =
         fs::canonicalize(value).map_err(|error| format!("找不到工作台导出文件: {error}"))?;
+    if source_id == REHABGPT_ID {
+        let bridge = rehabgpt_bridge_snapshot_path()?.canonicalize().ok();
+        if bridge.as_ref() == Some(&requested) {
+            return Ok(requested);
+        }
+        return Err("RehabGPT 连接器只接受其本地 Bridge 写出的 latest.json 快照。".into());
+    }
     let bridge = galen_bridge_snapshot_path()?.canonicalize().ok();
     if bridge.as_ref() == Some(&requested) {
         return Ok(requested);
@@ -241,6 +278,8 @@ fn preview_export(
     path: &Path,
     case_hint: Option<&str>,
     connection_mode: &str,
+    source_id: &str,
+    source_label: &str,
 ) -> Result<ConnectorPreview, String> {
     let backup = read_backup(path)?;
     let all_measurements = extract_measurements(&backup);
@@ -319,8 +358,8 @@ fn preview_export(
         "已发现对象信息，但当前备份没有可分析的数值评估记录。".into()
     };
     Ok(ConnectorPreview {
-        source_id: REHAB_WORKBENCH_ID.into(),
-        source_label: "康复师工作台".into(),
+        source_id: source_id.into(),
+        source_label: source_label.into(),
         export_path: path.to_string_lossy().into_owned(),
         exported_at: backup.exported_at,
         connection_mode: connection_mode.into(),
@@ -488,6 +527,23 @@ fn extract_measurements(backup: &RehabBackup) -> Vec<ConnectorMeasurement> {
                 for (key, value) in dimensions {
                     if let Some(value) = value.as_f64() {
                         push(format!("{prefix}_{key}"), value, "score".into());
+                    }
+                }
+            }
+            for items_key in ["items", "scaleItems", "scale_items"] {
+                if let Some(items) = scale.get(items_key).and_then(Value::as_array) {
+                    for item in items {
+                        let key = text_at(item, "item")
+                            .or_else(|| text_at(item, "key"))
+                            .or_else(|| text_at(item, "id"))
+                            .or_else(|| text_at(item, "name"))
+                            .or_else(|| text_at(item, "label"));
+                        let value = ["score", "value", "rawScore", "raw_score"]
+                            .iter()
+                            .find_map(|field| item.get(*field).and_then(Value::as_f64));
+                        if let (Some(key), Some(value)) = (key, value) {
+                            push(format!("{prefix}_{key}"), value, "score".into());
+                        }
                     }
                 }
             }
@@ -686,7 +742,7 @@ mod tests {
         let dir = temp_dir("preview");
         let path = dir.join("rehab-backup-2026-09-10.json");
         fs::write(&path, fixture()).unwrap();
-        let preview = preview_export(&path, Some("ATH-001"), "file_fallback").unwrap();
+        let preview = preview_export(&path, Some("ATH-001"), "file_fallback", REHAB_WORKBENCH_ID, "康复师工作台").unwrap();
         assert_eq!(preview.patient_count, 1);
         assert_eq!(preview.assessment_count, 3);
         assert_eq!(preview.timepoint_count, 3);
@@ -709,6 +765,19 @@ mod tests {
     }
 
     #[test]
+    fn extracts_scale_item_scores_for_subscale_analysis() {
+        let mut backup: RehabBackup = serde_json::from_str(fixture()).unwrap();
+        backup.assessments.push(serde_json::from_str(
+            r#"{"id":"a4","patientId":"patient-1","createdAt":1789000000000,"data":{"scale":{"scaleId":"FMA-UE","totalScore":42,"scale_items":[{"item":"wrist_flexion","score":2},{"item":"grip","score":1}]}}}"#,
+        ).unwrap());
+
+        let measurements = extract_measurements(&backup);
+
+        assert!(measurements.iter().any(|item| item.metric == "fma-ue_wrist_flexion" && item.value == 2.0));
+        assert!(measurements.iter().any(|item| item.metric == "fma-ue_grip" && item.value == 1.0));
+    }
+
+    #[test]
     fn discovers_the_live_bridge_snapshot_before_file_fallback() {
         let dir = temp_dir("live-bridge");
         fs::write(dir.join("latest.json"), fixture()).unwrap();
@@ -724,6 +793,23 @@ mod tests {
             preview.export_path,
             dir.join("latest.json").to_string_lossy()
         );
+        assert_eq!(preview.measurement_count, 6);
+    }
+
+    #[test]
+    fn discovers_a_rehabgpt_bridge_as_a_named_research_source() {
+        let dir = temp_dir("rehabgpt-bridge");
+        fs::write(dir.join("latest.json"), fixture()).unwrap();
+        let previous = std::env::var_os("GALEN_REHABGPT_CONNECTOR_DIR");
+        std::env::set_var("GALEN_REHABGPT_CONNECTOR_DIR", &dir);
+        let preview = discover_latest("rehabgpt", Some("ATH-001")).unwrap();
+        match previous {
+            Some(value) => std::env::set_var("GALEN_REHABGPT_CONNECTOR_DIR", value),
+            None => std::env::remove_var("GALEN_REHABGPT_CONNECTOR_DIR"),
+        }
+        assert_eq!(preview.source_id, "rehabgpt");
+        assert_eq!(preview.source_label, "RehabGPT");
+        assert_eq!(preview.connection_mode, "live_bridge");
         assert_eq!(preview.measurement_count, 6);
     }
 
@@ -751,7 +837,7 @@ mod tests {
         let dir = temp_dir("empty");
         let path = dir.join("rehab-backup-2026-09-10.json");
         fs::write(&path, r#"{"version":"1.0.0","exportedAt":1,"patients":[{"id":"p1","shortCode":"RID-1"}],"sessions":[],"assessments":[]}"#).unwrap();
-        let preview = preview_export(&path, None, "file_fallback").unwrap();
+        let preview = preview_export(&path, None, "file_fallback", REHAB_WORKBENCH_ID, "康复师工作台").unwrap();
         assert!(!preview.can_import);
         assert_eq!(preview.measurement_count, 0);
     }
@@ -773,6 +859,8 @@ mod tests {
                 case_ids: vec!["ATH-001".into()],
                 latest_assessments: Some(3),
             },
+            REHAB_WORKBENCH_ID,
+            "康复师工作台",
         )
         .unwrap();
         assert_eq!(output.case_ids, vec!["ATH-001"]);

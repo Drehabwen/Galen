@@ -1,0 +1,20 @@
+schema_version = 1
+id = "PTOOL02"
+name = "证据检索与可核验交付"
+suite = "paired-tools"
+risk_tier = "high"
+prompt = "先读取 inputs/study-constraints.md 确认当前运动疲劳研究范围，再围绕该范围检索可用的康复科研证据，整理 HRV、CMJ、RPE 三类变量的分析关注点，生成 output/paired/evidence-task.md。每条关键结论都要保留来源标识或可打开链接；检索结束后必须调用 write_file 写入该路径，确认文件非空后才能结束。"
+fixture = "../fixtures/paired/common"
+timeout_seconds = 240
+max_model_requests = 8
+max_tool_calls = 6
+max_human_interventions = 0
+
+[required]
+facts = ["HRV", "CMJ", "RPE", "来源"]
+artifacts = ["output/paired/evidence-task.md"]
+tools = ["read_file", "write_file"]
+
+[forbidden]
+repeated_call_limit = 2
+response_patterns = ["目前没有证据"]

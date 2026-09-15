@@ -1,0 +1,18 @@
+\contentsline {section}{摘要}{1}{section*.1}%
+\contentsline {section}{\numberline {1}问题：科研任务需要项目状态，而不是更长的聊天记录}{2}{section.1}%
+\contentsline {section}{\numberline {2}方法：Galen Context Engine}{2}{section.2}%
+\contentsline {subsection}{\numberline {2.1}五类上下文构成一个研究项目}{2}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}任务上下文的选择与更新}{3}{subsection.2.2}%
+\contentsline {section}{\numberline {3}系统：从 RehabID 接入到正式研究产物}{3}{section.3}%
+\contentsline {subsection}{\numberline {3.1}统一的 RehabID 数据契约}{3}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}研究对象与产品对象分离}{3}{subsection.3.2}%
+\contentsline {section}{\numberline {4}评测：如何验证一套上下文工程架构}{4}{section.4}%
+\contentsline {subsection}{\numberline {4.1}冻结任务卡与对照条件}{4}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}指标}{4}{subsection.4.2}%
+\contentsline {section}{\numberline {5}结果：项目状态改变了任务完成方式}{4}{section.5}%
+\contentsline {subsection}{\numberline {5.1}冻结任务卡上的架构对照}{4}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.2}两类上下文核心能力}{5}{subsection.5.2}%
+\contentsline {subsection}{\numberline {5.3}从队列到正式论文的交付闭环}{6}{subsection.5.3}%
+\contentsline {section}{\numberline {6}讨论：为什么这是上下文工程，而不是检索增强聊天}{6}{section.6}%
+\contentsline {section}{\numberline {7}结论}{6}{section.7}%
+\contentsline {section}{\numberline {A}可复现材料}{7}{appendix.A}%

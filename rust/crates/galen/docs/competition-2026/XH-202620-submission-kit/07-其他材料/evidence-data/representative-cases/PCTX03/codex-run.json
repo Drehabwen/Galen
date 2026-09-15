@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "run_id": "external-PCTX03-1789151287994-1",
+  "case_id": "PCTX03",
+  "commit": "external",
+  "model": "codex+deepseek-v4-flash",
+  "config_hash": "43cf008ae48d97b4",
+  "run_index": 1,
+  "started_at_ms": 1789151287994,
+  "workspace": "C:\\Users\\labops\\AppData\\Local\\Temp\\galen-codex-PCTX03-4b1ghrp8",
+  "final_response": "已生成 `output/paired/scope-switch.md`。\n\n- 内容仅基于当前运动疲劳恢复范围：协议 `GALEN-FATIGUE-01`、12 名健康受试者、核心变量 HRV/CMJ/RPE、观察窗 0/24/48/72 小时。\n- 明确记录旧研究方向全部归档，且归档内容不参与变量定义、时间点设定与结果解读。\n- 操作范围限于当前工作目录及 `output/`，未访问目录外文件。",
+  "hard_gates_passed": false,
+  "quality_score": 0.8,
+  "dimensions": {
+    "capability": 0.0,
+    "repeatability": 0.0,
+    "state_safety": 0.0,
+    "delivery": 0.0,
+    "efficiency": 0.0
+  },
+  "latency": {
+    "context_ms": 0,
+    "mcp_ms": 0,
+    "ttft_ms": null,
+    "ttfr_ms": null,
+    "total_ms": 11868
+  },
+  "usage": {
+    "input": 0,
+    "output": 0,
+    "cache_create": 0,
+    "cache_read": 0
+  },
+  "model_requests": 1,
+  "tools": {
+    "calls": 2,
+    "errors": 0,
+    "max_repeat": 1,
+    "names": [
+      "read_file",
+      "shell"
+    ]
+  },
+  "tool_trace": [
+    {
+      "turn": 1,
+      "tool": "read_file",
+      "input": "\"\\\"C:\\\\\\\\Users\\\\\\\\labops\\\\\\\\.cache\\\\\\\\codex-runtimes\\\\\\\\codex-primary-runtime\\\\\\\\dependencies\\\\\\\\native\\\\\\\\powershell\\\\\\\\pwsh.exe\\\" -Command 'New-Item -ItemType Directory -Force -Path output/paired | Out-Null; Get-ChildItem -Force | Select-Object -ExpandProperty Name'\"",
+      "output": "output\r\n",
+      "is_error": false
+    },
+    {
+      "turn": 1,
+      "tool": "read_file",
+      "input": "\"\\\"C:\\\\\\\\Users\\\\\\\\labops\\\\\\\\.cache\\\\\\\\codex-runtimes\\\\\\\\codex-primary-runtime\\\\\\\\dependencies\\\\\\\\native\\\\\\\\powershell\\\\\\\\pwsh.exe\\\" -Command \\\"@'\\n# 研究范围切换说明（Scope Switch）\\n\\n## 切换结论\\n\\n- 旧讨论中的既有研究方向**全部归档**，不再作为当前研究的分析对象、变量来源或结论依据。\\n- 当前唯一正式研究方向：**运动疲劳恢复**。\\n- 本文件及其后续产物仅使用当前运动疲劳恢复范围内的内容。\\n\\n## 当前研究设定\\n\\n| 项目 | 内容 |\\n| --- | --- |\\n| 协议编号 | GALEN-FATIGUE-01 |\\n| 受试者 | 12 名健康受试者 |\\n| 核心变量 | HRV（心率变异性）、CMJ（反向纵跳）、RPE（主观疲劳感觉） |\\n| 观察窗 | 0 小时、24 小时、48 小时、72 小时 |\\n\\n## 范围界定\\n\\n- 研究对象：健康受试者在运动负荷后的疲劳恢复过程。\\n- 观测结构：以 0、24、48、72 小时四个时间点构成恢复轨迹。\\n- 核心变量口径：\\n  - HRV：反映自主神经恢复状态的核心生理指标。\\n  - CMJ：反映神经肌肉功能恢复状态的核心表现指标。\\n  - RPE：反映主观疲劳与恢复感受的核心感知指标。\\n- 归档内容不进入本范围，亦不参与变量定义、时间点设定与结果解读。\\n\\n## 备注\\n\\n- 后续产物均以本文件的协议编号、受试者规模、核心变量与观察窗为唯一基准。\\n- 如需变更上述任一设定，应先更新本文件，再生成对应产物。\\n'@ | Set-Content -Path output/paired/scope-switch.md -Encoding utf8NoBOM; Get-Content output/paired/scope-switch.md -TotalCount 5\\\"\"",
+      "output": "# 研究范围切换说明（Scope Switch）\r\n\r\n## 切换结论\r\n\r\n- 旧讨论中的既有研究方向**全部归档**，不再作为当前研究的分析对象、变量来源或结论依据。\r\n",
+      "is_error": false
+    }
+  ],
+  "context": {
+    "compactions": 0,
+    "required_facts": 6,
+    "retained_facts": 5
+  },
+  "grounding": {
+    "required_evidence": 0,
+    "retrieved_required": 0,
+    "cited_required": 0,
+    "forbidden_hits": 0,
+    "local_search_calls": 0,
+    "external_search_calls": 0,
+    "retrieved_evidence_ids": []
+  },
+  "artifacts": {
+    "required": 1,
+    "valid": 1,
+    "previewable": 1,
+    "files": [
+      "output/paired/scope-switch.md"
+    ]
+  },
+  "assertions": [],
+  "adapter": {
+    "backend": "codex",
+    "cli_wrapper": "D:\\DEV\\Galen-new\\evals\\external-runtimes\\with-deepseek.ps1",
+    "raw_events": "evals\\runs\\raw-events\\codex-PCTX03-1.jsonl",
+    "event_schema": "codex-json-or-raw-cli"
+  }
+}

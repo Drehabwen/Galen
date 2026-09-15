@@ -1,0 +1,229 @@
+\documentclass[UTF8,11pt,a4paper]{ctexart}
+\usepackage[a4paper,margin=18mm,top=20mm,bottom=18mm]{geometry}
+\usepackage{fontspec}
+\usepackage{xcolor}
+\usepackage{tabularx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\usepackage{xparse}
+\usepackage{enumitem}
+
+\setmainfont{Arial}
+\setCJKmainfont[Path=C:/Windows/Fonts/]{simhei.ttf}
+\setCJKsansfont[Path=C:/Windows/Fonts/]{simhei.ttf}
+\definecolor{navy}{HTML}{0B1730}
+\definecolor{ink}{HTML}{14253D}
+\definecolor{muted}{HTML}{66758A}
+\definecolor{teal}{HTML}{0D9D91}
+\definecolor{blue}{HTML}{2F68E8}
+\definecolor{orange}{HTML}{E68A00}
+\definecolor{violet}{HTML}{7B59D6}
+\definecolor{line}{HTML}{DCE5EF}
+\definecolor{paleBlue}{HTML}{EEF4FF}
+\definecolor{paleTeal}{HTML}{EAF9F6}
+\definecolor{paleGold}{HTML}{FFF8E8}
+\definecolor{paper}{HTML}{F7FAFC}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5pt}
+\setlength{\headheight}{22pt}
+\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue,pdfauthor={Galen Research Workbench},pdftitle={Galen 07 其他材料：测试与核验说明}}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{muted}\textbf{GALEN}  /  07 - 其他材料}
+\fancyhead[R]{\small\color{muted}测试与核验说明}
+\fancyfoot[L]{\small\color{muted}辅助评审过程的证据包}
+\fancyfoot[R]{\small\color{muted}\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+\makeatletter
+\renewcommand{\headrule}{\hbox to\headwidth{\color{line}\leaders\hrule height \headrulewidth\hfill}}
+\renewcommand{\footrule}{\hbox to\headwidth{\color{line}\leaders\hrule height \footrulewidth\hfill}}
+\makeatother
+
+\newsavebox{\cardbox}
+\NewDocumentEnvironment{card}{O{} m +b}{%
+  \par\noindent\begin{lrbox}{\cardbox}\begin{minipage}{0.93\linewidth}
+  #3
+  \end{minipage}\end{lrbox}%
+  \fcolorbox{line}{#2}{\usebox{\cardbox}}\par
+}{}
+\NewDocumentEnvironment{darkbox}{}{%
+  \par\noindent\begin{lrbox}{\cardbox}\begin{minipage}{0.93\linewidth}\color{white}
+} {\end{minipage}\end{lrbox}\fcolorbox{navy}{navy}{\usebox{\cardbox}}\par}
+\newcommand{\kicker}[1]{\textcolor{teal}{\textbf{\small\MakeUppercase{#1}}}\par\vspace{1mm}}
+
+\begin{document}
+
+% cover
+\thispagestyle{empty}
+\pagecolor{paper}
+\vspace*{14mm}
+{\color{teal}\textbf{\small GALEN  /  XH-202620}}\\[6mm]
+{\color{navy}\fontsize{28}{35}\selectfont\bfseries 07 - 其他材料\\测试与核验说明}\par
+\vspace{4mm}
+{\color{muted}\Large 给评委看的可复现证据包}\par
+\vspace{14mm}
+\begin{card}[colframe=teal]{paleTeal}
+\textbf{这部分材料只回答一件事}\par
+Galen 是否真的能把“研究上下文、工具执行和康复数据治理”做成可以复现、可以核验的工作流。
+\end{card}
+\vspace{8mm}
+\begin{tabularx}{\textwidth}{@{}X X X@{}}
+\begin{card}[colframe=blue]{paleBlue}\centering\textcolor{blue}{\Large\textbf{15}}\\任务卡\end{card} &
+\begin{card}[colframe=teal]{paleTeal}\centering\textcolor{teal}{\Large\textbf{2}}\\上下文探针\end{card} &
+\begin{card}[colframe=orange]{paleGold}\centering\textcolor{orange}{\Large\textbf{3}}\\基础检查\end{card}
+\end{tabularx}
+\vfill
+\begin{card}[colframe=line]{white}
+\textbf{版本}\quad galen-research-workbench  /  \texttt{3a179fb}\\
+\textbf{数据}\quad 固定脱敏或构造输入，不包含真实个人数据\\
+\textbf{用途}\quad 辅助评审、复现实验、核验交付链路
+\end{card}
+\clearpage
+\pagecolor{white}
+
+% page 2
+\kicker{01  /  评委先看什么}
+\section*{不要先读日志，先看四个问题}
+这份材料不承担再次讲故事。评委只需要确认：
+
+\begin{card}[colframe=blue]{paleBlue}\textbf{1  /  测什么？}\par 测试任务围绕三个能力组：上下文连续性、工具执行闭环、康复数据治理。每张任务卡都有固定输入和自动判定条件。\end{card}
+\begin{card}[colframe=teal]{paleTeal}\textbf{2  /  怎么保证公平？}\par 配对实验固定模型、固定任务卡和固定输入，每次只替换一个系统变量，例如上下文策略或工具编排策略。\end{card}
+\begin{card}[colframe=orange]{paleGold}\textbf{3  /  结果看什么？}\par 不只看一句“回答得好不好”，还看成功率、工具调用数、Token、时延、交付状态和证据覆盖。\end{card}
+\begin{card}[colframe=violet]{white}\textbf{4  /  结果能回到哪里？}\par 每个结论可以回到任务卡、固定输入、工具轨迹或产物路径。原始 JSON 和任务卡就在本目录。\end{card}
+
+\subsection*{材料的角色分工}
+\begin{tabularx}{\textwidth}{@{}p{35mm} X@{}}
+\toprule
+\textbf{06 - 效果验证报告} & 讲用户体验、功能完成度和产品效果；\\
+\midrule
+\textbf{07 - 其他材料} & 给出测试任务、复现方法、自动判定和原始记录；\\
+\midrule
+\textbf{03 - 作品 Demo} & 给出可体验入口、操作说明和完整交互视频。\\
+\bottomrule
+\end{tabularx}
+
+\vspace{6mm}
+\begin{darkbox}
+\textbf{阅读顺序：} 测试结果摘要 -> 复现说明 -> 配对任务包 -> 需要时查看 JSON 原始记录。
+\end{darkbox}
+\clearpage
+
+% page 3
+\kicker{02  /  材料目录}
+\section*{目录里的每一件东西都对应一个核验动作}
+\begin{tabularx}{\textwidth}{@{}p{45mm} X p{30mm}@{}}
+\toprule
+\textbf{材料} & \textbf{内容} & \textbf{评委怎么用}\\
+\midrule
+\texttt{paired-benchmark/} & 15 张配对任务卡、固定脱敏输入和判定条件。 & 复现三组核心能力。\\
+\texttt{context-memory-probe.json} & 多轮上下文保持探针。 & 看是否保留约束、修订和文件事实。\\
+\texttt{fatigue-scope-probe.json} & 运动疲劳研究范围切换探针。 & 看旧方向是否退出。\\
+\texttt{复现说明.md} & 环境、命令、指标和输出位置。 & 按步骤运行。\\
+\texttt{测试结果摘要.md} & 当前版本的核验结论。 & 先看结果，再追溯原始记录。\\
+\texttt{run\_demo\_checks.ps1} & 基础构建、单元测试和前端类型检查入口。 & 一次运行工程检查。\\
+\bottomrule
+\end{tabularx}
+
+\subsection*{15 张任务卡怎么分}
+\begin{tabularx}{\textwidth}{@{}p{27mm} X X@{}}
+\toprule
+\textcolor{blue}{\textbf{PCTX01-PCTX05}} & 上下文保持、修订、范围切换、干扰和文件事实保留 & 回答“系统是否真正记住当前研究”。\\
+\midrule
+\textcolor{teal}{\textbf{PTOOL01-PTOOL05}} & 读写、证据任务、跨文件、失败恢复和交付产物 & 回答“系统是否把动作做完”。\\
+\midrule
+\textcolor{orange}{\textbf{PDATA01-PDATA05}} & 字段规范、质量检查、时间轴、冲突来源和溯源 & 回答“系统是否把数据整理成可研究状态”。\\
+\bottomrule
+\end{tabularx}
+
+\vspace{6mm}
+\begin{card}[colframe=teal]{paleTeal}
+任务卡里的 \texttt{facts}、\texttt{artifacts}、\texttt{tools} 和 \texttt{tool\_sequence} 是自动判定条件，不是人工印象分。这让同一任务可以被重复运行，也让结果可以被第三方复核。
+\end{card}
+\clearpage
+
+% page 4
+\kicker{03  /  复现路径}
+\section*{从 GitHub 到测试结果，按这条路径即可}
+\subsection*{环境准备}
+建议 Windows 10/11、Rust stable、Node.js 18+ 和 npm。
+\begin{darkbox}\ttfamily\small
+git clone --branch galen-research-workbench https://github.com/Drehabwen/Galen.git\\
+cd Galen
+\end{darkbox}
+
+\subsection*{基础质量检查}
+\begin{darkbox}\ttfamily\small
+cd rust\\
+cargo check --workspace\\
+cargo test -p galen --lib\\
+cd ..\\rust\\crates\\galen\\
+npm ci\\
+npx tsc --noEmit
+\end{darkbox}
+
+\subsection*{配对实验的公平口径}
+\begin{center}
+\begin{tabularx}{\textwidth}{@{}X c X c X@{}}
+\begin{card}[colframe=blue]{paleBlue}\textbf{固定}\par 任务卡、输入和模型\end{card} & $+$ &
+\begin{card}[colframe=teal]{paleTeal}\textbf{只改一个变量}\par 上下文或工具策略\end{card} & $+$ &
+\begin{card}[colframe=orange]{paleGold}\textbf{同一套指标}\par 成功、调用、Token、时延、交付\end{card}
+\end{tabularx}
+\end{center}
+
+\subsection*{一次运行应该留下什么}
+原始运行记录、任务编号、模型和配置、工具轨迹、产物路径，以及用于汇总的指标表。没有原始记录的数字不进入最终报告。
+\clearpage
+
+% page 5
+\kicker{04  /  当前结果}
+\section*{已经可以直接核验的结果}
+\subsection*{基础质量检查}
+\begin{tabularx}{\textwidth}{@{}X r@{}}
+\toprule
+\textbf{检查项} & \textbf{结果}\\
+\midrule
+\texttt{cargo check --workspace} & \textcolor{teal}{通过}\\
+\texttt{cargo test -p galen --lib} & \textcolor{teal}{219 passed / 0 failed / 1 ignored}\\
+\texttt{npx tsc --noEmit} & \textcolor{teal}{通过}\\
+\bottomrule
+\end{tabularx}
+
+\subsection*{上下文连续性探针}
+\begin{card}[colframe=blue]{paleBlue}
+\textbf{context-memory-probe.json}\par
+验证多轮研究对话能否保留原始约束、吸收修订、记住工具读取事实，并把讨论和文件产物合并到同一研究任务。当前记录：\textcolor{teal}{\textbf{passed: true}}。
+\end{card}
+\begin{card}[colframe=teal]{paleTeal}
+\textbf{fatigue-scope-probe.json}\par
+验证研究切换到“运动疲劳恢复”后，当前项目能否保留新的协议、样本、时点和变量，同时排除已退出的旧方向。当前记录：\textcolor{teal}{\textbf{passed: true}}。
+\end{card}
+
+\subsection*{配对任务包的定位}
+15 张任务卡已经把“记忆、执行、数据”拆成可重复的小实验。正式比较时，每个案例建议重复 5 次，报告成功率、工具调用数、Token、时延、交付状态和证据覆盖率。
+\clearpage
+
+% page 6
+\kicker{05  /  核验结论}
+\section*{评委最终需要带走的三句话}
+\begin{card}[colframe=blue]{paleBlue}\textbf{第一句：Galen 记得住研究。}\par 它把研究问题、当前范围、修订和工具事实放进持续的项目状态，而不是每一轮重新询问。\end{card}
+\begin{card}[colframe=teal]{paleTeal}\textbf{第二句：Galen 做得完任务。}\par 任务卡不只检查回答文本，还检查工具调用、文件产物、失败恢复和交付链接。\end{card}
+\begin{card}[colframe=orange]{paleGold}\textbf{第三句：Galen 让数据可研究。}\par RehabID、时间点、字段质量和来源被组织成一条可追溯链路，最后回到可预览的正式产物。\end{card}
+
+\subsection*{材料边界}
+本目录只放能帮助复现和核验的内容：任务卡、固定输入、运行说明、结果摘要和原始探针。API Key、真实个人数据、缓存、未整理长日志和未核验数字不放入提交包。
+
+\vspace{8mm}
+\begin{darkbox}
+\textbf{公开入口}\par
+GitHub：\href{https://github.com/Drehabwen/Galen}{github.com/Drehabwen/Galen}\\
+分支：\href{https://github.com/Drehabwen/Galen/tree/galen-research-workbench}{galen-research-workbench}\\
+Demo 说明：\href{https://github.com/Drehabwen/Galen/tree/galen-research-workbench/rust/crates/galen/docs/competition-2026/XH-202620-submission-kit/03-%E4%BD%9C%E5%93%81Demo}{03 - 作品 Demo}
+\end{darkbox}
+
+\vfill
+\begin{center}\color{muted}\small 07 - 其他材料  /  Galen Research Workbench  /  2026\end{center}
+\end{document}

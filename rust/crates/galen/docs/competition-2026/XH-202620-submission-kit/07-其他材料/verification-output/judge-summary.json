@@ -1,0 +1,18 @@
+[
+  {
+    "System": "Galen",
+    "Runs": 75,
+    "Passed": 74,
+    "PassRate": 98.7,
+    "MeanToolCalls": 2.11,
+    "MedianLatencySeconds": 9.2
+  },
+  {
+    "System": "Codex + DeepSeek",
+    "Runs": 75,
+    "Passed": 21,
+    "PassRate": 28.0,
+    "MeanToolCalls": 6.12,
+    "MedianLatencySeconds": 19.3
+  }
+]

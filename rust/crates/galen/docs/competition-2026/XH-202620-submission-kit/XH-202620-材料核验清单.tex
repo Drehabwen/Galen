@@ -1,0 +1,64 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage{fontspec}
+\usepackage{xeCJK}
+\setCJKmainfont{SimSun}
+\setCJKsansfont{SimHei}
+\setmainfont{Times New Roman}
+\usepackage[margin=2.05cm]{geometry}
+\usepackage{booktabs,array,tabularx,xcolor}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage[hidelinks]{hyperref}
+\setlength{\parindent}{2em}
+\linespread{1.16}\selectfont
+\pagestyle{fancy}\fancyhf{}\lhead{\small XH-202620}\rhead{\small 提交材料核验清单}\cfoot{\thepage}
+\setlength{\headheight}{14pt}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\definecolor{pending}{RGB}{115,70,20}
+
+\begin{document}
+\begin{center}
+{\Large\bfseries XH-202620 参赛材料核验清单}\par
+\vspace{0.2cm}
+面向一流学科建设的学科垂类大模型与创新应用开发
+\end{center}
+\vspace{0.5cm}
+
+\noindent\textbf{提交截止：} 2026 年 9 月 15 日前。\quad
+\textbf{压缩包建议命名：} 学校全称--学科垂类大模型与创新应用开发--作品名称--负责人--联系方式
+
+\begin{table}[htbp]
+\small
+\centering
+\begin{tabularx}{\linewidth}{@{}p{0.7cm}p{3.5cm}Yp{2.6cm}@{}}
+\toprule
+编号 & 材料 & 规则要求与当前归位 & 状态 \\
+\midrule
+01 & 参赛信息 & 报名系统审核通过的参赛申报表，学校盖章，内容与系统填报严格一致。放入 `01-参赛信息`。 & \textcolor{pending}{待下载盖章} \\
+02 & 伦理与安全合规性声明 & 承诺数据脱敏、无伪造学术数据/虚假文献、AI 生成内容有明显标识；负责人签字或团队盖章。已生成 PDF 草稿。 & \textcolor{pending}{待签字盖章} \\
+03 & 作品 Demo & Demo 体验地址与文档说明；同时提交 3 分钟以内的应用系统交互视频。已有完整队列到论文视频，部署地址待补。 & \textcolor{pending}{地址待补} \\
+04 & 作品方案 & PPT，包含作品阐述、功能思路、技术方案、运行效果、迭代计划、创新之处和团队介绍，文件不超过 100 MB。 & \textcolor{pending}{待制作 PPT} \\
+05 & 作品代码 & 源码、模型文件或 ServiceID、技术报告及可复现说明。Galen 源码快照、LaTeX 技术报告和复现说明已归档；模型 ServiceID/模型文件待最终环境确认。 & 已有初稿 \\
+06 & 效果验证报告 & 至少 2 名真实目标用户；科研类需有人机判断一致性、代码/公式执行截图、时间或准确率量化；至少 3 个典型问题并附 3 分钟交互视频。技术报告与探针结果已归档，人工用户记录待补。 & \textcolor{pending}{待人工复核} \\
+07 & 其他材料 & 测试脚本、测试报告、大规模使用数据等辅助材料。两份 JSON 探针、测试脚本和素材已归档。 & 已有 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section*{现有证据摘要}
+\begin{itemize}[leftmargin=2em,itemsep=0.25em]
+\item 上下文引擎自动化测试：40/40 通过。
+\item 连续约束修订探针：9/9 通过，55.998 秒。
+\item 运动疲劳范围切换探针：8/8 通过，33.000 秒。
+\item RehabID 连接器工作流：工作台队列发现、确认导入、研究时间轴接管、正式论文 PDF 预览。
+\end{itemize}
+
+\section*{最后四项动作}
+\begin{enumerate}[leftmargin=2.2em,itemsep=0.3em]
+\item 从报名系统下载审核通过的参赛申报表并完成学校盖章。
+\item 确定 Demo 的可访问地址，补入《03--作品 Demo》说明。
+\item 由至少 2 名真实目标用户完成独立试用；每人完成 3 个典型问题，记录身份、场景、频次、用时、反馈、人工评分、引用链接和 PDF 交付截图。
+\item 将 `04--作品方案` PPT、签章 PDF 和最终压缩包统一复核后发送至发榜单位邮箱。
+\end{enumerate}
+
+\end{document}

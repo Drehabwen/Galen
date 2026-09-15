@@ -116,6 +116,7 @@ pub mod packs {
                 description: "Research planning, evidence search, and literature tools.",
                 tool_names: &[
                     "create_research_plan",
+                    "update_research_context",
                     "search_evidence",
                     "search_pubmed",
                     "fetch_article",
@@ -130,6 +131,7 @@ pub mod packs {
 
         fn register(&self, registry: &mut ToolRegistry) {
             registry.register(tools::research::CreateResearchPlan);
+            registry.register(tools::research::UpdateResearchContext);
             registry.register(tools::evidence_search::SearchEvidence);
             registry.register(tools::medical::SearchPubMed);
             registry.register(tools::medical::FetchArticle);

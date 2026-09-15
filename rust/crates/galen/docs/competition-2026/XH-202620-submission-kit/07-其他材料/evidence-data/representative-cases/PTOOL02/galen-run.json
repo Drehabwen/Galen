@@ -1,0 +1,192 @@
+{
+  "schema_version": 1,
+  "run_id": "PTOOL02-1789154508751-1",
+  "case_id": "PTOOL02",
+  "commit": "806ebf510c9fce17c4376f5eabd102f277898bf5-dirty",
+  "model": "deepseek-v4-flash",
+  "config_hash": "142836c78d13cea2",
+  "run_index": 1,
+  "started_at_ms": 1789154508751,
+  "workspace": "C:\\Users\\labops\\AppData\\Local\\Temp\\galen-evals\\PTOOL02-large-full-galen-20260912-corrected-v2-full_galen-1",
+  "final_response": "## 结论\n\n已完成 `inputs/study-constraints.md` 读取、PubMed 三轮定向检索，并将证据任务包写入 **`output/paired/evidence-task.md`（12,411 字节，非空，写入状态：delivered）**。\n\n**研究范围（严格锚定公开输入）**：协议 GALEN-FATIGUE-01；12 名健康受试者；核心变量 HRV、CMJ、RPE；观察窗训练后 0/24/48/72 h；证据代码 REHABID-FATIGUE-48。\n\n## 关键证据（均来自本轮已验证 · PubMed 记录）\n\n**HRV**：系统综述+Meta 支持自主心率调节指标用于训练状态监测 [PMID: 26888648](https://pubmed.ncbi.nlm.nih.gov/26888648/)；超短期记录与推荐时长的一致性须先验证 [PMID: 25177179](https://pubmed.ncbi.nlm.nih.gov/25177179/)；移动设备 HRV 监测综述 [PMID: 41516438](https://pubmed.ncbi.nlm.nih.gov/41516438/)；自主神经恢复纵向研究 [PMID: 42371083](https://pubmed.ncbi.nlm.nih.gov/42371083/)。\n\n**CMJ**：疲劳条件下应分析跳跃特征派生指标而非仅高度 [PMID: 37889855](https://pubmed.ncbi.nlm.nih.gov/37889855/)、[PMID: 40267466](https://pubmed.ncbi.nlm.nih.gov/40267466/)；CMJ 敏感性有边界，\"未下降\"≠\"未疲劳\" [PMID: 40618319](https://pubmed.ncbi.nlm.nih.gov/40618319/)；力量与功率恢复时程解离 [PMID: 29466274](https://pubmed.ncbi.nlm.nih.gov/29466274/)。\n\n**RPE**：量表与锚点必须固定 [PMID: 36227235](https://pubmed.ncbi.nlm.nih.gov/36227235/)、[PMID: 38910451](https://pubmed.ncbi.nlm.nih.gov/38910451/)；须区分单次 RPE 与 session-RPE [PMID: 31045754](https://pubmed.ncbi.nlm.nih.gov/31045754/)；回忆窗口影响效度 [PMID: 37279792](https://pubmed.ncbi.nlm.nih.gov/37279792/)；与心率联合解读更可靠 [PMID: 31593033](https://pubmed.ncbi.nlm.nih.gov/31593033/)。\n\n**联合分析**：三变量恢复时程不同步，须逐变量逐时间点报告；12×4 重复测量设计应使用混合效应模型/重复测量方法并报告效应量；异质测量汇入统一时间轴须保留单位、来源、时间点与质量状态。\n\n## 未解决问题与局限\n\n1. **覆盖受限**：仅 PubMed，未检索 Crossref / Semantic Scholar / CNKI——不得推断\"无中国证据\"。\n2. **无直接同设计证据**：未检出「12 名健康受试者 × 0/24/48/72 h」设计的文献，关注点属方法学外推，非疗效结论。\n3. **未做偏倚风险评估**（AMSTAR / RoB）；部分条目未从摘要提取原始检索截止日，引用前须核对原文方法。\n4. **因果克制**：证据支持\"监测与描述\"，不足以建立干预因果或人群外推。\n\n## 建议下一步\n\n- 如需扩证据面：补检 Crossref / Semantic Scholar / CNKI，并对系统综述做正式质量评价；\n- 若进入分析阶段：按 REHABID-FATIGUE-48 建立统一时间轴，用混合效应模型逐变量建模，显式标记重复/缺失/冲突；\n- 需签核时再提交高风险产出（如正式结论稿）。",
+  "hard_gates_passed": true,
+  "quality_score": 1.0,
+  "dimensions": {
+    "capability": 1.0,
+    "repeatability": 1.0,
+    "state_safety": 1.0,
+    "delivery": 1.0,
+    "efficiency": 0.7336118055555555
+  },
+  "latency": {
+    "context_ms": 282,
+    "mcp_ms": 0,
+    "ttft_ms": 1664,
+    "ttfr_ms": 1664,
+    "total_ms": 33599
+  },
+  "usage": {
+    "input": 33091,
+    "output": 4875,
+    "cache_create": 12483,
+    "cache_read": 20608
+  },
+  "model_requests": 5,
+  "tools": {
+    "calls": 5,
+    "errors": 0,
+    "max_repeat": 1,
+    "names": [
+      "read_file",
+      "search_pubmed",
+      "write_file"
+    ]
+  },
+  "tool_trace": [
+    {
+      "turn": 1,
+      "tool": "read_file",
+      "input": "{\"path\":\"inputs/study-constraints.md\"}",
+      "output": "Read 7 lines from inputs/study-constraints.md:\n# 运动疲劳研究约束\n\n- 协议号：GALEN-FATIGUE-01\n- 受试者：12 名健康受试者\n- 核心变量：HRV、CMJ、RPE\n- 观察窗：训练后 0、24、48、72 小时\n- 数据字典证据代码：REHABID-FATIGUE-48",
+      "is_error": false
+    },
+    {
+      "turn": 1,
+      "tool": "search_pubmed",
+      "input": "{\"query\": \"countermovement jump performance recovery neuromuscular fatigue\"}",
+      "output": "检索式：countermovement jump performance recovery neuromuscular fatigue\n\n问题锚点：countermovement jump performance recovery neuromuscular fatigue\n\n来源覆盖：本轮仅 PubMed；检出 30 篇候选，按问题匹配度筛选并展示前 10 篇。\n\n[已验证 · PubMed；匹配度 100 / 100；命中：countermovement、fatigue、jump、neuromuscular、performance、recovery]\n  [PMID: 40267466](https://pubmed.ncbi.nlm.nih.gov/40267466/)\n  Acute Effects of Repeated Sprints on Performance Measures During the Countermovement Rebound Jump.\n  Xu, Jiaqing et al. — Journal of strength and conditioning research（发表：2025）\n  元数据指纹：4bbec32764cd41a2\n  DOI: 10.1519/JSC.0000000000005102\n\n[已验证 · PubMed；匹配度 100 / 100；命中：countermovement、fatigue、jump、neuromuscular、performance、recovery]\n  [PMID: 37889855](https://pubmed.ncbi.nlm.nih.gov/37889855/)\n  Effect of Neuromuscular Fatigue on the Countermovement Jump Characteristics: Basketball-Related High-Intensity Exercises.\n  Yoshida, Nobuhisa et al. — Journal of strength and conditioning research（发表：2024）\n  元数据指纹：be6697f980a5c925\n  DOI: 10.1519/JSC.0000000000004610\n\n[已验证 · PubMed；匹配度 100 / 100；命中：countermovement、fatigue、jump、neuromuscular、performance、recovery]\n  [PMID: 32947574](https://pubmed.ncbi.nlm.nih.gov/32947574/)\n  Effects of Westbound Trans-meridian Travel on Countermovement Jump Performance in International-Level Rowers.\n  Everett, Kirsten L A et al. — Journal of strength and conditioning research（发表：2022）\n  元数据指纹：9840cce85a942d30\n  DOI: 10.1519/JSC.0000000000003762\n\n[已验证 · PubMed；匹配度 95 / 100；命中：countermovement、fatigue、jump、neuromuscular、performance、recovery]\n  [PMID: 36680410](https://pubmed.ncbi.nlm.nih.gov/36680410/)\n  Effects of the Nike ZoomX Vaporfly Next% 2 shoe on long-interval training performance, kinematics, neuromuscular parameters, running power and fatigue.\n  Castellanos-Salamanca, Mario et al. — European journal of sport science（发表：2023）\n  元数据指纹：c2f3692d25f3085a\n  DOI: 10.1080/17461391.2023.2171907\n\n[已验证 · PubMed；匹配度 93 / 100；命中：countermovement、fatigue、jump、neuromuscular、performance、recovery]\n  [PMID: 36897849](https://pubmed.ncbi.nlm.nih.gov/36897849/)\n  Defining and quantifying fatigue in the rugby codes.\n  Naughton, Mitchell et al. — PloS one（发表：2023）\n  元数据指纹：97ae33eacb096fb7\n  DOI: 10.1371/journal.pone.0282390\n\n[已验证 · PubMed；匹配度 93 / 100；命中：countermovement、fatigue、jump、neuromuscular、performance、recovery]\n  [PMID: 29466274](https://pubmed.ncbi.nlm.nih.gov/29466274/)\n  Dissociated Time Course of Recovery Between Strength and Power After Isoinertial Resistance Loading in Rugby Union Players.\n  Kennedy, Rodney A et al. — Journal of strength and conditioning research（发表：2018）\n  元数据指纹：c30e671898e8e1ca\n  DOI: 10.1519/JSC.0000000000001821\n\n[已验证 · PubMed；匹配度 88 / 100；命中：countermovement、fatigue、jump、neuromuscular、recovery]\n  [PMID: 41665606](https://pubmed.ncbi.nlm.nih.gov/41665606/)\n  The Utility of the Countermovement Rebound Jump for the Assessment of Neuromuscular Status in National Collegiate Athletic Association Division I American Football Players.\n  Talpey, Scott W et al. — Journal of strength and conditioning research（发表：2026）\n  元数据指纹：348f3bb6f4eaa28c\n  DOI: 10.1519/JSC.0000000000005386\n\n[已验证 · PubMed；匹配度 88 / 100；命中：countermovement、fatigue、jump、neuromuscular、performance]\n  [PMID: 28085126](https://pubmed.ncbi.nlm.nih.gov/28085126/)\n  The effect of acute fatigue on countermovement jump performance in rugby union players during preseason.\n  Kennedy, Rodney A et al. — The Journal of sports medicine and physical fitness（发表：2017）\n  元数据指纹：e852135090134df6\n  DOI: 10.23736/S0022-4707.17.06848-7\n\n[已验证 · PubMed；匹配度 88 / 100；命中：fatigue、jump、neuromuscular、performance、recovery]\n  [PMID: 16895532](https://pubmed.ncbi.nlm.nih.gov/16895532/)\n  Neuromuscular fatigue and recovery in elite female handball players.\n  Ronglan, L T et al. — Scandinavian journal of medicine & science in sports（发表：2006）\n  元数据指纹：b9314808e892f9be\n\n[已验证 · PubMed；匹配度 86 / 100；命中：countermovement、fatigue、jump、neuromuscular、performance]\n  [PMID: 40618319](https://pubmed.ncbi.nlm.nih.gov/40618319/)\n  Countermovement jump performance after metabolically, but not mechanically demanding exercise: limited sensitivity to prolonged low-frequency force depression.\n  Lindsay, Owen R et al. — European journal of applied physiology（发表：2026）\n  元数据指纹：68f8ebc0c9783bda\n  DOI: 10.1007/s00421-025-05882-3",
+      "is_error": false
+    },
+    {
+      "turn": 2,
+      "tool": "search_pubmed",
+      "input": "{\"query\": \"rating of perceived exertion RPE validity monitoring training load\"}",
+      "output": "检索式：rating of perceived exertion RPE validity monitoring training load\n\n问题锚点：rating of perceived exertion RPE validity monitoring training load\n\n来源覆盖：本轮仅 PubMed；检出 30 篇候选，按问题匹配度筛选并展示前 10 篇。\n\n[已验证 · PubMed；匹配度 100 / 100；命中：exertion、load、monitoring、perceived、rating、rpe、training、validity]\n  [PMID: 36227235](https://pubmed.ncbi.nlm.nih.gov/36227235/)\n  Validity and Reliability of Facial Rating of Perceived Exertion Scales for Training Load Monitoring.\n  van der Zwaard, Stephan et al. — Journal of strength and conditioning research（发表：2023）\n  元数据指纹：963f813ebaeffff4\n  DOI: 10.1519/JSC.0000000000004361\n\n[已验证 · PubMed；匹配度 100 / 100；命中：exertion、load、monitoring、perceived、rating、rpe、training、validity]\n  [PMID: 37279792](https://pubmed.ncbi.nlm.nih.gov/37279792/)\n  Validity of Weekly and Monthly Perceived Exertion in Runners.\n  Arantes Bertochi, Gabriel Felipe et al. — International journal of sports medicine（发表：2023）\n  元数据指纹：d6d3214c0484c822\n  DOI: 10.1055/a-2058-8049\n\n[已验证 · PubMed；匹配度 100 / 100；命中：exertion、load、monitoring、perceived、rating、rpe、training、validity]\n  [PMID: 31593033](https://pubmed.ncbi.nlm.nih.gov/31593033/)\n  Using the Rating of Perceived Exertion and Heart Rate to Quantify Training Intensity in Female Soccer Players: Validity and Utility.\n  Costa, Júlio A et al. — Journal of strength and conditioning research（发表：2022）\n  元数据指纹：842e0e84f1c9ef08\n  DOI: 10.1519/JSC.0000000000003407\n\n[已验证 · PubMed；匹配度 100 / 100；命中：exertion、load、monitoring、perceived、rating、rpe、training、validity]\n  [PMID: 33370008](https://pubmed.ncbi.nlm.nih.gov/33370008/)\n  Use of Rating of Perceived Exertion-Based Training Load in Elite Ice Hockey Training and Match-Play.\n  Rago, Vincenzo et al. — Journal of strength and conditioning research（发表：2022）\n  元数据指纹：25dbd6cc549783be\n  DOI: 10.1519/JSC.0000000000003915\n\n[已验证 · PubMed；匹配度 100 / 100；命中：exertion、load、monitoring、perceived、rating、rpe、training、validity]\n  [PMID: 31045754](https://pubmed.ncbi.nlm.nih.gov/31045754/)\n  Validity of Session-Rate of Perceived Exertion to Quantify Training Loads in Paralympic Swimmers.\n  Sinnott-O'Connor, Ciara et al. — Journal of strength and conditioning research（发表：2021）\n  元数据指纹：a640c4e9799c33b2\n  DOI: 10.1519/JSC.0000000000003181\n\n[已验证 · PubMed；匹配度 100 / 100；命中：exertion、load、monitoring、perceived、rating、rpe、training、validity]\n  [PMID: 29431589](https://pubmed.ncbi.nlm.nih.gov/29431589/)\n  Development of a golf-specific load monitoring tool: Content validity and feasibility.\n  Williams, Scott B et al. — European journal of sport science（发表：2018）\n  元数据指纹：7b50a1257c708c18\n  DOI: 10.1080/17461391.2018.1434239\n\n[已验证 · PubMed；匹配度 100 / 100；命中：exertion、load、monitoring、perceived、rating、rpe、training、validity]\n  [PMID: 29939948](https://pubmed.ncbi.nlm.nih.gov/29939948/)\n  Validity of Retrospective Session Rating of Perceived Exertion to Quantify Training Load in youth Athletes.\n  Scantlebury, Sean et al. — Journal of strength and conditioning research（发表：2018）\n  元数据指纹：6fed5a8b4a6e38cb\n  DOI: 10.1519/JSC.0000000000002099\n\n[已验证 · PubMed；匹配度 100 / 100；命中：exertion、load、monitoring、perceived、rating、rpe、training、validity]\n  [PMID: 21685808](https://pubmed.ncbi.nlm.nih.gov/21685808/)\n  Relation between total body load and session rating of perceived exertion in professional soccer players.\n  Gomez-Piriz, Pedro T et al. — Journal of strength and conditioning research（发表：2011）\n  元数据指纹：4919ab8931e34cd9\n  DOI: 10.1519/JSC.0b013e3181fb4587\n\n[已验证 · PubMed；匹配度 91 / 100；命中：exertion、load、perceived、rating、rpe、training、validity]\n  [PMID: 38910451](https://pubmed.ncbi.nlm.nih.gov/38910451/)\n  Validity of Rating of Perceived Exertion Scales in Relation to Movement Velocity and Exercise Intensity During Resistance-Exercise: A Systematic Review.\n  Petro, Jorge L et al. — Sports health（发表：2025）\n  元数据指纹：05b34244c7bbcdc6\n  DOI: 10.1177/19417381241260412\n  原始检索截止日：未从 PubMed 摘要提取；引用前须核对原文方法\n\n[已验证 · PubMed；匹配度 91 / 100；命中：exertion、load、monitoring、perceived、rating、training、validity]\n  [PMID: 36141735](https://pubmed.ncbi.nlm.nih.gov/36141735/)\n  Training, Wellbeing and Recovery Load Monitoring in Female Youth Athletes.\n  Temm, Dani A et al. — International journal of environmental research and public health（发表：2022）\n  元数据指纹：5cfcfac0798cb718\n  DOI: 10.3390/ijerph191811463\n  原始检索截止日：未从 PubMed 摘要提取；引用前须核对原文方法",
+      "is_error": false
+    },
+    {
+      "turn": 3,
+      "tool": "search_pubmed",
+      "input": "{\"query\": \"heart rate variability recovery monitoring athletes post-exercise\"}",
+      "output": "检索式：heart rate variability recovery monitoring athletes post-exercise\n\n问题锚点：heart rate variability recovery monitoring athletes post-exercise\n\n来源覆盖：本轮仅 PubMed；检出 30 篇候选，按问题匹配度筛选并展示前 10 篇。\n\n[已验证 · PubMed；匹配度 100 / 100；命中：athletes、exercise、heart、monitoring、post、rate、recovery、variability]\n  [PMID: 41516438](https://pubmed.ncbi.nlm.nih.gov/41516438/)\n  Monitoring Training Adaptation and Recovery Status in Athletes Using Heart Rate Variability via Mobile Devices: A Narrative Review.\n  Esco, Michael R et al. — Sensors (Basel, Switzerland)（发表：2025）\n  元数据指纹：5432b06ee81528fb\n  DOI: 10.3390/s26010003\n  原始检索截止日：未从 PubMed 摘要提取；引用前须核对原文方法\n\n[已验证 · PubMed；匹配度 100 / 100；命中：athletes、exercise、heart、monitoring、post、rate、recovery、variability]\n  [PMID: 25177179](https://pubmed.ncbi.nlm.nih.gov/25177179/)\n  Ultra-short-term heart rate variability indexes at rest and post-exercise in athletes: evaluating the agreement with accepted recommendations.\n  Esco, Michael R et al. — Journal of sports science & medicine（发表：2014）\n  元数据指纹：0ae608552f0cb226\n\n[已验证 · PubMed；匹配度 98 / 100；命中：athletes、exercise、heart、monitoring、post、rate、recovery、variability]\n  [PMID: 36332619](https://pubmed.ncbi.nlm.nih.gov/36332619/)\n  Minimally Invasive Ways to Monitor Changes in Cardiocirculatory Fitness in Running-based Sports: A Systematic Review.\n  Schimpchen, Jan et al. — International journal of sports medicine（发表：2023）\n  元数据指纹：138bccaf5f09fe64\n  DOI: 10.1055/a-1925-7468\n  原始检索截止日：未从 PubMed 摘要提取；引用前须核对原文方法\n\n[已验证 · PubMed；匹配度 91 / 100；命中：exercise、heart、monitoring、post、rate、recovery、variability]\n  [PMID: 41855375](https://pubmed.ncbi.nlm.nih.gov/41855375/)\n  Effects on Heart Rate Variability of a European Under-18 Rugby Tournament.\n  Solís-Mencía, Cristian et al. — Journal of strength and conditioning research（发表：2026）\n  元数据指纹：1c1c12a3c56a11f3\n  DOI: 10.1519/JSC.0000000000005362\n\n[已验证 · PubMed；匹配度 91 / 100；命中：athletes、exercise、heart、post、rate、recovery、variability]\n  [PMID: 41902046](https://pubmed.ncbi.nlm.nih.gov/41902046/)\n  Heart Rate Variability and Perceived Recovery as Predictors of Performance in Athletes Competing in Sprint Events.\n  Alecu, Stefan et al. — Sensors (Basel, Switzerland)（发表：2026）\n  元数据指纹：923cc9f663eb4044\n  DOI: 10.3390/s26061877\n\n[已验证 · PubMed；匹配度 91 / 100；命中：exercise、heart、monitoring、post、rate、recovery、variability]\n  [PMID: 42371083](https://pubmed.ncbi.nlm.nih.gov/42371083/)\n  Dynamic effects of different exercise modalities on autonomic recovery: a longitudinal study based on heart rate variability.\n  Wang, Wenxing et al. — European journal of applied physiology（发表：2026）\n  元数据指纹：47b8a21f449900fc\n  DOI: 10.1007/s00421-026-06329-z\n\n[已验证 · PubMed；匹配度 91 / 100；命中：athletes、exercise、heart、post、rate、recovery、variability]\n  [PMID: 38198009](https://pubmed.ncbi.nlm.nih.gov/38198009/)\n  Reliability of recovery heart rate variability measurements as part of the Lamberts Submaximal Cycle Test and the relationship with training status in trained to elite cyclists.\n  Lamberts, Robert P et al. — European journal of applied physiology（发表：2024）\n  元数据指纹：509f93150c7b2df2\n  DOI: 10.1007/s00421-023-05385-z\n\n[已验证 · PubMed；匹配度 91 / 100；命中：exercise、heart、monitoring、post、rate、recovery、variability]\n  [PMID: 28611675](https://pubmed.ncbi.nlm.nih.gov/28611675/)\n  Cardiac Autonomic Responses during Exercise and Post-exercise Recovery Using Heart Rate Variability and Systolic Time Intervals-A Review.\n  Michael, Scott et al. — Frontiers in physiology（发表：2017）\n  元数据指纹：c5b7fdc6d307a95c\n  DOI: 10.3389/fphys.2017.00301\n  原始检索截止日：未从 PubMed 摘要提取；引用前须核对原文方法\n\n[已验证 · PubMed；匹配度 91 / 100；命中：exercise、heart、monitoring、post、rate、recovery、variability]\n  [PMID: 26888648](https://pubmed.ncbi.nlm.nih.gov/26888648/)\n  Monitoring Athletic Training Status Through Autonomic Heart Rate Regulation: A Systematic Review and Meta-Analysis.\n  Bellenger, Clint R et al. — Sports medicine (Auckland, N.Z.)（发表：2016）\n  元数据指纹：915c98220dc8f6ce\n  DOI: 10.1007/s40279-016-0484-2\n  原始检索截止日：未从 PubMed 摘要提取；引用前须核对原文方法\n\n[已验证 · PubMed；匹配度 91 / 100；命中：exercise、heart、monitoring、post、rate、recovery、variability]\n  [PMID: 2056900](https://pubmed.ncbi.nlm.nih.gov/2056900/)\n  Effects of steady state exercise on the power spectrum of heart rate variability.\n  Kamath, M V et al. — Medicine and science in sports and exercise（发表：1991）\n  元数据指纹：b3d7ed71caf87162",
+      "is_error": false
+    },
+    {
+      "turn": 4,
+      "tool": "write_file",
+      "input": "{\"path\": \"output/paired/evidence-task.md\", \"content\": \"# 运动疲劳康复科研证据任务包（GALEN-FATIGUE-01）\\n\\n- 研究范围来源：`inputs/study-constraints.md`（协议 GALEN-FATIGUE-01）\\n- 受试者：12 名健康受试者\\n- 核心变量：HRV、CMJ、RPE\\n- 观察窗：训练后 0、24、48、72 小时\\n- 数据字典证据代码：REHABID-FATIGUE-48\\n\\n> 证据覆盖声明：本轮检索仅覆盖 PubMed（3 组检索式，每组检出 30 篇候选，展示前 10 篇）",
+      "output": "{\"artifact\":{\"contentHash\":\"a36470f025ac4cd5\",\"createdAt\":\"1789154504448\",\"id\":\"art-1789154504448-a36470f0\",\"kind\":\"document\",\"mimeType\":\"text/markdown\",\"nodeId\":\"delivery\",\"path\":\"output/paired/evidence-task.md\",\"size\":12411,\"source\":\"agent\",\"taskId\":\"evidence-task-1789154504450059300\"},\"file_path\":\"\\\\\\\\?\\\\C:\\\\Users\\\\labops\\\\AppData\\\\Local\\\\Temp\\\\galen-evals\\\\PTOOL02-large-full-galen-20260912-corrected-v2-full_galen-1\\\\output\\\\paired\\\\evidence-task.md\",\"research_task\":{\"activeContext\":{\"activeArtifacts\":[],\"constraints\":[],\"excludedScope\":[],\"researchQuestion\":\"交付工作区产物 output/paired/evidence-task.md\",\"revisionNote\":\"\",\"scope\":[\"evidence-task\"],\"timepoints\":[],\"variables\":[]},\"artifactIds\":[\"art-1789154504448-a36470f0\"],\"createdAt\":\"1789154504450\",\"evidenceIds\":[],\"goal\":\"交付工作区产物 output/paired/evidence-task.md\",\"nodes\":[{\"approvalRequired\":false,\"description\":\"由 Galen 自动创建并登记的工作区产物\",\"id\":\"delivery\",\"index\":\"01\",\"outputs\":[\"output/paired/evidence-task.md\"],\"owner\":\"Galen\",\"result\":\"已生成产物 output/paired/evidence-task.md\",\"riskLevel\":\"low\",\"status\":\"completed\",\"tags\":[\"auto-created\"],\"title\":\"直接交付\",\"type\":\"delivery\"}],\"revision\":2,\"schemaVersion\":2,\"status\":\"deliverable\",\"taskId\":\"evidence-task-1789154504450059300\",\"title\":\"evidence-task\",\"updatedAt\":\"1789154504456\"},\"status\":\"delivered\"}",
+      "is_error": false
+    },
+    {
+      "turn": 5,
+      "tool": "__convergence__",
+      "input": "",
+      "output": "final turn: tools stripped",
+      "is_error": false
+    }
+  ],
+  "context": {
+    "compactions": 0,
+    "required_facts": 4,
+    "retained_facts": 4,
+    "summary_field_coverage": null
+  },
+  "grounding": {
+    "required_evidence": 0,
+    "retrieved_required": 0,
+    "cited_required": 0,
+    "forbidden_hits": 0,
+    "local_search_calls": 0,
+    "external_search_calls": 3,
+    "retrieved_evidence_ids": []
+  },
+  "artifacts": {
+    "required": 1,
+    "valid": 1,
+    "previewable": 1,
+    "files": [
+      "output/paired/evidence-task.md"
+    ]
+  },
+  "assertions": [
+    {
+      "name": "run_completed",
+      "pass": true,
+      "hard_gate": true,
+      "detail": "Ok"
+    },
+    {
+      "name": "model_request_budget",
+      "pass": true,
+      "hard_gate": true,
+      "detail": "5/8"
+    },
+    {
+      "name": "tool_call_budget",
+      "pass": true,
+      "hard_gate": true,
+      "detail": "5/6"
+    },
+    {
+      "name": "no_repeated_call_loop",
+      "pass": true,
+      "hard_gate": true,
+      "detail": "max_repeat=1, limit=2"
+    },
+    {
+      "name": "required_tool:read_file",
+      "pass": true,
+      "hard_gate": true,
+      "detail": "observed=read_file,search_pubmed,write_file"
+    },
+    {
+      "name": "required_tool:write_file",
+      "pass": true,
+      "hard_gate": true,
+      "detail": "observed=read_file,search_pubmed,write_file"
+    },
+    {
+      "name": "required_fact:HRV",
+      "pass": true,
+      "hard_gate": true,
+      "detail": "retained"
+    },
+    {
+      "name": "required_fact:CMJ",
+      "pass": true,
+      "hard_gate": true,
+      "detail": "retained"
+    },
+    {
+      "name": "required_fact:RPE",
+      "pass": true,
+      "hard_gate": true,
+      "detail": "retained"
+    },
+    {
+      "name": "required_fact:来源",
+      "pass": true,
+      "hard_gate": true,
+      "detail": "retained"
+    },
+    {
+      "name": "forbidden_response_pattern:目前没有证据",
+      "pass": true,
+      "hard_gate": true,
+      "detail": "checked final response"
+    },
+    {
+      "name": "required_artifact:output/paired/evidence-task.md",
+      "pass": true,
+      "hard_gate": true,
+      "detail": "present and non-empty"
+    },
+    {
+      "name": "previewable_artifact:output/paired/evidence-task.md",
+      "pass": true,
+      "hard_gate": true,
+      "detail": "supported by Galen preview"
+    }
+  ]
+}

@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { PiSnapshot, ResearchTask } from "../domain/researchTask";
+import type {
+  ActiveResearchContext,
+  PiSnapshot,
+  ResearchTask,
+} from "../domain/researchTask";
 import type { SessionNode } from "../domain/sessionTypes";
 
 export interface TaskEvidenceInput {
@@ -107,6 +111,38 @@ export function useResearchTask(
       return saveQueueRef.current;
     },
     [acceptSnapshot],
+  );
+
+  const updateContext = useCallback(
+    (patch: ActiveResearchContext) => {
+      if (!task) return Promise.reject(new Error("当前没有活动研究任务"));
+      const operation = saveQueueRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          const saved = await invoke<ResearchTask>("update_research_context", {
+            taskId: task.taskId,
+            expectedRevision: revisionRef.current,
+            patch,
+          });
+          acceptSnapshot(saved);
+          setError(null);
+          return saved;
+        })
+        .catch(async (cause) => {
+          const message = String(cause);
+          setError(message);
+          if (message.includes("RESEARCH_TASK_CONFLICT")) {
+            await restore().catch(() => undefined);
+          }
+          throw cause;
+        });
+      saveQueueRef.current = operation.then(
+        () => undefined,
+        () => undefined,
+      );
+      return operation;
+    },
+    [acceptSnapshot, restore, task],
   );
 
   const runPiCommand = useCallback(
@@ -223,6 +259,7 @@ export function useResearchTask(
     approveNode,
     assignNode,
     appendEvidence,
+    updateContext,
     acceptSnapshot,
     flushWrites,
     restore,

@@ -4,6 +4,7 @@ import type {
   RehabGoldenEvalReport,
 } from "../domain/rehabContext";
 import type { ArtifactRecord } from "../domain/artifact";
+import { resolveE2eConnectorProfile } from "./demoConnectorProfile";
 
 type Callback = (payload: unknown) => void;
 
@@ -246,8 +247,10 @@ function summary(bundle: RehabCaseBundle): RehabCaseSummary {
 
 export function installE2eTauriBackend(): void {
   const e2eMode = new URLSearchParams(window.location.search).get("e2e");
-  if (window.__TAURI_INTERNALS__ || (e2eMode !== "1" && e2eMode !== "cohort")) return;
+  if (window.__TAURI_INTERNALS__ || (e2eMode !== "1" && e2eMode !== "cohort" && e2eMode !== "personal")) return;
   const cohortDemo = e2eMode === "cohort";
+  const personalDemo = e2eMode === "personal";
+  const personalProfile = resolveE2eConnectorProfile("personal", "rehabgpt");
 
   let bundle: RehabCaseBundle | null = null;
   let callbackId = 0;
@@ -343,10 +346,26 @@ export function installE2eTauriBackend(): void {
         case "get_memory_status": return { exists: true, size: 3, preview: "AIS cohort context" };
         case "get_conversation_decisions": return [];
         case "get_active_research_task": return activeTask;
-        case "discover_research_data_source": return cohortDemo ? {
-          sourceId: "rehab-workbench",
-          sourceLabel: "康复师工作台",
-          exportPath: "C:\\Users\\labops\\AppData\\Local\\Rehab\\GalenConnector\\latest.json",
+        case "discover_research_data_source": {
+          if (personalDemo) {
+            return {
+              ...personalProfile,
+              exportedAt: 1789000000000,
+              connectionMode: "live_bridge",
+              canImport: true,
+              message: "已发现 1 个个人 RehabID，包含最近 14 天训练、疼痛与量表记录。",
+            };
+          }
+          const isRehabGpt = String(args.sourceId ?? "") === "rehabgpt";
+          const sourceId = isRehabGpt ? "rehabgpt" : "rehab-workbench";
+          const sourceLabel = isRehabGpt ? "RehabGPT 患者端" : "康复师工作台";
+          const exportPath = isRehabGpt
+            ? "C:\\Users\\labops\\AppData\\Local\\RehabGPT\\GalenConnector\\latest.json"
+            : "C:\\Users\\labops\\AppData\\Local\\Rehab\\GalenConnector\\latest.json";
+          return cohortDemo ? {
+          sourceId,
+          sourceLabel,
+          exportPath,
           exportedAt: 1789000000000,
           connectionMode: "live_bridge",
           patientCount: 12,
@@ -358,9 +377,9 @@ export function installE2eTauriBackend(): void {
           canImport: true,
           message: "已发现 12 个 RehabID 候选、48 个评估时间点和 204 条数值观察。",
         } : {
-          sourceId: "rehab-workbench",
-          sourceLabel: "康复师工作台",
-          exportPath: "C:\\Users\\labops\\Downloads\\rehab-backup-2026-09-10.json",
+          sourceId,
+          sourceLabel,
+          exportPath,
           exportedAt: 1789000000000,
           connectionMode: "live_bridge",
           patientCount: 1,
@@ -372,7 +391,25 @@ export function installE2eTauriBackend(): void {
           canImport: true,
           message: "已发现 1 个 RehabID 候选、3 个评估时间点和 12 条数值观察。",
         };
-        case "import_research_data_source": return cohortDemo ? {
+        }
+        case "import_research_data_source": return personalDemo ? {
+          caseIds: personalProfile.cases.map((item) => item.caseId),
+          importedEventCount: personalProfile.timepointCount,
+          importedObservationCount: personalProfile.measurementCount,
+          skippedObservationCount: 0,
+          receipt: {
+            id: personalProfile.receiptId,
+            path: personalProfile.receiptPath,
+            kind: "file",
+            mimeType: "application/json",
+            size: personalProfile.receiptSize,
+            contentHash: personalProfile.receiptHash,
+            taskId: null,
+            nodeId: null,
+            createdAt: "2026-09-13T22:00:00+08:00",
+            source: "agent",
+          },
+        } : cohortDemo ? {
           caseIds: cohortCases.map((item) => item.caseId),
           importedEventCount: 48,
           importedObservationCount: 204,
@@ -424,6 +461,35 @@ export function installE2eTauriBackend(): void {
           };
           return activeTask;
         }
+        case "update_research_context": {
+          if (!activeTask) throw new Error("research task not found");
+          const patch = (args.patch ?? {}) as Record<string, unknown>;
+          const previous = (activeTask as Record<string, unknown>).activeContext as Record<string, unknown> | undefined;
+          const merge = (key: string) => {
+            const values = [
+              ...(Array.isArray(previous?.[key]) ? previous?.[key] as unknown[] : []),
+              ...(Array.isArray(patch[key]) ? patch[key] as unknown[] : []),
+            ].map(String).filter(Boolean);
+            return [...new Set(values)];
+          };
+          (activeTask as Record<string, unknown>).activeContext = {
+            researchQuestion: String(patch.researchQuestion ?? previous?.researchQuestion ?? ""),
+            scope: merge("scope"),
+            constraints: merge("constraints"),
+            variables: merge("variables"),
+            timepoints: merge("timepoints"),
+            activeArtifacts: merge("activeArtifacts"),
+            excludedScope: merge("excludedScope"),
+            revisionNote: String(patch.revisionNote ?? previous?.revisionNote ?? ""),
+          };
+          const currentRevision = Number((activeTask as unknown as { revision: number }).revision ?? 0);
+          activeTask = {
+            ...activeTask,
+            revision: currentRevision + 1,
+            updatedAt: new Date().toISOString(),
+          };
+          return activeTask;
+        }
         case "pi_start_node":
         case "pi_complete_node":
         case "pi_approve_node":
@@ -435,6 +501,20 @@ export function installE2eTauriBackend(): void {
         case "send_message": {
           const message = String(args.message ?? "");
           const tag = args.tag ? String(args.tag) : undefined;
+          if (personalDemo && /RID-CHILD-014|RehabGPT/.test(message) && /研究|假设|变化|分析|趋势/.test(message)) {
+            emitChat(
+              "已读取 RID-CHILD-014 最近 14 天的训练、疼痛与量表时间轴。\n\n" +
+              "发现：训练完成率由 86% 降至 57%，疼痛评分由 2 升至 5，功能量表总分同步下降。\n\n" +
+              "研究假设：训练依从性下降与疼痛上升的耦合变化，可预测下一周功能量表的下降风险。\n\n" +
+              "<!-- PLAN_START -->\n" +
+              "01. 数据质控与时间对齐 — 核对 14 个连续日的训练、疼痛与量表记录\n" +
+              "02. 变化点与关联分析 — 标记依从性下降、疼痛上升与量表变化的时间关系\n" +
+              "03. 验证方案 — 扩展至同类居家康复记录，验证该变化模式的可重复性\n" +
+              "<!-- PLAN_END -->",
+              tag,
+            );
+            return null;
+          }
           if (cohortDemo && /运动疲劳|RehabID/.test(message) && /论文|研究|比较|分析/.test(message) && !message.includes("计划已确认") && !message.includes("[计划完成]")) {
             emitChat(
                 "已读取 12 个 RehabID 的连续恢复时间轴，并生成可执行研究计划。\n\n" +

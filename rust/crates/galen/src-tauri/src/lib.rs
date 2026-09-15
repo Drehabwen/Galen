@@ -108,6 +108,7 @@ pub fn run() {
             commands::get_literature_coverage,
             commands::get_artifacts,
             commands::create_research_task,
+            commands::update_research_context,
             commands::get_active_research_task,
             commands::get_pi_snapshot,
             commands::get_pi_events,

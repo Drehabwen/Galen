@@ -189,6 +189,8 @@ fn count_at_declared_paths(value: &Value, paths: &[&str]) -> Option<usize> {
 
 pub struct CreateResearchPlan;
 
+pub struct UpdateResearchContext;
+
 #[derive(Debug, Deserialize)]
 struct PlanInput {
     title: String,
@@ -290,6 +292,64 @@ impl GalenTool for CreateResearchPlan {
     }
 }
 
+#[async_trait]
+impl GalenTool for UpdateResearchContext {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: "update_research_context".into(),
+            description: Some(
+                "Merge new research scope, search constraints, variables, or timepoints into the active project without dropping earlier decisions. Use excluded_scope for an intentional removal.".into(),
+            ),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "researchQuestion": {"type": "string"},
+                    "scope": {"type": "array", "items": {"type": "string"}},
+                    "constraints": {"type": "array", "items": {"type": "string"}},
+                    "variables": {"type": "array", "items": {"type": "string"}},
+                    "timepoints": {"type": "array", "items": {"type": "string"}},
+                    "activeArtifacts": {"type": "array", "items": {"type": "string"}},
+                    "excludedScope": {"type": "array", "items": {"type": "string"}},
+                    "revisionNote": {"type": "string"}
+                }
+            }),
+        }
+    }
+
+    fn is_write(&self) -> bool {
+        true
+    }
+
+    async fn execute(&self, input: Value, ctx: &ToolContext) -> Result<String, String> {
+        let patch: crate::research_task::ActiveResearchContext =
+            serde_json::from_value(input).map_err(|error| format!("context patch invalid: {error}"))?;
+        let root = ctx
+            .workspace_root
+            .lock()
+            .map_err(|error| format!("workspace lock failed: {error}"))?
+            .clone()
+            .ok_or("workspace is not selected")?;
+        let current = crate::research_task::load_active_task(&root)?
+            .ok_or("no active research task")?;
+        let task = crate::research_task::update_active_context(
+            &root,
+            &current.task_id,
+            current.revision,
+            patch,
+        )?;
+        crate::pi_event::append_event(
+            &root,
+            &task.task_id,
+            None,
+            crate::pi_event::PiEventKind::ContextUpdated,
+            &format!("context-updated:{}", task.revision),
+            json!({"revision": task.revision, "activeContext": task.active_context}),
+        )?;
+        ctx.send_event(ChatEvent::ResearchTaskUpdated(task.clone()));
+        serde_json::to_string(&task).map_err(|error| format!("context update serialization failed: {error}"))
+    }
+}
+
 #[cfg(test)]
 mod search_catalog_tests {
     use super::*;
@@ -325,5 +385,12 @@ mod search_catalog_tests {
             assert!(recognized_mcp_search("cnki", tool).is_none(), "{tool}");
         }
         assert!(recognized_mcp_search("unrelated-server", "crossref_search_works").is_none());
+    }
+
+    #[test]
+    fn context_update_tool_is_a_write_operation() {
+        let tool = UpdateResearchContext;
+        assert!(tool.is_write());
+        assert!(tool.definition().name == "update_research_context");
     }
 }

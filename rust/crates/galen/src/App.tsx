@@ -116,12 +116,10 @@ export default function App() {
   useAppShortcuts(modeState.modes, modeState.switchMode, chat.clear);
 
   // ---- Actions ----
-  const handleSend = async () => {
-    if (!input.trim() || chat.sending) return;
-    const message = input.trim();
+  const handleResearchPrompt = async (message: string): Promise<boolean> => {
+    if (!message.trim() || chat.sending) return false;
     const intent = parseConnectorIntent(message);
     if (intent) {
-      setInput("");
       setActiveView("execution-thread");
       setConnectorIntent(intent);
       setConnectorPreview(null);
@@ -130,7 +128,7 @@ export default function App() {
       chat.appendLocalMessage({ role: "user", content: message, timestamp: Date.now() });
       if (!chat.backendAvailable) {
         setConnectorError("当前是浏览器预览模式；请启动 Galen 桌面端后再读取本地工作台数据。");
-        return;
+        return true;
       }
       setConnectorLoading(true);
       try {
@@ -144,11 +142,11 @@ export default function App() {
       } finally {
         setConnectorLoading(false);
       }
-      return;
+      return true;
     }
     if (!model) {
       setShowWelcome(true);
-      return;
+      return false;
     }
     chat.send(
       message,
@@ -157,7 +155,15 @@ export default function App() {
       "medical",
       thinkingLevel,
     );
-    setInput("");
+    return true;
+  };
+
+  const handleSend = async () => {
+    const message = input.trim();
+    if (!message || chat.sending) return;
+    if (await handleResearchPrompt(message)) {
+      setInput("");
+    }
   };
 
   const handleConfirmConnector = async () => {
@@ -355,6 +361,11 @@ export default function App() {
                   preview={connectorPreview}
                   result={connectorResult}
                   latestAssessments={connectorIntent?.latestAssessments}
+                  onContinueResearch={() => {
+                    setConnectorPreview(null);
+                    setConnectorResult(null);
+                    setActiveView("execution-thread");
+                  }}
                 />
               ) : (
                 <>
@@ -461,12 +472,7 @@ export default function App() {
             }}
             onAgentPrompt={(prompt: string) => {
               setActiveView("execution-thread");
-              chat.send(
-                prompt,
-                model || "",
-                modeState.mode,
-                "medical",
-              );
+              void handleResearchPrompt(prompt);
             }}
           />
         ) : activeView === "data-quality" ? (
