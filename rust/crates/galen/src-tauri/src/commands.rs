@@ -855,7 +855,7 @@ mod tests {
             created_at: "2026-09-07".into(),
         }];
         assert_eq!(
-            cited_pmids(&evidence),
+            research::cited_pmids(&evidence),
             vec!["12345678".to_string(), "23456789".to_string()]
         );
     }

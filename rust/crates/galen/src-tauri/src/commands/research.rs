@@ -335,7 +335,7 @@ pub async fn export_evidence_citations(
     crate::artifact::register_file(&root, &relative_path, task_id, None)
 }
 
-fn cited_pmids(evidence: &[crate::evidence::Evidence]) -> Vec<String> {
+pub(super) fn cited_pmids(evidence: &[crate::evidence::Evidence]) -> Vec<String> {
     let mut ids = BTreeSet::new();
     for item in evidence {
         let text = format!(
