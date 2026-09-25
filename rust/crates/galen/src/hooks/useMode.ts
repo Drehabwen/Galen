@@ -14,11 +14,27 @@ export function useMode() {
   const backendAvailable = isTauriRuntime();
   const [mode, setMode] = useState<ChatMode>("auto");
   const [modes, setModes] = useState<ModeMeta[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!backendAvailable) return;
-    invoke<ModeMeta[]>("get_modes").then(setModes).catch(() => {});
-    invoke<ChatMode>("get_mode").then(setMode).catch(() => {});
+    let cancelled = false;
+    Promise.all([
+      invoke<ModeMeta[]>("get_modes"),
+      invoke<ChatMode>("get_mode"),
+    ])
+      .then(([nextModes, nextMode]) => {
+        if (cancelled) return;
+        setModes(nextModes);
+        setMode(nextMode);
+        setError(null);
+      })
+      .catch((cause) => {
+        if (!cancelled) setError(`无法加载工作模式：${String(cause)}`);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [backendAvailable]);
 
   const switchMode = useCallback(
@@ -27,8 +43,9 @@ export function useMode() {
       try {
         await invoke("set_mode", { mode: newMode });
         setMode(newMode);
+        setError(null);
       } catch (e) {
-        console.error("Failed to set mode:", e);
+        setError(`无法切换工作模式：${String(e)}`);
       }
     },
     [backendAvailable],
@@ -38,5 +55,5 @@ export function useMode() {
   const label = meta?.label ?? mode;
   const description = meta?.description ?? "";
 
-  return { mode, modes, label, description, switchMode };
+  return { mode, modes, label, description, error, switchMode };
 }

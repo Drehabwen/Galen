@@ -453,6 +453,7 @@ mod tests {
             input: r#"{"path":"inputs/eligibility.md"}"#.to_string(),
             output: "排除近 3 个月肉毒毒素注射；内部证据代码 E-TOOL-29。".to_string(),
             is_error: false,
+            error_class: None,
         }];
         append_exchange(
             &workspace,

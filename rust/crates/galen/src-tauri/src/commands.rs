@@ -371,6 +371,7 @@ pub async fn send_message(
     persona_id: String,
     tag: Option<String>, // Session tag for event isolation (empty = main chat)
     thinking_level: Option<String>,
+    context_update: Option<bool>,
 ) -> Result<(), String> {
     let thinking_level = thinking_level.unwrap_or_else(|| "low".to_string());
     // Phase 1: extract all needed data from locked state (before any .await)
@@ -435,6 +436,18 @@ pub async fn send_message(
         let tool_traces = Arc::new(Mutex::new(Vec::<crate::backend::ToolTrace>::new()));
         let persisted_model = model_alias.clone();
         let persisted_user = message.clone();
+        let model_message = match crate::execution_context::prepare_model_message(
+            workspace_path.as_deref(),
+            &message,
+            context_update.unwrap_or(true),
+        ) {
+            Ok(message) => message,
+            Err(error) => {
+                let ename = format!("chat-error{err_tag}");
+                let _ = window_clone.emit(&ename, &error);
+                return;
+            }
+        };
         let started_at_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|duration| duration.as_millis() as u64)
@@ -442,7 +455,7 @@ pub async fn send_message(
         let result = backend::run_chat(
             model_alias,
             model_id,
-            message,
+            model_message,
             input_messages,
             mode,
             persona,
@@ -637,6 +650,7 @@ fn archive_topic_context(root: &std::path::Path) -> Result<(), String> {
     for relative in [
         "GALEN.md",
         ".galen/conversation-decisions.jsonl",
+        ".galen/execution-context.json",
         ".galen/active-task.json",
         "plan.json",
     ] {
@@ -678,31 +692,6 @@ pub async fn get_mcp_status() -> Vec<McpServerStatus> {
 // API key management
 // ---------------------------------------------------------------------------
 
-/// Minimal default models.toml template — user only provides API key.
-/// Provider defaults to DeepSeek (the most common choice for Chinese users),
-/// but the file can be hand-edited for any OpenAI-compatible provider.
-const DEFAULT_MODEL_TEMPLATE: &str = r#"[router]
-default = "deepseek-v4-flash"
-fast = "deepseek-v4-flash"
-analysis = "deepseek-v4-pro"
-
-[models.deepseek-v4-pro]
-provider = "openai_compat"
-api_key = "{api_key}"
-model_id = "deepseek-v4-pro"
-base_url = "https://api.deepseek.com/v1"
-description = "DeepSeek V4 Pro（深度研究）"
-max_tokens = 32768
-
-[models.deepseek-v4-flash]
-provider = "openai_compat"
-api_key = "{api_key}"
-model_id = "deepseek-v4-flash"
-base_url = "https://api.deepseek.com/v1"
-description = "DeepSeek V4 Flash（默认，快速）"
-max_tokens = 32768
-"#;
-
 #[tauri::command]
 pub fn save_api_key(
     state: State<AppState>,
@@ -728,6 +717,9 @@ fn persist_models_config(
     api_key: &str,
     default_model: Option<&str>,
 ) -> Result<model_router::ModelRouter, String> {
+    if api_key.trim().is_empty() {
+        return Err("API Key 不能为空".to_string());
+    }
     let content = if models_path.exists() {
         let existing =
             std::fs::read_to_string(&models_path).map_err(|e| format!("读取配置失败: {e}"))?;
@@ -751,8 +743,15 @@ fn persist_models_config(
                         }
                     }
                 }
-                // 设置默认模型（Pro / Flash）
+                // Only accept an alias already present in the user's catalog.
                 if let Some(default) = default_model {
+                    let exists = value
+                        .get("models")
+                        .and_then(toml::Value::as_table)
+                        .is_some_and(|models| models.contains_key(default));
+                    if !exists {
+                        return Err(format!("默认模型不存在于当前配置: {default}"));
+                    }
                     if let Some(router) = value.get_mut("router").and_then(|r| r.as_table_mut()) {
                         router.insert(
                             "default".to_string(),
@@ -763,15 +762,21 @@ fn persist_models_config(
                 if updated_any {
                     toml::to_string_pretty(&value).map_err(|e| format!("序列化配置失败: {e}"))?
                 } else {
-                    format!(
-                        "{existing}\n\n[models.imported]\nprovider = \"openai_compat\"\napi_key = \"{api_key}\"\nmodel_id = \"deepseek-v4-pro\"\nbase_url = \"https://api.deepseek.com/v1\"\n"
-                    )
+                    value
+                        .get_mut("models")
+                        .and_then(toml::Value::as_table_mut)
+                        .ok_or_else(|| "模型配置缺少 [models] 表".to_string())?
+                        .insert(
+                            "imported".to_string(),
+                            crate::model_defaults::imported_deepseek_model(api_key),
+                        );
+                    toml::to_string_pretty(&value).map_err(|e| format!("序列化配置失败: {e}"))?
                 }
             }
-            Err(_) => template_with_default(api_key, default_model),
+            Err(_) => template_with_default(api_key, default_model)?,
         }
     } else {
-        template_with_default(api_key, default_model)
+        template_with_default(api_key, default_model)?
     };
 
     // Validate the exact content before replacing the active configuration.
@@ -787,15 +792,8 @@ fn persist_models_config(
     Ok(router)
 }
 
-fn template_with_default(api_key: &str, default_model: Option<&str>) -> String {
-    let mut content = DEFAULT_MODEL_TEMPLATE.replace("{api_key}", api_key);
-    if let Some(default) = default_model {
-        content = content.replace(
-            "default = \"deepseek-v4-flash\"",
-            &format!("default = \"{default}\""),
-        );
-    }
-    content
+fn template_with_default(api_key: &str, default_model: Option<&str>) -> Result<String, String> {
+    crate::model_defaults::default_models_toml(api_key, default_model)
 }
 
 #[cfg(test)]
@@ -804,7 +802,7 @@ mod tests {
 
     #[test]
     fn template_injects_key_and_default() {
-        let t = template_with_default("sk-test-123", Some("deepseek-v4-flash"));
+        let t = template_with_default("sk-test-123", Some("deepseek-v4-flash")).unwrap();
         assert!(t.contains("default = \"deepseek-v4-flash\""));
         assert!(t.contains("api_key = \"sk-test-123\""));
         assert!(t.contains("[models.deepseek-v4-pro]"));
@@ -812,7 +810,7 @@ mod tests {
 
     #[test]
     fn template_defaults_to_flash_and_routes_analysis_to_pro() {
-        let t = template_with_default("sk-test", None);
+        let t = template_with_default("sk-test", None).unwrap();
         assert!(t.contains("default = \"deepseek-v4-flash\""));
         assert!(t.contains("analysis = \"deepseek-v4-pro\""));
     }
@@ -838,6 +836,26 @@ mod tests {
             .to_provider_config("deepseek-v4-pro")
             .and_then(|config| config.api_key().map(str::to_owned))
             .is_some());
+
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn persisted_config_rejects_unknown_existing_default() {
+        let dir = std::env::temp_dir().join(format!(
+            "galen-model-config-invalid-default-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("models.toml");
+        std::fs::write(
+            &path,
+            "[router]\ndefault = \"configured\"\n[models.configured]\nprovider = \"openai_compat\"\nmodel_id = \"configured\"\n",
+        )
+        .unwrap();
+
+        let result = persist_models_config(&path, "sk-test", Some("missing"));
+        assert!(result.is_err());
 
         std::fs::remove_dir_all(dir).unwrap();
     }
@@ -873,9 +891,15 @@ mod tests {
         std::fs::create_dir_all(root.join(".galen")).unwrap();
         std::fs::write(root.join("GALEN.md"), "旧课题记忆").unwrap();
         std::fs::write(root.join(".galen").join("active-task.json"), "{}").unwrap();
+        std::fs::write(
+            root.join(".galen").join("execution-context.json"),
+            "{\"version\":1}",
+        )
+        .unwrap();
         archive_topic_context(&root).unwrap();
         assert!(!root.join("GALEN.md").exists());
         assert!(!root.join(".galen").join("active-task.json").exists());
+        assert!(!root.join(".galen").join("execution-context.json").exists());
         let archive = std::fs::read_dir(root.join(".galen").join("topic-archives"))
             .unwrap()
             .next()
@@ -887,6 +911,7 @@ mod tests {
             "旧课题记忆"
         );
         assert!(archive.join(".galen_active-task.json").exists());
+        assert!(archive.join(".galen_execution-context.json").exists());
         let _ = std::fs::remove_dir_all(root);
     }
 }

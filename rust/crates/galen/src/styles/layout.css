@@ -1770,3 +1770,10 @@
 .insight-timeline-import { padding:9px 12px; color:#0a504d; border:0; border-radius:var(--radius-md); background:#d7f6ef; font:inherit; font-size:12px; font-weight:700; cursor:pointer; }.insight-timeline-import:hover { background:#fff; }.insight-timeline-import:disabled { cursor:wait; opacity:.64; }.insight-timeline-error { grid-column:1 / -1; margin:-7px 0 0; color:#ffd4bb; }
 @media (max-width:900px) { .insight-timeline-bridge { grid-template-columns:1fr; }.insight-timeline-action { justify-content:flex-start; } }
 @media (max-width: 900px) { .insight-header, .insight-status, .insight-bottom-grid { grid-template-columns: 1fr; }.insight-header { display: grid; }.insight-status { align-items: start; }.insight-section-heading { align-items: start; }.insight-section-heading > p { text-align: left; }.insight-header-actions { padding-top: 0; }.insight-bottom-grid { display: grid; } }
+.galen-runtime-error {
+  padding: 8px 16px;
+  border-bottom: 1px solid color-mix(in srgb, var(--error) 28%, transparent);
+  color: var(--error);
+  background: var(--error-muted);
+  font-size: var(--text-sm);
+}

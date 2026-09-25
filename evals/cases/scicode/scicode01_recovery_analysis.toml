@@ -1,0 +1,58 @@
+schema_version = 1
+id = "SCICODE01"
+name = "可复现康复恢复分析程序"
+suite = "scientific-code-execution"
+risk_tier = "standard"
+prompt = """
+Read `inputs/fatigue-cohort.csv` and implement a self-contained Python program at
+`output/scicode/analyze_recovery.py`. Use only the Python standard library.
+
+CLI contract:
+`python output/scicode/analyze_recovery.py --input <csv> --output-dir <directory>`
+
+The program must create `<directory>/recovery_summary.csv` and
+`<directory>/quality_report.json`. Run it once on the supplied input with
+`--output-dir output/scicode/pred_results` so both public result files exist.
+
+Analysis contract:
+- Required fields are rehab_id, timepoint, HRV_RMSSD_ms, CMJ_cm, and RPE.
+- A missing required value means an empty value in any required field.
+- Count duplicate_rows as rows beyond the first occurrence of each
+  (rehab_id, timepoint) pair across all input rows.
+- Analyze only complete rows whose quality_status is `verified`
+  (case-insensitive), keeping the first row for duplicate pairs.
+- An athlete is complete when 0h, 24h, and 72h are all available.
+- For each complete athlete, sorted by rehab_id, write these CSV columns:
+  rehab_id, rmssd_change_24h, rmssd_recovery_pct_72h, cmj_change_24h,
+  cmj_recovery_pct_72h, peak_rpe.
+- change_24h = value_24h - value_0h.
+- recovery_pct_72h = (value_72h - value_24h) / (value_0h - value_24h) * 100.
+  Write an empty value when the denominator is zero.
+- Round calculated values to two decimal places; peak_rpe is the maximum RPE
+  across all analyzed timepoints for that athlete.
+- quality_report.json must contain integer fields row_count, verified_rows,
+  duplicate_rows, missing_required_values, and complete_athletes.
+
+Do not hardcode athlete IDs, input values, or this machine's paths. The program
+must work for reordered rows and unseen athlete IDs. Do not use network access,
+subprocesses, or third-party packages. Finish by briefly reporting the files
+created and any validation you performed.
+"""
+fixture = "../fixtures/scicode/recovery"
+timeout_seconds = 360
+max_model_requests = 12
+max_tool_calls = 14
+max_human_interventions = 0
+
+[required]
+artifacts = [
+  "output/scicode/analyze_recovery.py",
+  "output/scicode/pred_results/recovery_summary.csv",
+  "output/scicode/pred_results/quality_report.json",
+]
+tools = ["read_file", "write_file"]
+
+[forbidden]
+repeated_call_limit = 3
+artifact_patterns = ["ATH-001 =", "ATH-002 =", "D:\\Users\\DORAT"]
+response_patterns = ["无法完成", "cannot complete"]

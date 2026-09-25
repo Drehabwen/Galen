@@ -1,0 +1,10 @@
+{
+  "name": "galen-external-agent-runtimes",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Version-pinned local CLIs for controlled Galen benchmark comparisons.",
+  "dependencies": {
+    "@anthropic-ai/claude-code": "2.1.282",
+    "@openai/codex": "0.157.0"
+  }
+}

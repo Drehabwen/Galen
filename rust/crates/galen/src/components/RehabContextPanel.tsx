@@ -35,8 +35,8 @@ const eventLabel: Record<string, string> = {
 };
 
 export function RehabContextPanel(props: RehabContextPanelProps) {
-  const [sourcePath, setSourcePath] = useState("evals/case-datasets/ais-textbook-pilot-v1/cases.json");
-  const [caseId, setCaseId] = useState("AIS-C025");
+  const [sourcePath, setSourcePath] = useState("");
+  const [caseId, setCaseId] = useState("");
   const bundle = props.activeCase;
 
   if (!props.workspaceSelected) {
@@ -53,10 +53,10 @@ export function RehabContextPanel(props: RehabContextPanelProps) {
         </div>
         <details className="rehab-import">
           <summary>导入示例病例与运行验证</summary>
-          <div><input aria-label="病例集相对路径" value={sourcePath} onChange={(event) => setSourcePath(event.target.value)} />
-          <input aria-label="病例 ID" value={caseId} onChange={(event) => setCaseId(event.target.value)} />
-          <button className="btn btn-primary" disabled={props.loading} onClick={() => props.onImportCase(sourcePath, caseId)}>导入病例</button>
-          <button className="btn btn-ghost rehab-eval-button" disabled={props.loading} onClick={() => props.onRunGoldenJourneys(sourcePath)}>运行黄金旅程</button></div>
+          <div><input aria-label="病例集相对路径" placeholder="相对于当前工作区的数据集路径" value={sourcePath} onChange={(event) => setSourcePath(event.target.value)} />
+          <input aria-label="病例 ID" placeholder="输入病例 ID" value={caseId} onChange={(event) => setCaseId(event.target.value)} />
+          <button className="btn btn-primary" disabled={props.loading || !sourcePath.trim() || !caseId.trim()} onClick={() => props.onImportCase(sourcePath.trim(), caseId.trim())}>导入病例</button>
+          <button className="btn btn-ghost rehab-eval-button" disabled={props.loading || !sourcePath.trim()} onClick={() => props.onRunGoldenJourneys(sourcePath.trim())}>运行黄金旅程</button></div>
         </details>
       </header>
 

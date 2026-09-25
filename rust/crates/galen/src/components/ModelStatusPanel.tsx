@@ -23,7 +23,7 @@ export function ModelStatusPanel({
   onTestConnection,
 }: ModelStatusPanelProps) {
   const initialModel = useMemo(
-    () => statuses.find((status) => status.is_default)?.name ?? statuses[0]?.name ?? "deepseek-v4-flash",
+    () => statuses.find((status) => status.is_default)?.name ?? statuses[0]?.name ?? "",
     [statuses],
   );
   const [apiKey, setApiKey] = useState("");
@@ -36,7 +36,7 @@ export function ModelStatusPanel({
     if (!nextKey) return;
     setSaveState({ kind: "saving" });
     try {
-      await onSaveApiKey(nextKey, defaultModel);
+      await onSaveApiKey(nextKey, defaultModel || undefined);
       setApiKey("");
       const result = await onTestConnection();
       setSaveState({ kind: "ok", message: result });
@@ -116,24 +116,22 @@ export function ModelStatusPanel({
             <label className="welcome-field-label" htmlFor="settings-default-model">
               保存后默认使用
             </label>
-            <select
-              id="settings-default-model"
-              className="settings-model-select"
-              value={defaultModel}
-              onChange={(event) => setDefaultModel(event.target.value)}
-            >
-              {(statuses.length > 0
-                ? statuses
-                : [
-                    { name: "deepseek-v4-flash", model_id: "deepseek-v4-flash" },
-                    { name: "deepseek-v4-pro", model_id: "deepseek-v4-pro" },
-                  ]
-              ).map((status) => (
-                <option key={status.name} value={status.name}>
-                  {status.name} · {status.model_id}
-                </option>
-              ))}
-            </select>
+            {statuses.length > 0 ? (
+              <select
+                id="settings-default-model"
+                className="settings-model-select"
+                value={defaultModel}
+                onChange={(event) => setDefaultModel(event.target.value)}
+              >
+                {statuses.map((status) => (
+                  <option key={status.name} value={status.name}>
+                    {status.name} · {status.model_id}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <p className="model-status-empty">首次保存将使用 Galen 当前推荐的默认模型。</p>
+            )}
 
             <div className="settings-actions">
               <button

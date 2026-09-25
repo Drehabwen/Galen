@@ -17,6 +17,7 @@ import { useArtifactDelivery } from "./hooks/useArtifactDelivery";
 import { useConversationContext } from "./hooks/useConversationContext";
 import { useAppShortcuts } from "./hooks/useAppShortcuts";
 import { useWorkspaceSelection } from "./hooks/useWorkspaceSelection";
+import { useConnectorImport } from "./hooks/useConnectorImport";
 import { ModelStatusPanel } from "./components/ModelStatusPanel";
 import { WorkbenchRail } from "./components/WorkbenchRail";
 import { AppTopBar } from "./components/AppTopBar";
@@ -25,7 +26,6 @@ import { useRehabContext } from "./hooks/useRehabContext";
 import { SourceInspector, type VerifiableSource } from "./components/SourceInspector";
 import { ConnectorDataCanvas } from "./components/ConnectorDataCanvas";
 import type { AnalysisResult, RehabTimelineImportOutput } from "./domain/analysisResult";
-import { parseConnectorIntent, type ConnectorIntent, type ConnectorPreview } from "./domain/connectors";
 
 // These views pull in PDF.js, spreadsheet parsing and evidence visualisation
 // code. Keep them out of the initial workbench chunk; the main execution
@@ -53,6 +53,7 @@ export default function App() {
   const modelConfiguration = useModelConfiguration(chat.backendAvailable);
   const {
     models,
+    error: modelConfigurationError,
     model,
     setModel,
     modelStatuses,
@@ -101,11 +102,13 @@ export default function App() {
   const [activeView, setActiveView] = useState<WorkbenchView>("daily-workbench");
   const [sourceInspector, setSourceInspector] = useState<VerifiableSource | null>(null);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
-  const [connectorIntent, setConnectorIntent] = useState<ConnectorIntent | null>(null);
-  const [connectorPreview, setConnectorPreview] = useState<ConnectorPreview | null>(null);
-  const [connectorLoading, setConnectorLoading] = useState(false);
-  const [connectorError, setConnectorError] = useState<string | null>(null);
-  const [connectorResult, setConnectorResult] = useState<RehabTimelineImportOutput | null>(null);
+  const connector = useConnectorImport({
+    backendAvailable: chat.backendAvailable,
+    workspaceRoot: wsRoot,
+    appendLocalMessage: chat.appendLocalMessage,
+    acceptArtifact: delivery.acceptArtifact,
+    openCase: rehabContext.openCase,
+  });
 
   const packageName = workspace.name;
   const completedNodes = planNodes.filter((node) => node.status === "completed").length;
@@ -116,46 +119,22 @@ export default function App() {
   useAppShortcuts(modeState.modes, modeState.switchMode, chat.clear);
 
   // ---- Actions ----
-  const handleResearchPrompt = async (message: string): Promise<boolean> => {
-    if (!message.trim() || chat.sending) return false;
-    const intent = parseConnectorIntent(message);
-    if (intent) {
-      setActiveView("execution-thread");
-      setConnectorIntent(intent);
-      setConnectorPreview(null);
-      setConnectorResult(null);
-      setConnectorError(null);
-      chat.appendLocalMessage({ role: "user", content: message, timestamp: Date.now() });
-      if (!chat.backendAvailable) {
-        setConnectorError("当前是浏览器预览模式；请启动 Galen 桌面端后再读取本地工作台数据。");
-        return true;
-      }
-      setConnectorLoading(true);
-      try {
-        const preview = await invoke<ConnectorPreview>("discover_research_data_source", {
-          sourceId: intent.sourceId,
-          caseHint: intent.caseHint ?? null,
-        });
-        setConnectorPreview(preview);
-      } catch (cause) {
-        setConnectorError(String(cause));
-      } finally {
-        setConnectorLoading(false);
-      }
-      return true;
-    }
+  const sendMedicalMessage = (message: string): boolean => {
     if (!model) {
       setShowWelcome(true);
       return false;
     }
-    chat.send(
-      message,
-      model || "",
-      modeState.mode,
-      "medical",
-      thinkingLevel,
-    );
+    chat.send(message, model, modeState.mode, "medical", thinkingLevel);
     return true;
+  };
+
+  const handleResearchPrompt = async (message: string): Promise<boolean> => {
+    if (!message.trim() || chat.sending) return false;
+    if (await connector.tryHandlePrompt(message)) {
+      setActiveView("execution-thread");
+      return true;
+    }
+    return sendMedicalMessage(message);
   };
 
   const handleSend = async () => {
@@ -163,33 +142,6 @@ export default function App() {
     if (!message || chat.sending) return;
     if (await handleResearchPrompt(message)) {
       setInput("");
-    }
-  };
-
-  const handleConfirmConnector = async () => {
-    if (!connectorIntent || !connectorPreview || !connectorPreview.canImport) return;
-    if (!wsRoot) {
-      setConnectorError("请先选择研究工作区，再将数据写入 RehabID。");
-      return;
-    }
-    setConnectorLoading(true);
-    setConnectorError(null);
-    try {
-      const imported = await invoke<RehabTimelineImportOutput>("import_research_data_source", {
-        request: {
-          sourceId: connectorIntent.sourceId,
-          exportPath: connectorPreview.exportPath,
-          caseIds: connectorPreview.cases.map((item) => item.caseId),
-          latestAssessments: connectorIntent.latestAssessments ?? null,
-        },
-      });
-      setConnectorResult(imported);
-      delivery.acceptArtifact(imported.receipt);
-      if (imported.caseIds[0]) await rehabContext.openCase(imported.caseIds[0]);
-    } catch (cause) {
-      setConnectorError(String(cause));
-    } finally {
-      setConnectorLoading(false);
     }
   };
 
@@ -202,10 +154,7 @@ export default function App() {
       execution.resetForNewTopic();
       delivery.clearTopicView();
       setAnalysisResult(null);
-      setConnectorIntent(null);
-      setConnectorPreview(null);
-      setConnectorError(null);
-      setConnectorResult(null);
+      connector.reset();
       setSourceInspector(null);
       setInput("");
       setActiveView("execution-thread");
@@ -219,23 +168,15 @@ export default function App() {
   // clickable but produced no response.
   const handleThreadApprove = (messageId: number) => {
     const source = chat.messages[messageId]?.content.trim().slice(0, 240) ?? "当前修订建议";
-    chat.send(
+    sendMedicalMessage(
       `接受这条修订建议，并继续执行。建议摘要：${source}`,
-      model || "",
-      modeState.mode,
-      "medical",
-      thinkingLevel,
     );
   };
 
   const handleThreadReject = (messageId: number) => {
     const source = chat.messages[messageId]?.content.trim().slice(0, 240) ?? "当前修订建议";
-    chat.send(
+    sendMedicalMessage(
       `要求修订这条建议：请结合已有证据重新给出可执行版本，并说明改动依据。原建议摘要：${source}`,
-      model || "",
-      modeState.mode,
-      "medical",
-      thinkingLevel,
     );
   };
 
@@ -266,6 +207,12 @@ export default function App() {
         onNewTopic={() => void handleNewTopic()}
       />
 
+      {(workspace.error || modelConfigurationError || modeState.error) && (
+        <div className="galen-runtime-error" role="alert">
+          {workspace.error || modelConfigurationError || modeState.error}
+        </div>
+      )}
+
       {/* ════ Body ════ */}
       <div className="galen-body">
         <Suspense fallback={<ViewLoading />}>
@@ -289,7 +236,7 @@ export default function App() {
                 latestRunMetrics={chat.latestRunMetrics}
                 toolProgress={chat.toolProgress}
                 toolProgressHistory={chat.toolProgressHistory}
-                error={chat.error}
+                error={execution.error ?? chat.error}
                 backendAvailable={chat.backendAvailable}
                 workspaceSelected={Boolean(wsRoot)}
                 input={input}
@@ -309,18 +256,13 @@ export default function App() {
                 onViewEvidence={() => delivery.setCanvasTab("evidence")}
                 onApprove={handleThreadApprove}
                 onReject={handleThreadReject}
-                connectorPreview={connectorPreview}
-                connectorLoading={connectorLoading}
-                connectorError={connectorError}
-                connectorResult={connectorResult}
-                latestAssessments={connectorIntent?.latestAssessments}
-                onConfirmConnector={() => void handleConfirmConnector()}
-                onDismissConnector={() => {
-                  setConnectorIntent(null);
-                  setConnectorPreview(null);
-                  setConnectorError(null);
-                  setConnectorResult(null);
-                }}
+                connectorPreview={connector.preview}
+                connectorLoading={connector.loading}
+                connectorError={connector.error}
+                connectorResult={connector.result}
+                latestAssessments={connector.intent?.latestAssessments}
+                onConfirmConnector={() => void connector.confirm()}
+                onDismissConnector={connector.reset}
               />
             </div>
 
@@ -356,14 +298,13 @@ export default function App() {
                   onApprove={execution.approveNode}
                   onAssign={execution.assignNode}
                 />
-              ) : connectorPreview || connectorResult ? (
+              ) : connector.preview || connector.result ? (
                 <ConnectorDataCanvas
-                  preview={connectorPreview}
-                  result={connectorResult}
-                  latestAssessments={connectorIntent?.latestAssessments}
+                  preview={connector.preview}
+                  result={connector.result}
+                  latestAssessments={connector.intent?.latestAssessments}
                   onContinueResearch={() => {
-                    setConnectorPreview(null);
-                    setConnectorResult(null);
+                    connector.clearCanvas();
                     setActiveView("execution-thread");
                   }}
                 />
@@ -434,17 +375,9 @@ export default function App() {
                         void delivery.openRegisteredArtifact(artifact);
                       }}
                       onSearchChineseEvidence={() => {
-                        if (!model) {
-                          setShowWelcome(true);
-                          return;
-                        }
                         setActiveView("execution-thread");
-                        chat.send(
+                        sendMedicalMessage(
                           "使用已连接的 CNKI MCP 对当前研究问题执行中文文献检索。请直接返回去重后的相关结果、检索式、数据库覆盖状态与可验证链接；不要把 PubMed 结果当作中文证据。",
-                          model,
-                          modeState.mode,
-                          "medical",
-                          thinkingLevel,
                         );
                       }}
                     />
@@ -544,6 +477,7 @@ export default function App() {
           mcpServers={env.mcpServers}
           mode={modeState.mode}
           modes={modeState.modes}
+          models={models}
           onSwitchMode={modeState.switchMode}
         />
       )}

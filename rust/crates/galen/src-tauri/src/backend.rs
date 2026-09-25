@@ -69,6 +69,10 @@ pub struct ToolTrace {
     pub input: String,
     pub output: String,
     pub is_error: bool,
+    /// 失败的粗分类（仅 is_error 时填写），固定小集合，供行为评测与统计：
+    /// breaker / contract / timeout / not_found / policy / stream / exec。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_class: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize)]
@@ -155,14 +159,37 @@ pub(crate) fn record_trace(
 ) {
     if let Some(sink) = sink {
         if let Ok(mut guard) = sink.lock() {
+            let error_class = is_error.then(|| classify_trace_error(&tool, &output));
             guard.push(ToolTrace {
                 turn,
                 tool,
                 input,
                 output,
                 is_error,
+                error_class,
             });
         }
+    }
+}
+
+/// 失败的粗分类（固定小集合，避免任意文本进入轨迹）。
+fn classify_trace_error(tool: &str, output: &str) -> String {
+    let lower = output.to_lowercase();
+    let hit = |needles: &[&str]| needles.iter().any(|needle| lower.contains(needle));
+    if tool == "__breaker__" || hit(&["熔断"]) {
+        "breaker".to_string()
+    } else if hit(&["任务契约", "task contract"]) {
+        "contract".to_string()
+    } else if hit(&["超时", "timeout", "timed out"]) {
+        "timeout".to_string()
+    } else if hit(&["不存在", "not found", "does not exist", "no such file", "cannot find"]) {
+        "not_found".to_string()
+    } else if hit(&["权限", "拒绝", "forbidden", "denied", "not allowed"]) {
+        "policy".to_string()
+    } else if tool == "__stream_retry__" {
+        "stream".to_string()
+    } else {
+        "exec".to_string()
     }
 }
 
@@ -276,7 +303,7 @@ pub fn make_client(model_alias: &str, router: &ModelRouter) -> Result<ProviderCl
                     provider_config
                         .base_url
                         .clone()
-                        .unwrap_or_else(|| "https://api.openai.com/v1".to_string()),
+                        .unwrap_or_else(|| crate::model_defaults::DEFAULT_OPENAI_BASE_URL.to_string()),
                 ),
                 max_request_body_bytes: 104_857_600,
             };
@@ -294,8 +321,7 @@ pub fn make_client(model_alias: &str, router: &ModelRouter) -> Result<ProviderCl
             "模型 \"{model_alias}\" 缺少 API Key：请在 ~/.galen/models.toml 的 [models.{model_alias}] 中填写 api_key"
         ));
     }
-    Err("未配置可用模型：请在 ~/.galen/models.toml 中配置 DeepSeek（默认建议 model_id = \"deepseek-v4-flash\"，provider = \"openai_compat\"，base_url = \"https://api.deepseek.com/v1\"），或重启应用后在欢迎向导中保存 DeepSeek API Key。"
-        .to_string())
+    Err(crate::model_defaults::missing_model_message())
 }
 
 // ---------------------------------------------------------------------------
@@ -361,6 +387,31 @@ mod tests {
         // Current behavior: silently returns empty on malformed input
         let messages = parse_history_json("not valid json");
         assert!(messages.is_empty());
+    }
+
+    #[test]
+    fn trace_error_classification_covers_known_failure_families() {
+        assert_eq!(
+            classify_trace_error("read_file", "[系统熔断] 已阻止重复执行"),
+            "breaker"
+        );
+        assert_eq!(
+            classify_trace_error("write_file", "任务契约拒绝写入 output/x.md"),
+            "contract"
+        );
+        assert_eq!(
+            classify_trace_error("execute_command", "request timed out"),
+            "timeout"
+        );
+        assert_eq!(
+            classify_trace_error("read_file", "Cannot find path 'a' because it does not exist."),
+            "not_found"
+        );
+        assert_eq!(
+            classify_trace_error("__stream_retry__", "stream error"),
+            "stream"
+        );
+        assert_eq!(classify_trace_error("execute_command", "Exit code: 1"), "exec");
     }
 
     #[test]

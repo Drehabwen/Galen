@@ -22,7 +22,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[3]
-CASES = ROOT / "evals" / "cases" / "paired"
+DEFAULT_CASES = ROOT / "evals" / "cases" / "paired"
 
 
 def _redact(value: str) -> str:
@@ -37,15 +37,18 @@ def _redact(value: str) -> str:
     return text
 
 
-def _case(case_id: str) -> dict[str, Any]:
+def _case(case_id: str, cases_dir: Path = DEFAULT_CASES) -> dict[str, Any]:
     # Keep the adapter runnable with the Python 3.10 bundled on Windows.  The
     # paired cards use a deliberately small TOML subset, so parsing only the
     # fields needed for an external run avoids adding a dependency to Galen.
-    path = next(item for item in CASES.glob("*.toml")
+    path = next(item for item in cases_dir.glob("*.toml")
                 if re.search(r'^id\s*=\s*"([^"]+)"', item.read_text(encoding="utf-8"), re.M)
                 and re.search(r'^id\s*=\s*"([^"]+)"', item.read_text(encoding="utf-8"), re.M).group(1).lower() == case_id.lower())
     text = path.read_text(encoding="utf-8")
     def value(key: str, default: str = "") -> str:
+        multiline = re.search(rf'^{key}\s*=\s*"""(.*?)"""', text, re.M | re.S)
+        if multiline:
+            return multiline.group(1).strip()
         match = re.search(rf'^{key}\s*=\s*"([^"]*)"', text, re.M)
         return match.group(1) if match else default
     def array(key: str) -> list[str]:
@@ -86,21 +89,21 @@ def _case(case_id: str) -> dict[str, Any]:
     }
 
 
-def _case_ids() -> list[str]:
+def _case_ids(cases_dir: Path = DEFAULT_CASES) -> list[str]:
     ids: list[str] = []
-    for path in sorted(CASES.glob("*.toml")):
+    for path in sorted(cases_dir.glob("*.toml")):
         match = re.search(r'^id\s*=\s*"([^"]+)"', path.read_text(encoding="utf-8"), re.M)
         if match:
             ids.append(match.group(1))
     return ids
 
 
-def _copy_fixture(case: dict[str, Any], workspace: Path) -> None:
+def _copy_fixture(case: dict[str, Any], workspace: Path, cases_dir: Path = DEFAULT_CASES) -> None:
     fixture = case.get("fixture")
     if not fixture:
         (workspace / "output").mkdir(parents=True, exist_ok=True)
         return
-    source = (CASES.parent / fixture).resolve()
+    source = (cases_dir.parent / fixture).resolve()
     shutil.copytree(source, workspace, dirs_exist_ok=True)
     (workspace / "output").mkdir(parents=True, exist_ok=True)
 
@@ -266,11 +269,20 @@ def _run_codex(
     codex_home: Path | None = None,
     timeout_seconds: int = 300,
 ) -> tuple[str, int, int]:
+    executable = shutil.which("codex")
+    if os.name == "nt":
+        shim = shutil.which("codex.cmd")
+        npm_root = Path(shim).parent if shim else None
+        native = list((npm_root / "node_modules" / "@openai" / "codex").rglob("codex.exe")) if npm_root else []
+        executable = str(native[0]) if native else shim
+    if executable is None:
+        raise FileNotFoundError("Codex CLI was not found on PATH")
     command = [
-        "codex", "exec", "--json", "--ephemeral", "--skip-git-repo-check",
+        executable, "exec", "--json", "--ephemeral", "--skip-git-repo-check",
         "-C", str(workspace), "-s", "danger-full-access", "-c", 'approval_policy="never"',
-        "-o", str(last_message), "-",
+        "-o", str(last_message),
     ]
+    command.append("-")
     started = time.perf_counter()
     environment = os.environ.copy()
     if codex_home is not None:
@@ -393,11 +405,20 @@ def main() -> int:
     parser.add_argument("--case", required=True)
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--cases-dir", type=Path, default=DEFAULT_CASES,
+                        help="directory containing the requested TOML cases")
+    parser.add_argument("--workspace-root", type=Path, default=None,
+                        help="persist each agent workspace below this directory")
     parser.add_argument("--codex-home", type=Path, default=None,
                         help="isolated CODEX_HOME used by the child Codex process")
     parser.add_argument("--model-label", default=None,
                         help="model/provider label recorded in RunRecord output")
     args = parser.parse_args()
+    cases_dir = args.cases_dir.resolve()
+    if not cases_dir.is_dir():
+        parser.error(f"cases directory does not exist: {cases_dir}")
+    if args.output.exists():
+        parser.error(f"refusing to overwrite existing output: {args.output}")
     model_label = args.model_label or os.environ.get("GALEN_EXTERNAL_MODEL", "codex-cli")
     config_hash = "external"
     if args.codex_home is not None:
@@ -406,19 +427,27 @@ def main() -> int:
             config_hash = _hash_file(config_path)[:16]
     args.output.parent.mkdir(parents=True, exist_ok=True)
     if args.case.lower() == "all":
-        requested_cases = _case_ids()
+        requested_cases = _case_ids(cases_dir)
     else:
         requested_cases = [item.strip() for item in args.case.split(",") if item.strip()]
     with args.output.open("w", encoding="utf-8") as destination:
         for case_id in requested_cases:
-            case = _case(case_id)
+            case = _case(case_id, cases_dir)
             for index in range(1, args.repeat + 1):
-                with tempfile.TemporaryDirectory(prefix=f"galen-external-{case_id}-") as directory:
-                    workspace = Path(directory)
-                    _copy_fixture(case, workspace)
+                temporary: tempfile.TemporaryDirectory[str] | None = None
+                if args.workspace_root is None:
+                    temporary = tempfile.TemporaryDirectory(prefix=f"galen-external-{case_id}-")
+                    workspace = Path(temporary.name)
+                else:
+                    workspace = args.workspace_root.resolve() / f"{case_id}-run-{index}"
+                    if workspace.exists():
+                        parser.error(f"refusing to reuse workspace: {workspace}")
+                    workspace.mkdir(parents=True)
+                try:
+                    _copy_fixture(case, workspace, cases_dir)
                     last_message = workspace / ".codex-last-message.md"
-                    raw_path = args.output.parent / "raw-events"
-                    raw_path.mkdir(exist_ok=True)
+                    raw_path = args.output.parent / "raw-events" / args.output.stem
+                    raw_path.mkdir(parents=True, exist_ok=True)
                     raw_file = raw_path / f"{case_id}-{index}.jsonl"
                     response, elapsed, returncode = _run_codex(
                         case["prompt"], workspace, last_message, raw_file, args.codex_home,
@@ -432,6 +461,9 @@ def main() -> int:
                     destination.write(json.dumps(record, ensure_ascii=False) + "\n")
                     destination.flush()
                     print(f"{case_id} run={index} pass={record['hard_gates_passed']} total_ms={elapsed}")
+                finally:
+                    if temporary is not None:
+                        temporary.cleanup()
     return 0
 
 

@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import type { ModelConfig } from "../types";
 
 export type WizardMode = "plan" | "auto";
 
@@ -19,6 +20,7 @@ interface WelcomeWizardProps {
   mode?: WizardMode;
   modes?: Array<{ id: string; label: string; description: string }>;
   onSwitchMode?: (mode: WizardMode) => void;
+  models?: ModelConfig[];
 }
 
 type TestState =
@@ -26,11 +28,6 @@ type TestState =
   | { kind: "testing" }
   | { kind: "ok"; message: string }
   | { kind: "fail"; message: string; errorClass?: "invalid" | "network" | "unknown" };
-
-const MODELS = [
-  { id: "deepseek-v4-flash", label: "DeepSeek V4 Flash", desc: "默认使用，快速响应" },
-  { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro", desc: "深度研究，复杂科研任务" },
-] as const;
 
 type StepKey = "model" | "workspace" | "mode" | "env";
 
@@ -59,10 +56,11 @@ export function WelcomeWizard({
   mode,
   modes = [],
   onSwitchMode,
+  models = [],
 }: WelcomeWizardProps) {
   const [step, setStep] = useState<StepKey>(STEP_ORDER[initialStep] ?? "model");
   const [apiKeyInput, setApiKeyInput] = useState("");
-  const [selectedModel, setSelectedModel] = useState<string>("deepseek-v4-flash");
+  const [selectedModel, setSelectedModel] = useState<string>(() => models[0]?.name ?? "");
   const [apiKeySaved, setApiKeySaved] = useState(false);
   const [testState, setTestState] = useState<TestState>({ kind: "idle" });
   const [workspacePath, setWorkspacePath] = useState<string | null>(null);
@@ -85,7 +83,7 @@ export function WelcomeWizard({
     const key = apiKeyInput.trim();
     if (!key) return;
     try {
-      await onApiKey(key, selectedModel);
+      await onApiKey(key, selectedModel || undefined);
       setApiKeyInput("");
       setApiKeySaved(true);
       setTestState({ kind: "testing" });
@@ -184,18 +182,22 @@ export function WelcomeWizard({
                   密钥只保存在本机（~/.galen/models.toml），不会上传到任何服务器。
                 </p>
 
-                <div className="welcome-model-picker">
-                  {MODELS.map((m) => (
+                {models.length > 0 ? (
+                  <div className="welcome-model-picker">
+                  {models.map((m) => (
                     <button
-                      key={m.id}
-                      className={`welcome-model-option ${selectedModel === m.id ? "active" : ""}`}
-                      onClick={() => setSelectedModel(m.id)}
+                      key={m.name}
+                      className={`welcome-model-option ${selectedModel === m.name ? "active" : ""}`}
+                      onClick={() => setSelectedModel(m.name)}
                     >
-                      <strong>{m.label}</strong>
-                      <span>{m.desc}</span>
+                      <strong>{m.name}</strong>
+                      <span>{m.description || m.model_id}</span>
                     </button>
                   ))}
-                </div>
+                  </div>
+                ) : (
+                  <p className="welcome-note">保存后将使用 Galen 当前推荐的默认模型配置。</p>
+                )}
 
                 {keyConfigured ? (
                   <div className="welcome-key-ok">

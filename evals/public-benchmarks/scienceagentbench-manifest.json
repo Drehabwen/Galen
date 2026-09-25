@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "benchmark": "ScienceAgentBench",
+  "official_score_ready": false,
+  "upstream": {
+    "repository": "https://github.com/OSU-NLP-Group/ScienceAgentBench",
+    "commit": "c26e151ed601ba109dc4d35e057ff8e73fec469d"
+  },
+  "annotation_dataset": {
+    "repository": "osunlp/ScienceAgentBench",
+    "config": "default",
+    "split": "verified",
+    "rows": 102,
+    "columns": 12,
+    "local_file": "evals/public-benchmarks/data/ScienceAgentBench-default-verified-0000.parquet",
+    "sha256": "C6F937863A220BD1762A00C20A0F79CC8DFCA900B819BDB552150310731AE147"
+  },
+  "official_artifacts": {
+    "archive": "benchmark_verified.zip",
+    "expected_local_path": "evals/public-benchmarks/downloads/benchmark_verified.zip",
+    "available_locally": false,
+    "access_status": "sharepoint_http_401_login_required",
+    "required_for_official_scoring": true,
+    "redistribution_allowed": false
+  },
+  "environment": {
+    "docker": false,
+    "conda": false,
+    "uv": "0.11.19",
+    "system_python": "3.14.3",
+    "required_python": "3.10"
+  },
+  "same_model_track": {
+    "provider": "DeepSeek official API",
+    "model_id": "deepseek-flash",
+    "display_model": "DeepSeek-V4.1-Flash",
+    "reasoning_effort": "high",
+    "credential_policy": "runtime-only; DEEPSEEK_API_KEY or local Galen credential; never persisted in benchmark outputs",
+    "runtimes": {
+      "codex": "0.157.0",
+      "claude_code": "2.1.282",
+      "galen": "current workspace build"
+    },
+    "adapter_smoke": {
+      "codex": "passed",
+      "claude_code": "passed_with_unrecognized_model_warning",
+      "codex_host_context_isolation": "failed_on_windows_0.157.0_host_skills_scanned_despite_skip_flag",
+      "comparison_policy": "native-agent track permits each framework's discovered skills; controlled-core track requires matched external context and reports host skill discovery separately",
+      "official_codex_catalog_source": "https://cdn.deepseek.com/api-docs/codex-deepseek-setup-en.ps1",
+      "official_codex_catalog_source_sha256": "816D5970C0535D20E3F7CC2E6C6F3F41F57194FDE26A58ED8103E6C012756ADF"
+    }
+  }
+}

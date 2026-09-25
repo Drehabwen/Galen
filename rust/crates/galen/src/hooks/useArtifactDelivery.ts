@@ -33,9 +33,17 @@ export function useArtifactDelivery(
       setArtifacts([]);
       return;
     }
+    let cancelled = false;
     invoke<ArtifactRecord[]>("get_artifacts")
-      .then(setArtifacts)
-      .catch(() => setArtifacts([]));
+      .then((nextArtifacts) => {
+        if (!cancelled) setArtifacts(nextArtifacts);
+      })
+      .catch(() => {
+        if (!cancelled) setArtifacts([]);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [backendAvailable, workspaceRoot]);
 
   useEffect(() => {

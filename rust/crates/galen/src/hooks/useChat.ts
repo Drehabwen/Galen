@@ -5,6 +5,8 @@ import type { ChatMessage, Paper, FileEntry, ChatRunSummary } from "../types";
 import type { ArtifactRecord } from "../domain/artifact";
 import type { ResearchTask } from "../domain/researchTask";
 import { isTauriRuntime } from "../tauriRuntime";
+import { sendAgentMessage } from "../agentGateway";
+import type { AgentContextPolicy } from "../agentGateway";
 
 export interface ToolProgress {
   turn: number;
@@ -160,6 +162,7 @@ export function useChat(workspaceRoot: string | null) {
       mode?: string,
       personaId?: string,
       thinkingLevel?: string,
+      contextPolicy: AgentContextPolicy = "update",
     ) => {
       if (!text.trim() || sendingRef.current) return;
 
@@ -189,13 +192,14 @@ export function useChat(workspaceRoot: string | null) {
           content: m.content,
         }));
         const historyJson = JSON.stringify(recentMessages);
-        await invoke("send_message", {
+        await sendAgentMessage({
           message: text,
           modelAlias: modelAlias,
           historyJson: historyJson,
           mode: mode || "auto",
           personaId: personaId || "medical",
           thinkingLevel: thinkingLevel || "low",
+          contextPolicy,
         });
       } catch (e) {
         setError(String(e));

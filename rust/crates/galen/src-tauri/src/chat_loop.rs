@@ -160,6 +160,62 @@ fn request_token_budget(
 }
 
 // ---------------------------------------------------------------------------
+// Repeated-failure breaker
+// ---------------------------------------------------------------------------
+
+/// 同一（工具, 参数）连续失败到阈值后阻止再次执行，并在持续重试时升级为收束轮。
+/// 设计对齐评测层 `max_repeat` 硬门，把测试层的循环检测前移为运行时风暴闸门。
+const BREAKER_BLOCK_AFTER_FAILURES: u32 = 2;
+const BREAKER_CONVERGE_AFTER_FAILURES: u32 = 4;
+
+#[derive(Default)]
+struct RepeatedFailureBreaker {
+    failures: HashMap<String, u32>,
+    pub(crate) trips: u32,
+}
+
+impl RepeatedFailureBreaker {
+    fn prior_failures(&self, key: &str) -> u32 {
+        self.failures.get(key).copied().unwrap_or(0)
+    }
+
+    /// 是否应阻止本次执行（同参失败已达阈值）。
+    fn should_block(&self, key: &str) -> bool {
+        self.prior_failures(key) >= BREAKER_BLOCK_AFTER_FAILURES
+    }
+
+    /// 记录一次被阻止的尝试，返回给模型看的熔断提示。
+    fn block_message(&mut self, tool: &str, key: &str) -> String {
+        let count = {
+            let entry = self.failures.entry(key.to_string()).or_insert(0);
+            *entry += 1;
+            *entry
+        };
+        self.trips = self.trips.saturating_add(1);
+        format!(
+            "[系统熔断] 工具 `{tool}` 以完全相同的参数已连续失败 {count} 次，本次已阻止重复执行。\
+             继续重试同一参数只会浪费轮次：请更换工具、参数或数据源；\
+             若无法绕过，请基于已有信息给出当前可交付结论并明确标注缺口。"
+        )
+    }
+
+    /// 同参失败是否已多到直接进入收束轮（下一轮剥离工具）。
+    fn should_converge(&self, key: &str) -> bool {
+        self.prior_failures(key) >= BREAKER_CONVERGE_AFTER_FAILURES
+    }
+
+    /// 记录一次真实执行结果；成功会清零该参数的失败计数。
+    fn record(&mut self, key: &str, is_error: bool) {
+        if is_error {
+            let entry = self.failures.entry(key.to_string()).or_insert(0);
+            *entry += 1;
+        } else {
+            self.failures.remove(key);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Main chat loop
 // ---------------------------------------------------------------------------
 
@@ -241,8 +297,10 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
     // Build tool registry and shared context
     let mut registry = ToolRegistry::configured();
     let mcp_started = Instant::now();
-    // Cache MCP connections globally — connect once, reuse across turns.
-    {
+    // Cache MCP connections globally — connect once, reuse across turns. A
+    // bounded contract that cannot expose MCP tools must not pay their startup
+    // cost (or wait for a broken optional server) before the first token.
+    if !architecture_variant.execution_contract_enabled() || task_contract.requires_mcp() {
         timing_probe("run_chat:mcp_start");
         if let Some(cached) = MCP_CACHE.get() {
             registry.load_mcp_from_cache(cached.clone());
@@ -254,6 +312,8 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
             }
         }
         timing_probe("run_chat:mcp_ready");
+    } else {
+        timing_probe("run_chat:mcp_skipped");
     }
     let mcp_setup_ms = mcp_started.elapsed().as_millis() as u64;
     let on_event: Arc<dyn Fn(ChatEvent) + Send + Sync> = Arc::new(on_event);
@@ -267,10 +327,9 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
 
     // Multi-turn loop: keep going until model responds with text (no tool calls)
     let mut turn = 0;
-    // Long research tasks need a generous internal runway. The ceiling remains
-    // a safety mechanism, but users receive a final synthesis rather than an
-    // exposed "max tool calls" failure.
-    let max_tool_turns = task_contract.max_tool_turns.max(36);
+    // The task contract owns the budget. Raising every task to a global floor
+    // previously turned one-step edits and inspections into long tool loops.
+    let max_tool_turns = task_contract.max_tool_turns;
     let mut last_tool_name: Option<String> = None;
     let mut same_tool_streak: u32 = 0;
     let mut con_error_streak: u32 = 0;
@@ -286,6 +345,7 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
     // large result while never suppressing writes, commands or unknown MCP
     // side effects.
     let mut readonly_tool_cache: HashMap<String, (String, bool)> = HashMap::new();
+    let mut breaker = RepeatedFailureBreaker::default();
     let mut working_memory = WorkingMemory::default();
     let mut run_summary = ChatRunSummary {
         context_assembly_ms,
@@ -843,7 +903,15 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
             let cached = cacheable
                 .then(|| readonly_tool_cache.get(&cache_key).cloned())
                 .flatten();
-            let (text, is_error, cache_hit) = if let Some((text, is_error)) = cached {
+            let (text, is_error, cache_hit) = if breaker.should_block(&cache_key) {
+                // 同参失败熔断：阻止同一（工具, 参数）反复失败的重试风暴。
+                let message = breaker.block_message(&tool.name, &cache_key);
+                if breaker.should_converge(&cache_key) {
+                    final_turn = true;
+                }
+                (message, true, false)
+            } else if let Some((text, is_error)) = cached {
+                breaker.record(&cache_key, is_error);
                 (text, is_error, true)
             } else {
                 let result = if architecture_variant.execution_contract_enabled() {
@@ -864,8 +932,9 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
                     Ok(ok) => (ok, false),
                     Err(error) => (error, true),
                 };
+                breaker.record(&cache_key, is_error);
                 if cacheable {
-                    readonly_tool_cache.insert(cache_key, (text.clone(), is_error));
+                    readonly_tool_cache.insert(cache_key.clone(), (text.clone(), is_error));
                 }
                 (text, is_error, false)
             };
@@ -1006,6 +1075,16 @@ pub async fn run_chat<F: Fn(ChatEvent) + Send + Sync + 'static>(
         system_prompt = build_system_prompt_for_contract(&persona, mode, &task_contract);
     }
 
+    if breaker.trips > 0 {
+        record_trace(
+            &trace,
+            turn,
+            "__breaker__".to_string(),
+            String::new(),
+            format!("repeated-failure breaker trips: {}", breaker.trips),
+            true,
+        );
+    }
     run_summary.total_ms = run_started.elapsed().as_millis() as u64;
     run_summary.compaction_count = compaction_count;
     run_summary.stream_retry_count = stream_retry_count;
@@ -1093,5 +1172,33 @@ mod tests {
             request_token_budget(64_000, false, false, &contract, 0, true),
             1_200
         );
+    }
+
+    #[test]
+    fn breaker_blocks_and_converges_on_repeated_failures() {
+        let mut breaker = RepeatedFailureBreaker::default();
+        let key = "read_file:{\"path\":\"a.md\"}";
+        assert!(!breaker.should_block(key));
+        breaker.record(key, true);
+        assert!(!breaker.should_block(key));
+        breaker.record(key, true);
+        assert!(breaker.should_block(key));
+        let message = breaker.block_message("read_file", key);
+        assert!(message.contains("系统熔断"));
+        assert!(!breaker.should_converge(key));
+        let _ = breaker.block_message("read_file", key);
+        assert!(breaker.should_converge(key));
+        assert_eq!(breaker.trips, 2);
+    }
+
+    #[test]
+    fn breaker_success_resets_failure_streak() {
+        let mut breaker = RepeatedFailureBreaker::default();
+        let key = "execute_command:{}";
+        breaker.record(key, true);
+        breaker.record(key, true);
+        assert!(breaker.should_block(key));
+        breaker.record(key, false);
+        assert!(!breaker.should_block(key));
     }
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { AgentBenchmarkReport, RehabCaseBundle, RehabCaseSummary, RehabGoldenEvalReport } from "../domain/rehabContext";
 
@@ -9,8 +9,10 @@ export function useRehabContext(backendAvailable: boolean, workspaceRoot: string
   const [error, setError] = useState<string | null>(null);
   const [evalReport, setEvalReport] = useState<RehabGoldenEvalReport | null>(null);
   const [agentBenchmark, setAgentBenchmark] = useState<AgentBenchmarkReport | null>(null);
+  const refreshRevision = useRef(0);
 
   const refresh = useCallback(async () => {
+    const revision = ++refreshRevision.current;
     if (!backendAvailable || !workspaceRoot) {
       setCases([]);
       setActiveCase(null);
@@ -18,28 +20,40 @@ export function useRehabContext(backendAvailable: boolean, workspaceRoot: string
     }
     try {
       const nextCases = await invoke<RehabCaseSummary[]>("list_rehab_cases");
+      if (revision !== refreshRevision.current) return;
       setCases(nextCases);
       if (nextCases.length > 0) {
         const selected = activeCase && nextCases.some((item) => item.case_id === activeCase.case_record.case_id)
           ? activeCase.case_record.case_id
           : nextCases[0].case_id;
-        setActiveCase(await invoke<RehabCaseBundle>("get_rehab_case", { caseId: selected }));
+        const nextActiveCase = await invoke<RehabCaseBundle>("get_rehab_case", { caseId: selected });
+        if (revision !== refreshRevision.current) return;
+        setActiveCase(nextActiveCase);
       } else {
         setActiveCase(null);
       }
       setError(null);
     } catch (cause) {
-      setError(String(cause));
+      if (revision === refreshRevision.current) setError(String(cause));
     }
   }, [activeCase, backendAvailable, workspaceRoot]);
 
   useEffect(() => {
+    let cancelled = false;
     void refresh();
     if (backendAvailable && workspaceRoot) {
       invoke<AgentBenchmarkReport>("get_agent_benchmark_report")
-        .then(setAgentBenchmark)
-        .catch(() => setAgentBenchmark(null));
+        .then((report) => {
+          if (!cancelled) setAgentBenchmark(report);
+        })
+        .catch(() => {
+          if (!cancelled) setAgentBenchmark(null);
+        });
     }
+    return () => {
+      cancelled = true;
+      refreshRevision.current += 1;
+    };
     // Active case is deliberately excluded: refresh itself selects it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [backendAvailable, workspaceRoot]);
@@ -79,7 +93,7 @@ export function useRehabContext(backendAvailable: boolean, workspaceRoot: string
         caseId: activeCase.case_record.case_id,
         decisionId,
         optionId,
-        reviewer: "local-human-reviewer",
+        reviewer: null,
       });
       setActiveCase(bundle);
       setCases(await invoke<RehabCaseSummary[]>("list_rehab_cases"));

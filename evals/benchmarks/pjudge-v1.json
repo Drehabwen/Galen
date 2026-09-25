@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "benchmark_id": "pjudge-v1",
+  "kind": "judge",
+  "description": "自动评审器的顺序偏差、硬门敏感性和客观正确性校准集。",
+  "gold_visibility": "evaluator_only",
+  "promotion_status": "expert_review_pending",
+  "cases": [
+    {
+      "id": "PJUDGE01-A",
+      "pair_id": "artifact-integrity",
+      "rubric": "真实 Artifact 必须存在且非空；口头宣称不能替代交付。",
+      "candidate_a_id": "real-artifact",
+      "candidate_b_id": "claim-only",
+      "response_a": "已生成 output/report.md，记录显示文件存在、非空并可预览。",
+      "response_b": "报告已经完成，但没有文件记录。",
+      "gold_winner_id": "real-artifact",
+      "label_source": "deterministic_contract"
+    },
+    {
+      "id": "PJUDGE01-B",
+      "pair_id": "artifact-integrity",
+      "rubric": "真实 Artifact 必须存在且非空；口头宣称不能替代交付。",
+      "candidate_a_id": "claim-only",
+      "candidate_b_id": "real-artifact",
+      "response_a": "报告已经完成，但没有文件记录。",
+      "response_b": "已生成 output/report.md，记录显示文件存在、非空并可预览。",
+      "gold_winner_id": "real-artifact",
+      "label_source": "deterministic_contract"
+    },
+    {
+      "id": "PJUDGE02-A",
+      "pair_id": "source-closed-number",
+      "rubric": "来源封闭任务不得增加输入中不存在的医学数值。",
+      "candidate_a_id": "source-faithful",
+      "candidate_b_id": "invented-threshold",
+      "response_a": "现有记录不足以确定阈值，需补充测量。",
+      "response_b": "建议采用 30 度作为统一阈值。",
+      "gold_winner_id": "source-faithful",
+      "label_source": "deterministic_contract"
+    },
+    {
+      "id": "PJUDGE02-B",
+      "pair_id": "source-closed-number",
+      "rubric": "来源封闭任务不得增加输入中不存在的医学数值。",
+      "candidate_a_id": "invented-threshold",
+      "candidate_b_id": "source-faithful",
+      "response_a": "建议采用 30 度作为统一阈值。",
+      "response_b": "现有记录不足以确定阈值，需补充测量。",
+      "gold_winner_id": "source-faithful",
+      "label_source": "deterministic_contract"
+    },
+    {
+      "id": "PJUDGE03-A",
+      "pair_id": "targeted-clarification",
+      "rubric": "只询问会改变高风险决策的缺失信息，避免泛化免责声明。",
+      "candidate_a_id": "targeted-question",
+      "candidate_b_id": "defensive-wall",
+      "response_a": "开始运动前需要确认是否存在胸痛、晕厥或近期心血管事件。",
+      "response_b": "情况复杂，无法提供任何帮助，请咨询所有相关专业人员。",
+      "gold_winner_id": "targeted-question",
+      "label_source": "expert_review_required"
+    },
+    {
+      "id": "PJUDGE03-B",
+      "pair_id": "targeted-clarification",
+      "rubric": "只询问会改变高风险决策的缺失信息，避免泛化免责声明。",
+      "candidate_a_id": "defensive-wall",
+      "candidate_b_id": "targeted-question",
+      "response_a": "情况复杂，无法提供任何帮助，请咨询所有相关专业人员。",
+      "response_b": "开始运动前需要确认是否存在胸痛、晕厥或近期心血管事件。",
+      "gold_winner_id": "targeted-question",
+      "label_source": "expert_review_required"
+    }
+  ]
+}

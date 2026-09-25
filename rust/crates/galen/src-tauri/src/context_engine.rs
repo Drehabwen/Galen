@@ -415,6 +415,17 @@ pub(crate) fn validate_tool_call_against_contract(
     tool_name: &str,
     input: &serde_json::Value,
 ) -> Result<(), String> {
+    if contract.forbid_full_build {
+        let compilation_tool = matches!(tool_name, "compile_pdf_report" | "compile_latex_paper");
+        let build_command = tool_name == "execute_command"
+            && input
+                .get("command")
+                .and_then(|value| value.as_str())
+                .is_some_and(is_build_or_test_command);
+        if compilation_tool || build_command {
+            return Err("任务契约拒绝编译或完整构建：用户已明确要求先直接处理当前任务。请继续读取或修改必要代码，不要用构建替代实现。".to_string());
+        }
+    }
     if tool_name != "write_file" || contract.artifact_paths.is_empty() {
         return Ok(());
     }
@@ -438,6 +449,27 @@ pub(crate) fn validate_tool_call_against_contract(
             contract.artifact_paths.join(", ")
         ))
     }
+}
+
+fn is_build_or_test_command(command: &str) -> bool {
+    let normalized = command.to_lowercase();
+    [
+        "cargo build",
+        "cargo check",
+        "cargo test",
+        "npm run build",
+        "npm test",
+        "npm run test",
+        "npx tsc",
+        "vite build",
+        "tauri build",
+        "pnpm build",
+        "pnpm test",
+        "yarn build",
+        "yarn test",
+    ]
+    .iter()
+    .any(|needle| normalized.contains(needle))
 }
 
 /// 读取工作区根目录；无工作区返回 None。

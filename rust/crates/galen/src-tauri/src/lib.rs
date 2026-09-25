@@ -9,6 +9,7 @@ mod commands;
 pub mod connectors;
 mod context_compaction;
 mod context_engine;
+mod execution_context;
 #[cfg(test)]
 mod context_engine_tests;
 pub mod conversation_memory;
@@ -17,6 +18,7 @@ pub mod eval_report;
 pub mod evidence;
 pub mod evidence_search;
 pub mod mcp_client;
+mod model_defaults;
 pub mod modes;
 pub mod personas;
 pub mod pi_event;

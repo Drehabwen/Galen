@@ -6,15 +6,21 @@ import { isTauriRuntime } from "../tauriRuntime";
 export function useWorkspaceSelection() {
   const backendAvailable = isTauriRuntime();
   const [root, setRoot] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!backendAvailable) return;
     let cancelled = false;
     invoke<string | null>("get_workspace_root")
       .then((workspaceRoot) => {
-        if (!cancelled && workspaceRoot) setRoot(workspaceRoot);
+        if (!cancelled) {
+          if (workspaceRoot) setRoot(workspaceRoot);
+          setError(null);
+        }
       })
-      .catch(console.error);
+      .catch((cause) => {
+        if (!cancelled) setError(`无法恢复工作区：${String(cause)}`);
+      });
     return () => {
       cancelled = true;
     };
@@ -32,9 +38,12 @@ export function useWorkspaceSelection() {
         await beforeSwitch?.();
         await invoke("set_workspace", { path });
         setRoot(path);
+        setError(null);
         return path;
       } catch (cause) {
-        alert(String(cause));
+        const message = `无法切换工作区：${String(cause)}`;
+        setError(message);
+        alert(message);
         return null;
       }
     },
@@ -45,5 +54,5 @@ export function useWorkspaceSelection() {
     ? root.split(/[/\\]/).pop() ?? "未命名"
     : "未选择项目";
 
-  return { root, name, pick };
+  return { root, name, error, pick };
 }

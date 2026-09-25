@@ -9,6 +9,7 @@ export function useModelConfiguration(backendAvailable: boolean) {
   const [showModelStatus, setShowModelStatus] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const [wizardInitialStep, setWizardInitialStep] = useState(0);
+  const [error, setError] = useState<string | null>(null);
   const [thinkingLevel, setThinkingLevel] = useState<string>(() => {
     const saved = localStorage.getItem("galen.thinkingLevel");
     return !saved || saved === "medium" ? "low" : saved;
@@ -26,6 +27,7 @@ export function useModelConfiguration(backendAvailable: boolean) {
         if (cancelled) return;
         setModels(nextModels);
         setModelStatuses(nextStatuses);
+        setError(null);
         setModel((current) => current || nextModels[0]?.name || "");
 
         const needsSetup =
@@ -34,7 +36,9 @@ export function useModelConfiguration(backendAvailable: boolean) {
             nextStatuses.every((status) => !status.api_key_present));
         if (needsSetup) setShowWelcome(true);
       })
-      .catch(console.error);
+      .catch((cause) => {
+        if (!cancelled) setError(`无法加载模型配置：${String(cause)}`);
+      });
 
     return () => {
       cancelled = true;
@@ -60,6 +64,7 @@ export function useModelConfiguration(backendAvailable: boolean) {
       ]);
       setModels(nextModels);
       setModelStatuses(nextStatuses);
+      setError(null);
       setModel((current) => {
         if (
           defaultModel &&
@@ -84,13 +89,17 @@ export function useModelConfiguration(backendAvailable: boolean) {
 
   const openModelStatus = useCallback(() => {
     invoke<ModelStatus[]>("get_model_status")
-      .then(setModelStatuses)
-      .catch(console.error);
+      .then((statuses) => {
+        setModelStatuses(statuses);
+        setError(null);
+      })
+      .catch((cause) => setError(`无法刷新模型状态：${String(cause)}`));
     setShowModelStatus(true);
   }, []);
 
   return {
     models,
+    error,
     model,
     setModel,
     modelStatuses,

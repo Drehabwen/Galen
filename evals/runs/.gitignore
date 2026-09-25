@@ -1,4 +1,2 @@
-*.jsonl
-*.html
-*.json
+*
 !.gitignore

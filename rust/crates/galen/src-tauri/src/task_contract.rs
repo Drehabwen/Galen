@@ -69,7 +69,33 @@ const REHAB_QUERY_TOOLS: &[&str] = &[
     "read_file",
     "write_file",
 ];
+pub(crate) const INSPECTION_TOOLS: &[&str] = &[
+    "list_files",
+    "read_file",
+    "search_files",
+    "search_evidence",
+    "search_pubmed",
+    "fetch_article",
+    "verify_citation",
+    "rehab_data",
+];
+pub(crate) const VERIFICATION_TOOLS: &[&str] = &[
+    "list_files",
+    "read_file",
+    "search_files",
+    "execute_command",
+    "compile_pdf_report",
+    "compile_latex_paper",
+];
 pub(crate) const NO_TOOLS: &[&str] = &[];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum InteractionMode {
+    Discuss,
+    Inspect,
+    Execute,
+    Verify,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TaskClass {
@@ -88,6 +114,7 @@ pub(crate) enum TaskClass {
 #[derive(Debug, Clone)]
 pub(crate) struct TaskContract {
     pub(crate) class: TaskClass,
+    pub(crate) interaction_mode: InteractionMode,
     pub(crate) allowed_tools: Option<&'static [&'static str]>,
     pub(crate) max_tool_turns: u32,
     pub(crate) execution_policy: &'static str,
@@ -95,6 +122,7 @@ pub(crate) struct TaskContract {
     pub(crate) ordered_read_paths: Vec<String>,
     pub(crate) disable_deep_reasoning: bool,
     pub(crate) response_token_cap: Option<u32>,
+    pub(crate) forbid_full_build: bool,
 }
 
 impl TaskContract {
@@ -114,6 +142,17 @@ impl TaskContract {
             return false;
         };
         crate::tools::research::recognized_mcp_search(server_name, mcp_tool_name).is_some()
+    }
+
+    /// Whether this contract can expose any MCP tool to the model.
+    ///
+    /// Starting every configured MCP process before a tool-free response made
+    /// direct answers wait for unrelated literature servers. Open-ended tasks
+    /// retain the full registry, while literature tasks retain their recognized
+    /// MCP search adapters. All bounded built-in-only contracts skip startup.
+    pub(crate) fn requires_mcp(&self) -> bool {
+        self.interaction_mode != InteractionMode::Discuss
+            && (self.allowed_tools.is_none() || self.class == TaskClass::Literature)
     }
 }
 
@@ -225,14 +264,35 @@ pub(crate) fn compile_task_contract(
         .any(|needle| lower.contains(needle));
     let artifact_paths = extract_artifact_paths(user_message);
     let ordered_read_paths = extract_read_paths(user_message);
-    let (class, allowed_tools, max_tool_turns, execution_policy) = if is_discussion_only_task(
-        &lower,
-    ) {
+    let interaction_mode = infer_interaction_mode(&lower);
+    let raw_lower = raw_user_payload(&lower);
+    let forbid_full_build = execution_context_field(&lower, "forbidden")
+        .is_some_and(|value| value.split(',').any(|action| action.trim() == "full_build"))
+        || ["不要编译", "别编译", "无需编译", "先不编译", "不要一直编译"]
+            .iter()
+            .any(|needle| raw_lower.contains(needle));
+    let (class, allowed_tools, max_tool_turns, execution_policy) = if interaction_mode
+        == InteractionMode::Discuss
+    {
         (
             TaskClass::OpenEnded,
             Some(NO_TOOLS),
-            3,
-            "\n\n## 深度讨论契约\n这是不需要工具的分析或复盘任务。保留用户选择的思考强度，不加载工具定义；给出完整、收敛的讨论结论。",
+            1,
+            "\n\n## 讨论模式契约\n本轮只讨论、分析和收敛问题。禁止调用工具、修改文件或启动执行；不要用防御性免责声明稀释有效判断。",
+        )
+    } else if interaction_mode == InteractionMode::Inspect {
+        (
+            TaskClass::Workspace,
+            Some(INSPECTION_TOOLS),
+            8,
+            "\n\n## 检查模式契约\n本轮只读取、扫描和诊断。禁止写文件、执行命令或生成产物；基于实际证据直接指出代码问题与简陋之处。",
+        )
+    } else if interaction_mode == InteractionMode::Verify {
+        (
+            TaskClass::Workspace,
+            Some(VERIFICATION_TOOLS),
+            6,
+            "\n\n## 验证模式契约\n本轮只执行必要的针对性验证并报告证据。禁止顺手改代码或扩大验证范围；一次短验证足以回答时立即收敛。",
         )
     } else if is_direct_answer_task(&lower) {
         (
@@ -321,6 +381,7 @@ pub(crate) fn compile_task_contract(
     });
     TaskContract {
         class,
+        interaction_mode,
         allowed_tools,
         max_tool_turns,
         execution_policy,
@@ -328,7 +389,76 @@ pub(crate) fn compile_task_contract(
         ordered_read_paths,
         disable_deep_reasoning,
         response_token_cap,
+        forbid_full_build,
     }
+}
+
+fn infer_interaction_mode(text: &str) -> InteractionMode {
+    if let Some(mode) = execution_context_field(text, "mode") {
+        return match mode.trim() {
+            "discuss" => InteractionMode::Discuss,
+            "inspect" => InteractionMode::Inspect,
+            "verify" => InteractionMode::Verify,
+            _ => InteractionMode::Execute,
+        };
+    }
+    if [
+        "先讨论",
+        "停下来讨论",
+        "只讨论",
+        "深入讨论",
+        "深度讨论",
+        "重点讨论",
+        "方案复盘",
+        "分析利弊",
+        "批判性分析",
+        "不要调用工具",
+        "不调用工具",
+    ]
+            .iter()
+            .any(|needle| text.contains(needle))
+    {
+        InteractionMode::Discuss
+    } else if ["只读", "不要修改", "先不要写"]
+            .iter()
+            .any(|needle| text.contains(needle))
+    {
+        InteractionMode::Inspect
+    } else if ["先读取", "先扫描"]
+            .iter()
+            .any(|needle| text.contains(needle))
+            && !["写入", "写进", "保存到", "生成文件", "write_file"]
+                .iter()
+                .any(|needle| text.contains(needle))
+    {
+        // 「先读取」是弱信号：若本轮同时要求写产物（如"读取…并写入…"），
+        // 保持 Execute，交给产物契约分支，避免把读写任务误判为只读检查。
+        InteractionMode::Inspect
+    } else if ["编译验证", "验证一次", "运行测试", "跑测试", "检查构建"]
+            .iter()
+            .any(|needle| text.contains(needle))
+    {
+        InteractionMode::Verify
+    } else {
+        InteractionMode::Execute
+    }
+}
+
+fn execution_context_field<'a>(text: &'a str, field: &str) -> Option<&'a str> {
+    let block = text
+        .strip_prefix("## galen_execution_context\n")?
+        .split_once("## end_galen_execution_context")?
+        .0;
+    let prefix = format!("{field}:");
+    block
+        .lines()
+        .find_map(|line| line.strip_prefix(prefix.as_str()))
+}
+
+fn raw_user_payload(text: &str) -> &str {
+    text.split_once("## end_galen_execution_context")
+        .map(|(_, raw)| raw.trim_start())
+        .unwrap_or(text)
 }
 
 pub(crate) fn task_execution_policy(user_message: &str) -> String {
@@ -575,7 +705,18 @@ mod tests {
             compile_task_contract(model_router::TaskKind::Chat, "请检索脑卒中康复的中文文献");
 
         assert_eq!(contract.class, TaskClass::Literature);
+        assert!(contract.requires_mcp());
         assert!(contract.allows_tool("mcp__cnki__cnki_structured_search"));
         assert!(!contract.allows_tool("mcp__unrelated__search_papers"));
+    }
+
+    #[test]
+    fn generic_open_ended_tasks_keep_mcp_but_discussion_does_not() {
+        let open = compile_task_contract(model_router::TaskKind::Chat, "帮助我推进当前研究");
+        assert_eq!(open.class, TaskClass::OpenEnded);
+        assert!(open.requires_mcp());
+
+        let discuss = compile_task_contract(model_router::TaskKind::Chat, "先讨论，不要调用工具");
+        assert!(!discuss.requires_mcp());
     }
 }

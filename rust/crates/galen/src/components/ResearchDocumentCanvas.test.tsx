@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import mammoth from "mammoth";
 import { ResearchDocumentCanvas } from "./ResearchDocumentCanvas";
 import type { ArtifactPreview } from "../domain/preview";
 import { codeLanguageOf } from "../domain/preview";
@@ -17,6 +18,14 @@ vi.mock("read-excel-file/browser", () => ({
     ["A", 350],
     ["B", 402],
   ]),
+}));
+
+// The canvas contract only needs to verify lazy dispatch. Prism language
+// registration is intentionally kept out of this jsdom integration test.
+vi.mock("./ArtifactCodePreview", () => ({
+  CodeView: ({ content }: { content: string }) => (
+    <div data-testid="artifact-code-view">{content}</div>
+  ),
 }));
 
 const renderPage = vi.fn(() => ({ promise: Promise.resolve() }));
@@ -128,6 +137,24 @@ describe("ResearchDocumentCanvas preview dispatch", () => {
     await waitFor(() => expect(screen.getByTestId("artifact-docx-body").innerHTML).toContain("DOCX_BODY"));
   });
 
+  it("removes executable markup from converted DOCX HTML", async () => {
+    vi.mocked(mammoth.convertToHtml).mockResolvedValueOnce({
+      value: '<p onclick="alert(1)">安全正文</p><script>alert(2)</script><a href="javascript:alert(3)">链接</a>',
+      messages: [],
+    });
+    render(
+      <ResearchDocumentCanvas
+        artifact={preview({ path: "output/untrusted.docx", kind: "docx", blob: new Blob(["docx-bytes"]) })}
+      />,
+    );
+
+    const body = await screen.findByTestId("artifact-docx-body");
+    expect(body.innerHTML).toContain("安全正文");
+    expect(body.querySelector("script")).toBeNull();
+    expect(body.querySelector("[onclick]")).toBeNull();
+    expect(body.querySelector("a")?.hasAttribute("href")).toBe(false);
+  });
+
   it("parses XLSX via readSheet and renders rows", async () => {
     render(
       <ResearchDocumentCanvas
@@ -139,13 +166,13 @@ describe("ResearchDocumentCanvas preview dispatch", () => {
     expect(table.textContent).toContain("402");
   });
 
-  it("renders code artifacts with syntax highlighting", () => {
+  it("routes code artifacts to the lazy code preview", async () => {
     render(
       <ResearchDocumentCanvas
         artifact={preview({ path: "output/analysis.py", kind: "code", content: "import pandas as pd\nprint('ok')\n" })}
       />,
     );
-    const view = screen.getByTestId("artifact-code-view");
+    const view = await screen.findByTestId("artifact-code-view", {}, { timeout: 5000 });
     expect(view.textContent).toContain("import pandas as pd");
     expect(codeLanguageOf("output/analysis.py")).toBe("python");
   });

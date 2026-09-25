@@ -46,7 +46,7 @@ export function GlobalResourceBar({ artifacts = [], onOpenArtifact }: GlobalReso
                 <span>科研数据源</span>
                 <strong>{FIRST_PARTY_CONNECTORS.length}</strong>
               </div>
-              <p className="connector-ledger-intro">这里仅显示数据源状态。需要数据时，直接在主对话中说“从康复师工作台获取 ATH-001 最近三次评估”。</p>
+              <p className="connector-ledger-intro">这里仅显示数据源状态。需要数据时，可在主对话中输入“从康复师工作台获取 &lt;病例ID&gt; 最近三次评估”。</p>
               <div className="connector-ledger-list">
                 {FIRST_PARTY_CONNECTORS.map((connector) => (
                   <div className="connector-ledger-card" key={connector.id}>

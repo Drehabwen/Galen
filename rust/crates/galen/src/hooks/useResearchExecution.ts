@@ -42,6 +42,7 @@ export function useResearchExecution({
   const [pendingPlan, setPendingPlan] = useState<SessionNode[] | null>(null);
   const [selectedNode, setSelectedNode] = useState<SessionNode | null>(null);
   const [enteredSession, setEnteredSession] = useState<SessionNode | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const completionNotifiedRef = useRef(false);
   const observedTaskIdRef = useRef<string | null>(null);
 
@@ -90,10 +91,12 @@ export function useResearchExecution({
     const title = goal.replace(/\s+/g, " ").slice(0, 48);
 
     try {
+      setError(null);
       await research.createTask(title, goal, autonomousPlan);
     } catch (error) {
-      console.error(error);
-      alert(`无法创建研究任务：${String(error)}`);
+      const message = `无法创建研究任务：${String(error)}`;
+      setError(message);
+      alert(message);
       return;
     }
 
@@ -105,12 +108,14 @@ export function useResearchExecution({
       mode,
       "medical",
       thinkingLevel,
+      "inherit",
     );
   }, [chat, mode, model, onModelRequired, pendingPlan, research, thinkingLevel]);
 
   const enterSession = useCallback(
     async (node: SessionNode) => {
       try {
+        setError(null);
         const snapshot = await research.startNode(node.id);
         const running =
           snapshot.task.nodes.find((candidate) => candidate.id === node.id) ??
@@ -118,7 +123,9 @@ export function useResearchExecution({
         setEnteredSession(running);
         setSelectedNode(null);
       } catch (error) {
-        alert("PI 无法启动该节点：" + String(error));
+        const message = "PI 无法启动该节点：" + String(error);
+        setError(message);
+        alert(message);
       }
     },
     [research],
@@ -127,6 +134,7 @@ export function useResearchExecution({
   const closeSession = useCallback(() => {
     setEnteredSession(null);
     setSelectedNode(null);
+    setError(null);
   }, []);
 
   const resetForNewTopic = useCallback(() => {
@@ -141,10 +149,13 @@ export function useResearchExecution({
   const approveNode = useCallback(
     async (node: SessionNode) => {
       try {
+        setError(null);
         await research.approveNode(node.id);
         setSelectedNode(null);
       } catch (error) {
-        alert("PI 无法批准该节点：" + String(error));
+        const message = "PI 无法批准该节点：" + String(error);
+        setError(message);
+        alert(message);
       }
     },
     [research],
@@ -153,10 +164,13 @@ export function useResearchExecution({
   const assignNode = useCallback(
     async (node: SessionNode) => {
       try {
+        setError(null);
         await research.assignNode(node.id, node.owner);
         setSelectedNode(null);
       } catch (error) {
-        alert("PI 无法分派该节点：" + String(error));
+        const message = "PI 无法分派该节点：" + String(error);
+        setError(message);
+        alert(message);
       }
     },
     [research],
@@ -167,9 +181,12 @@ export function useResearchExecution({
       const evidence = extractEvidence(summary);
       let snapshot;
       try {
+        setError(null);
         snapshot = await research.completeNode(node.id, summary, evidence);
       } catch (error) {
-        alert("PI 无法接收节点回流：" + String(error));
+        const message = "PI 无法接收节点回流：" + String(error);
+        setError(message);
+        alert(message);
         return;
       }
       const completedCount = snapshot.task.nodes.filter(
@@ -184,14 +201,15 @@ export function useResearchExecution({
         mode,
         "medical",
         thinkingLevel,
+        "inherit",
       );
-      invoke("append_memory", {
+      const persistence = await Promise.allSettled([
+        invoke("append_memory", {
         entry: `${new Date().toISOString().slice(0, 10)} | Session ${node.index} ${node.title} | ${summary
           .trim()
           .slice(0, 120)} | .galen/tasks/${research.task?.taskId || "active"}/task.json`,
-      }).catch(console.error);
-      await research
-        .appendEvidence({
+        }),
+        research.appendEvidence({
           id: `${Date.now()}-${node.id}`,
           node_id: node.id,
           node_title: node.title,
@@ -200,8 +218,18 @@ export function useResearchExecution({
           detail: summary.trim().slice(0, 1200),
           confidence: "medium",
           created_at: new Date().toISOString().slice(0, 10),
-        })
-        .catch(console.error);
+        }),
+      ]);
+      const failedPersistence = persistence.filter(
+        (result): result is PromiseRejectedResult => result.status === "rejected",
+      );
+      if (failedPersistence.length > 0) {
+        setError(
+          `节点已完成，但有 ${failedPersistence.length} 项研究记录未持久化：${failedPersistence
+            .map((result) => String(result.reason))
+            .join("；")}`,
+        );
+      }
       setEnteredSession(null);
       setSelectedNode(null);
 
@@ -226,12 +254,14 @@ export function useResearchExecution({
         mode,
         "medical",
         thinkingLevel,
+        "inherit",
       );
     }
   }, [chat, mode, model, research.confirmed, research.nodes, research.task?.status, thinkingLevel]);
 
   return {
     research,
+    error,
     pendingPlan,
     selectedNode,
     setSelectedNode,

@@ -51,6 +51,14 @@ pub struct EvalCase {
     pub fixture: Option<String>,
     #[serde(default = "default_timeout_seconds")]
     pub timeout_seconds: u64,
+    /// Optional responsiveness hard gate measured from run start to first
+    /// visible answer/tool action. Omitted for cases where network latency is
+    /// observational rather than release-blocking.
+    #[serde(default)]
+    pub max_ttfr_ms: Option<u64>,
+    /// Optional end-to-end latency hard gate.
+    #[serde(default)]
+    pub max_total_ms: Option<u64>,
     #[serde(default = "default_max_model_requests")]
     pub max_model_requests: u32,
     #[serde(default = "default_max_tool_calls")]
@@ -469,6 +477,22 @@ impl RunRecord {
             observation.run_ok,
             if observation.run_ok { "Ok" } else { "Err" }.to_string(),
         );
+        if let Some(maximum) = case.max_ttfr_ms {
+            let actual = observation.summary.ttfr_ms;
+            add(
+                "ttfr_budget".to_string(),
+                actual.is_some_and(|value| value <= maximum),
+                format!("actual={actual:?}ms, limit={maximum}ms"),
+            );
+        }
+        if let Some(maximum) = case.max_total_ms {
+            let actual = observation.summary.total_ms;
+            add(
+                "total_latency_budget".to_string(),
+                actual <= maximum,
+                format!("actual={actual}ms, limit={maximum}ms"),
+            );
+        }
 
         let ordinary_traces: Vec<&ToolTrace> = observation
             .traces
@@ -1899,6 +1923,8 @@ mod tests {
             prompt: "answer".to_string(),
             fixture: None,
             timeout_seconds: 10,
+            max_ttfr_ms: None,
+            max_total_ms: None,
             max_model_requests: 3,
             max_tool_calls: 4,
             max_human_interventions: 0,
@@ -1972,6 +1998,45 @@ mod tests {
             ],
         );
         assert_eq!(required, (2, 2));
+    }
+
+    #[test]
+    fn explicit_latency_budget_is_a_hard_gate() {
+        let mut case = case();
+        case.max_ttfr_ms = Some(100);
+        case.max_total_ms = Some(400);
+        let mut summary = summary();
+        summary.ttfr_ms = Some(200);
+        summary.total_ms = 500;
+        let workspace = std::env::temp_dir().join(format!(
+            "galen-eval-latency-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&workspace).unwrap();
+        let record = RunRecord::evaluate(
+            &case,
+            RunObservation {
+                commit: "test",
+                model: "test",
+                run_index: 1,
+                run_ok: true,
+                response: "FMA-UE",
+                summary: &summary,
+                traces: &[],
+                workspace: &workspace,
+                summary_field_coverage: None,
+            },
+        );
+        assert!(!record.hard_gates_passed);
+        assert!(record
+            .assertions
+            .iter()
+            .any(|item| item.name == "ttfr_budget" && !item.pass));
+        assert!(record
+            .assertions
+            .iter()
+            .any(|item| item.name == "total_latency_budget" && !item.pass));
+        let _ = std::fs::remove_dir_all(workspace);
     }
 
     #[test]
@@ -2204,6 +2269,7 @@ mod tests {
                 input: "same".to_string(),
                 output: "ok".to_string(),
                 is_error: false,
+                error_class: None,
             })
             .collect::<Vec<_>>();
         let summary = summary();
@@ -2279,6 +2345,7 @@ mod tests {
             input: r#"{"path":"inputs/brief.md"}"#.to_string(),
             output: "FMA-UE".to_string(),
             is_error: false,
+            error_class: None,
         }];
         let summary = summary();
         let record = RunRecord::evaluate(
@@ -2318,6 +2385,7 @@ mod tests {
             input: r#"{"query":"施罗斯"}"#.to_string(),
             output: r#"{"results":[{"evidence":{"id":"ev-good"}}]}"#.to_string(),
             is_error: false,
+            error_class: None,
         }];
         let record = RunRecord::evaluate(
             &value,

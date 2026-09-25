@@ -37,6 +37,12 @@ rust/.sandbox-home/
 rust/crates/galen/src-tauri/binaries/
 evals/external-runtimes/node_modules/
 evals/external-runtimes/config/
+evals/external-runtimes/cache/
+evals/public-benchmarks/ScienceAgentBench/
+evals/public-benchmarks/data/
+evals/public-benchmarks/downloads/
+evals/public-benchmarks/.venv*/
+evals/public-benchmarks/watch-state.json
 tmp/
 # Private/copyrighted evaluation sources. Keep only hashes and source locators in Git.
 evals/private/
@@ -55,3 +61,6 @@ stdout.txt
 /rust/crates/galen/.playwright-cli/
 /rust/crates/galen/output/
 /.worktrees/
+/Galen-便携版/
+/Galen_0.2.0_x64-setup.exe
+/_refs_self_improving/

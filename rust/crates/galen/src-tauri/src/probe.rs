@@ -378,6 +378,7 @@ mod tests {
                 input: "plan".to_string(),
                 output: "ok".to_string(),
                 is_error: false,
+                error_class: None,
             },
             ToolTrace {
                 turn: 2,
@@ -385,6 +386,7 @@ mod tests {
                 input: "file".to_string(),
                 output: "ok".to_string(),
                 is_error: false,
+                error_class: None,
             },
         ];
         let summary = ChatRunSummary {

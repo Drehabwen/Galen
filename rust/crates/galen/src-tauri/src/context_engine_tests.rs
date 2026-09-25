@@ -342,6 +342,7 @@ mod context_tests {
         assert_eq!(contract.allowed_tools, Some(NO_TOOLS));
         assert_eq!(contract.max_tool_turns, 1);
         assert!(contract.disable_deep_reasoning);
+        assert!(!contract.requires_mcp());
         assert_eq!(contract.response_token_cap, Some(768));
 
         let ws = tmp_ws("direct_answer", &[("GALEN.md", "不应注入的记忆")]);
@@ -358,6 +359,58 @@ mod context_tests {
             build_system_prompt(&persona, crate::modes::ChatMode::Discuss)
         );
         assert!(!stable.contains("快速回答契约"));
+    }
+
+    #[test]
+    fn explicit_interaction_modes_bound_tools_and_turns() {
+        let discuss = compile_task_contract(model_router::TaskKind::Chat, "先讨论，不要调用工具");
+        assert_eq!(discuss.interaction_mode, InteractionMode::Discuss);
+        assert_eq!(discuss.allowed_tools, Some(NO_TOOLS));
+        assert_eq!(discuss.max_tool_turns, 1);
+
+        let inspect = compile_task_contract(model_router::TaskKind::Chat, "先读取代码，不要修改");
+        assert_eq!(inspect.interaction_mode, InteractionMode::Inspect);
+        assert!(inspect.allows_tool("read_file"));
+        assert!(!inspect.allows_tool("write_file"));
+        assert!(!inspect.allows_tool("execute_command"));
+
+        let verify = compile_task_contract(model_router::TaskKind::Chat, "编译验证一次");
+        assert_eq!(verify.interaction_mode, InteractionMode::Verify);
+        assert!(verify.allows_tool("execute_command"));
+        assert!(!verify.allows_tool("write_file"));
+    }
+
+    #[test]
+    fn retained_no_build_correction_rejects_build_commands() {
+        let prompt = "## GALEN_EXECUTION_CONTEXT\nmode:execute\nforbidden:full_build\n## END_GALEN_EXECUTION_CONTEXT\n\n继续修改";
+        let contract = compile_task_contract(model_router::TaskKind::Chat, prompt);
+        assert!(contract.forbid_full_build);
+        assert!(validate_tool_call_against_contract(
+            &contract,
+            "execute_command",
+            &serde_json::json!({"command": "cargo check"}),
+        )
+        .is_err());
+        assert!(validate_tool_call_against_contract(
+            &contract,
+            "execute_command",
+            &serde_json::json!({"command": "rg TODO src"}),
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn authoritative_empty_forbidden_field_releases_historical_build_ban() {
+        let prompt = "## GALEN_EXECUTION_CONTEXT\nsource:backend_authoritative\nmode:verify\nforbidden:\nconstraints:不要编译\nrecent_corrections:不要一直编译\n## END_GALEN_EXECUTION_CONTEXT\n\n现在可以编译验证一次";
+        let contract = compile_task_contract(model_router::TaskKind::Chat, prompt);
+        assert_eq!(contract.interaction_mode, InteractionMode::Verify);
+        assert!(!contract.forbid_full_build);
+        assert!(validate_tool_call_against_contract(
+            &contract,
+            "execute_command",
+            &serde_json::json!({"command": "cargo check"}),
+        )
+        .is_ok());
     }
 
     #[test]
