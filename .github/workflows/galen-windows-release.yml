@@ -41,6 +41,20 @@ jobs:
           workspaces: rust -> target
           shared-key: galen-windows-release
 
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: rust/crates/galen/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: rust/crates/galen
+        run: npm ci
+
+      - name: Build frontend assets
+        working-directory: rust/crates/galen
+        run: npm run build
+
       - name: Download bundled runtimes
         working-directory: .
         run: python rust/scripts/download_sidecars.py
@@ -98,6 +112,10 @@ jobs:
       - name: Run frontend tests
         working-directory: rust/crates/galen
         run: npm test
+
+      - name: Build frontend assets
+        working-directory: rust/crates/galen
+        run: npm run build
 
       - name: Build single-file portable Galen
         working-directory: rust
