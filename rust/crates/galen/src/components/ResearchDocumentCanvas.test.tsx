@@ -106,7 +106,7 @@ describe("ResearchDocumentCanvas preview dispatch", () => {
     expect(document.classList.contains("artifact-preview-scroll")).toBe(true);
     expect(document.querySelectorAll("canvas")).toHaveLength(2);
     expect(screen.getByText("第 1 / 2 页")).toBeTruthy();
-    expect(renderPage).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(renderPage).toHaveBeenCalledTimes(2));
     fireEvent.click(screen.getByRole("button", { name: "下一页" }));
     expect(screen.getByText("第 2 / 2 页")).toBeTruthy();
 
