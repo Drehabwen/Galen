@@ -46,9 +46,11 @@ Galen 是面向**康复科研**的闭环工作台：一线场景的多模态数�
 
 ### Windows 用户
 
-1. 从 [Releases](https://github.com/Drehabwen/Galen/releases) 下载 `Galen_0.1.0_x64-setup.exe`
-2. 双击安装，首次启动按向导配置 DeepSeek API Key 与工作区
+1. 从 [Releases](https://github.com/Drehabwen/Galen/releases/latest) 下载 `Galen-Portable-x64.exe`
+2. 双击即可运行；首次启动会静默准备内置运行时，然后按向导配置 DeepSeek API Key 与工作区
 3. 在工作台输入科研任务，确认计划后 AI 自动推进闭环
+
+传统安装版 `Galen_*_x64-setup.exe` 仍作为可选下载提供。
 
 ### macOS 用户
 

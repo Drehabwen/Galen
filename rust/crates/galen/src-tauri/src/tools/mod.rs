@@ -88,6 +88,15 @@ impl ToolExecution {
 
 /// Detect a bundled or system-installed binary by name.
 pub fn resolve_binary(name: &str) -> Option<PathBuf> {
+    #[cfg(all(windows, feature = "portable-runtime"))]
+    if let Some(runtime_dir) = crate::portable_runtime::runtime_dir() {
+        let portable_name = if name == "uvx" { "uv" } else { name };
+        let portable = runtime_dir.join(format!("{portable_name}.exe"));
+        if portable.exists() {
+            return Some(portable);
+        }
+    }
+
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(exe_dir) = exe_path.parent() {
             let bundled = if cfg!(windows) {
@@ -113,6 +122,12 @@ pub fn resolve_binary(name: &str) -> Option<PathBuf> {
             });
             if nested.exists() {
                 return Some(nested);
+            }
+            if cfg!(windows) && name == "uvx" {
+                let uv = exe_dir.join("uv.exe");
+                if uv.exists() {
+                    return Some(uv);
+                }
             }
         }
     }

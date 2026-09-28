@@ -41,6 +41,10 @@ jobs:
           workspaces: rust -> target
           shared-key: galen-windows-release
 
+      - name: Download bundled runtimes
+        working-directory: .
+        run: python rust/scripts/download_sidecars.py
+
       - name: Warm Galen release cache
         run: cargo build --release -p galen
 
@@ -95,6 +99,23 @@ jobs:
         working-directory: rust/crates/galen
         run: npm test
 
+      - name: Build single-file portable Galen
+        working-directory: rust
+        run: cargo build --release -p galen --features portable-runtime
+
+      - name: Stage portable executable
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force rust/dist | Out-Null
+          Copy-Item rust/target/release/galen.exe rust/dist/Galen-Portable-x64.exe -Force
+
+      - name: Read Galen version
+        id: package-version
+        shell: pwsh
+        run: |
+          $version = (Get-Content rust/crates/galen/src-tauri/tauri.conf.json | ConvertFrom-Json).version
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
       - name: Build, sign and publish Galen
         uses: tauri-apps/tauri-action@v1
         env:
@@ -110,3 +131,10 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: --bundles nsis
+
+      - name: Upload portable executable
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.package-version.outputs.version }}
+          files: rust/dist/Galen-Portable-x64.exe
+          fail_on_unmatched_files: true

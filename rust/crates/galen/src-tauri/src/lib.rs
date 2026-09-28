@@ -23,6 +23,8 @@ pub mod modes;
 pub mod personas;
 pub mod pi_event;
 pub mod pi_kernel;
+#[cfg(all(windows, feature = "portable-runtime"))]
+pub mod portable_runtime;
 pub mod probe;
 pub mod rag_eval;
 pub mod rehab_context;
@@ -42,6 +44,11 @@ use commands::AppState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(all(windows, feature = "portable-runtime"))]
+    if let Err(error) = portable_runtime::ensure() {
+        eprintln!("Galen portable runtime extraction failed: {error}");
+    }
+
     let backend = backend::ChatBackend::new();
     let ws_config = workspace::WorkspaceConfig::load();
     if let Some(path) = ws_config
