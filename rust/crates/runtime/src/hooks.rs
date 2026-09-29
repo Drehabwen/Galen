@@ -823,8 +823,8 @@ mod tests {
     use std::time::Duration;
 
     use super::{
-        HookAbortSignal, HookEvent, HookProgressEvent, HookProgressReporter, HookRunResult,
-        HookRunner,
+        bounded_hook_preview, HookAbortSignal, HookEvent, HookProgressEvent, HookProgressReporter,
+        HookRunResult, HookRunner,
     };
     use crate::config::{RuntimeFeatureConfig, RuntimeHookConfig};
     use crate::permissions::PermissionOverride;
@@ -1054,7 +1054,8 @@ mod tests {
         assert!(rendered.contains("hook_invalid_json:"));
         assert!(rendered.contains("phase=PreToolUse"));
         assert!(rendered.contains("tool=Edit"));
-        assert!(rendered.contains(&format!("command={command}")));
+        let command_preview = bounded_hook_preview(&command).expect("command preview");
+        assert!(rendered.contains(&format!("command={command_preview}")));
         assert!(rendered.contains("detail=key must be a string"));
         assert!(rendered.contains("stdout_preview={not-json"));
         assert!(rendered.contains("second line stderr_preview=stderr warning"));
