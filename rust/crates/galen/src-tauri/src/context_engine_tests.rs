@@ -930,17 +930,20 @@ mod context_tests {
 
     #[test]
     fn workspace_absolute_paths_are_normalized_only_when_inside_root() {
-        let root = PathBuf::from(r"C:\tmp\galen-workspace");
+        let temp_root = std::env::temp_dir();
+        let root = temp_root.join("galen-workspace");
+        let inside = root.join("output").join("x.md");
+        let outside = temp_root.join("outside").join("x.md");
         assert_eq!(
-            normalize_path_against_workspace(r"C:\tmp\galen-workspace", &root),
+            normalize_path_against_workspace(&root.to_string_lossy(), &root),
             Some(String::new())
         );
         assert_eq!(
-            normalize_path_against_workspace(r"C:\tmp\galen-workspace\output\x.md", &root),
+            normalize_path_against_workspace(&inside.to_string_lossy(), &root),
             Some("output/x.md".to_string())
         );
         assert_eq!(
-            normalize_path_against_workspace(r"C:\tmp\outside\x.md", &root),
+            normalize_path_against_workspace(&outside.to_string_lossy(), &root),
             None
         );
     }
