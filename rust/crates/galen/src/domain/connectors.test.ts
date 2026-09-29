@@ -13,6 +13,9 @@ describe("first-party connector registry", () => {
 
   it("marks the RehabGPT bridge as callable", () => {
     expect(getFirstPartyConnector("rehab-workbench")?.status).toBe("ready");
+    expect(getFirstPartyConnector("rehab-workbench")?.sourcePath).toBe(
+      "%LOCALAPPDATA%/Rehab/GalenConnector/latest.json",
+    );
     expect(getFirstPartyConnector("qingyue-workbench")?.status).toBe("adapter_needed");
     expect(getFirstPartyConnector("rehabgpt")?.status).toBe("ready");
   });

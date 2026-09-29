@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { AgentBenchmarkReport, RehabCaseBundle, RehabCaseSummary, RehabGoldenEvalReport } from "../domain/rehabContext";
+import type { AgentBenchmarkReport, ObservationReviewAction, RehabCaseBundle, RehabCaseSummary, RehabGoldenEvalReport, ResearchFollowUpAction } from "../domain/rehabContext";
 
 export function useRehabContext(backendAvailable: boolean, workspaceRoot: string | null) {
   const [cases, setCases] = useState<RehabCaseSummary[]>([]);
@@ -105,6 +105,40 @@ export function useRehabContext(backendAvailable: boolean, workspaceRoot: string
     }
   };
 
+  const reviewObservation = async (
+    observationId: string,
+    action: ObservationReviewAction,
+    reason: string,
+    correctedValue?: number | string,
+    correctedUnit?: string,
+    followUpAction: ResearchFollowUpAction = "none",
+  ) => {
+    if (!activeCase) return;
+    setLoading(true);
+    try {
+      const bundle = await invoke<RehabCaseBundle>("review_rehab_observation", {
+        input: {
+          caseId: activeCase.case_record.case_id,
+          observationId,
+          expectedRevision: activeCase.revision,
+          action,
+          reason,
+          reviewer: "human-reviewer",
+          correctedValue: correctedValue ?? null,
+          correctedUnit: correctedUnit?.trim() || null,
+          followUpAction,
+        },
+      });
+      setActiveCase(bundle);
+      setCases(await invoke<RehabCaseSummary[]>("list_rehab_cases"));
+      setError(null);
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const runGoldenJourneys = async (sourcePath: string) => {
     setLoading(true);
     try {
@@ -117,5 +151,5 @@ export function useRehabContext(backendAvailable: boolean, workspaceRoot: string
     }
   };
 
-  return { cases, activeCase, loading, error, evalReport, agentBenchmark, openCase, importCase, resolveReview, runGoldenJourneys };
+  return { cases, activeCase, loading, error, evalReport, agentBenchmark, openCase, importCase, resolveReview, reviewObservation, runGoldenJourneys };
 }

@@ -52,6 +52,80 @@ fn resolve_db_path(ctx: &ToolContext) -> Option<PathBuf> {
     None
 }
 
+fn selected_workspace(ctx: &ToolContext) -> Result<PathBuf, String> {
+    ctx.workspace_root
+        .lock()
+        .map_err(|error| format!("读取工作区状态失败: {error}"))?
+        .clone()
+        .ok_or_else(|| "请先选择研究工作区。".to_string())
+}
+
+fn list_rehab_id_cases(ctx: &ToolContext, limit: usize) -> Result<String, String> {
+    let workspace = selected_workspace(ctx)?;
+    let mut cases = crate::rehab_context::list_case_summaries(&workspace)?;
+    cases.truncate(limit);
+    serde_json::to_string_pretty(&json!({
+        "source": "workspace_rehab_id_timeline",
+        "workspaceScoped": true,
+        "caseCount": cases.len(),
+        "cases": cases,
+    }))
+    .map_err(|error| format!("序列化 RehabID 清单失败: {error}"))
+}
+
+fn read_rehab_id_case(
+    ctx: &ToolContext,
+    case_id: &str,
+    include_candidates: bool,
+    limit: usize,
+) -> Result<String, String> {
+    if case_id.trim().is_empty() {
+        return Err("rehab_case 需要 case_id".into());
+    }
+    let workspace = selected_workspace(ctx)?;
+    let bundle = crate::rehab_context::load_case_bundle(&workspace, case_id)?;
+    let candidate_total = bundle
+        .observations
+        .iter()
+        .filter(|item| {
+            item.verification_status == crate::rehab_context::VerificationStatus::Candidate
+        })
+        .count();
+    let observations = bundle
+        .observations
+        .iter()
+        .filter(|item| {
+            include_candidates
+                || item.verification_status
+                    == crate::rehab_context::VerificationStatus::Verified
+        })
+        .take(limit)
+        .collect::<Vec<_>>();
+    serde_json::to_string_pretty(&json!({
+        "source": "workspace_rehab_id_timeline",
+        "workspaceScoped": true,
+        "caseId": &bundle.case_record.case_id,
+        "revision": bundle.revision,
+        "demographics": &bundle.case_record.demographics,
+        "condition": &bundle.case_record.condition,
+        "sources": &bundle.sources,
+        "events": &bundle.events,
+        "observations": observations,
+        "candidateObservationCount": candidate_total,
+        "candidatesIncluded": include_candidates,
+        "openReviewCount": bundle.cohort_row.open_review_count,
+        "cohortStatus": bundle.cohort_row.status,
+        "warning": if candidate_total > 0 && !include_candidates {
+            "候选观察默认未返回；如需质量审计，可显式设置 include_candidates=true。"
+        } else if candidate_total > 0 {
+            "候选观察尚未通过质量或人工核验，不得当作确定事实。"
+        } else {
+            ""
+        },
+    }))
+    .map_err(|error| format!("序列化 RehabID 时间轴失败: {error}"))
+}
+
 fn open_readonly(path: &PathBuf) -> Result<Connection, String> {
     Connection::open_with_flags(
         path,
@@ -286,8 +360,9 @@ impl GalenTool for RehabData {
         ToolDefinition {
             name: "rehab_data".into(),
             description: Some(
-                "查询康复科研数据库 blood.db（运动员/血指标/CPET/心率/前测体能）。\
-                 operation 可选：list_tables, list_athletes(keyword), athlete_card(athlete), \
+                "查询当前工作区的治理后 RehabID 时间轴，或兼容查询康复科研数据库 blood.db。\
+                 RehabID 操作：list_rehab_cases、rehab_case(case_id, include_candidates)。\
+                 数据库操作：list_tables, list_athletes(keyword), athlete_card(athlete), \
                  blood_panel(analyte, athlete可选), cpet_tests(limit), week_summary(start_date,end_date), \
                  query(sql, limit)——query 只允许只读 SELECT。数据库路径由 GALEN_REHAB_DB 环境变量、\
                  ~/.galen/rehab.toml 的 db_path 或工作区 blood.db 决定。结果带数据来源。"
@@ -298,8 +373,10 @@ impl GalenTool for RehabData {
                 "properties": {
                     "operation": {
                         "type": "string",
-                        "enum": ["list_tables", "list_athletes", "athlete_card", "blood_panel", "cpet_tests", "week_summary", "query"]
+                        "enum": ["list_rehab_cases", "rehab_case", "list_tables", "list_athletes", "athlete_card", "blood_panel", "cpet_tests", "week_summary", "query"]
                     },
+                    "case_id": {"type": "string", "description": "伪名化 RehabID"},
+                    "include_candidates": {"type": "boolean", "description": "是否包含尚未核验的候选观察；默认 false"},
                     "keyword": {"type": "string", "description": "运动员姓名/ID 关键字"},
                     "athlete": {"type": "string", "description": "运动员姓名/ID"},
                     "analyte": {"type": "string", "description": "血指标名称，如 CK / 睾酮"},
@@ -315,10 +392,22 @@ impl GalenTool for RehabData {
 
     async fn execute(&self, input: Json, ctx: &ToolContext) -> Result<String, String> {
         let operation = input["operation"].as_str().unwrap_or("");
+        let limit = (input["limit"].as_u64().unwrap_or(50) as usize).min(MAX_ROWS);
+        match operation {
+            "list_rehab_cases" => return list_rehab_id_cases(ctx, limit),
+            "rehab_case" => {
+                return read_rehab_id_case(
+                    ctx,
+                    input["case_id"].as_str().unwrap_or(""),
+                    input["include_candidates"].as_bool().unwrap_or(false),
+                    limit,
+                )
+            }
+            _ => {}
+        }
         let db_path = resolve_db_path(ctx)
             .ok_or("未找到康复数据库：请设置 GALEN_REHAB_DB 环境变量、~/.galen/rehab.toml 的 db_path，或在工作区放置 blood.db")?;
         let conn = open_readonly(&db_path)?;
-        let limit = (input["limit"].as_u64().unwrap_or(50) as usize).min(MAX_ROWS);
         let keyword = input["keyword"].as_str().unwrap_or("");
         let athlete = input["athlete"].as_str().unwrap_or("");
         let analyte = input["analyte"].as_str().unwrap_or("");
@@ -372,6 +461,17 @@ impl GalenTool for RehabData {
 mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_workspace() -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("galen-rehab-tool-{nonce}"));
+        std::fs::create_dir_all(path.join("output")).unwrap();
+        path
+    }
 
     #[test]
     fn queries_rehab_db_when_available() {
@@ -387,5 +487,64 @@ mod tests {
         let tables = list_tables(&conn).expect("list tables");
         assert!(tables.iter().any(|l| l.contains("athletes")));
         println!("athletes sample: {}", athletes[0]);
+    }
+
+    #[tokio::test]
+    async fn reads_governed_rehab_id_without_requiring_legacy_database() {
+        let workspace = temp_workspace();
+        std::fs::write(
+            workspace.join("output/normalized.csv"),
+            "rehab_id,timepoint,metric,value,unit\nRID-001,baseline,atr,7,deg\n",
+        )
+        .unwrap();
+        std::fs::write(workspace.join("output/quality.json"), "{}").unwrap();
+        crate::rehab_context::import_governed_timeline(
+            &workspace,
+            crate::rehab_context::GovernedTimelineImportInput {
+                dataset_path: "output/normalized.csv".into(),
+                quality_report_path: "output/quality.json".into(),
+                measurements: vec![crate::rehab_context::GovernedMeasurementInput {
+                    case_id: "RID-001".into(),
+                    timepoint: "baseline".into(),
+                    metric: "adams_atrDegrees".into(),
+                    value: 7.0,
+                    unit: "deg".into(),
+                    source_record_id: Some("assessment-a1".into()),
+                    verification_status: Some(
+                        crate::rehab_context::VerificationStatus::Candidate,
+                    ),
+                }],
+            },
+        )
+        .unwrap();
+        let medical = Arc::new(medical_core::MedicalCore::new(None));
+        let ctx = ToolContext::new(medical, Mutex::new(Some(workspace.clone())));
+        let tool = RehabData;
+
+        let default_view = tool
+            .execute(
+                json!({"operation": "rehab_case", "case_id": "RID-001"}),
+                &ctx,
+            )
+            .await
+            .unwrap();
+        assert!(default_view.contains("candidateObservationCount\": 1"));
+        assert!(!default_view.contains("adams_atrDegrees"));
+
+        let audit_view = tool
+            .execute(
+                json!({
+                    "operation": "rehab_case",
+                    "case_id": "RID-001",
+                    "include_candidates": true
+                }),
+                &ctx,
+            )
+            .await
+            .unwrap();
+        assert!(audit_view.contains("adams_atrDegrees"));
+        assert!(audit_view.contains("assessment-a1"));
+        assert!(audit_view.contains("不得当作确定事实"));
+        let _ = std::fs::remove_dir_all(workspace);
     }
 }

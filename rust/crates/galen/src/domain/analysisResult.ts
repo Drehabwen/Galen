@@ -45,6 +45,7 @@ export interface RehabTimelineImportOutput {
   caseIds: string[];
   importedEventCount: number;
   importedObservationCount: number;
+  candidateObservationCount?: number;
   skippedObservationCount: number;
   receipt: import("./artifact").ArtifactRecord;
 }

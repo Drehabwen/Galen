@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -13,6 +13,7 @@ pub enum VerificationStatus {
     Candidate,
     Verified,
     Disputed,
+    Rejected,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -114,6 +115,74 @@ pub struct Observation {
     pub source_locator: SourceLocator,
     pub verification_status: VerificationStatus,
     pub note: Option<String>,
+    #[serde(default)]
+    pub source_record_id: Option<String>,
+    #[serde(default)]
+    pub protocol: Option<ObservationProtocolRef>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ObservationProtocolRef {
+    pub registry_id: String,
+    pub registry_version: String,
+    pub original_metric: String,
+    pub evidence_kind: crate::rehab_protocol::EvidenceKind,
+    pub allowed_use: crate::rehab_protocol::AllowedUse,
+    pub expected_unit: Option<String>,
+    pub unit_matches: bool,
+    pub registered: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ObservationReviewAction {
+    Accept,
+    Reject,
+    Correct,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ResearchFollowUpAction {
+    #[default]
+    None,
+    Recapture,
+    ScheduleRetest,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ObservationReviewInput {
+    pub case_id: String,
+    pub observation_id: String,
+    pub expected_revision: u32,
+    pub action: ObservationReviewAction,
+    pub reason: String,
+    pub reviewer: String,
+    pub corrected_value: Option<Value>,
+    pub corrected_unit: Option<String>,
+    #[serde(default)]
+    pub follow_up_action: ResearchFollowUpAction,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ObservationReviewRecord {
+    pub review_id: String,
+    pub observation_id: String,
+    pub action: ObservationReviewAction,
+    pub reason: String,
+    pub reviewer: String,
+    pub reviewed_at: String,
+    pub previous_value: Option<Value>,
+    pub previous_unit: String,
+    pub previous_status: VerificationStatus,
+    pub resulting_value: Option<Value>,
+    pub resulting_unit: String,
+    pub resulting_status: VerificationStatus,
+    #[serde(default)]
+    pub follow_up_action: ResearchFollowUpAction,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -160,7 +229,21 @@ pub struct RehabCaseBundle {
     pub events: Vec<ClinicalEvent>,
     pub observations: Vec<Observation>,
     pub review_decisions: Vec<ReviewDecision>,
+    #[serde(default)]
+    pub observation_reviews: Vec<ObservationReviewRecord>,
     pub cohort_row: CohortRow,
+}
+
+#[derive(Debug, Clone)]
+struct NormalizedMeasurement {
+    timepoint: String,
+    metric: String,
+    value: f64,
+    unit: String,
+    source_record_id: Option<String>,
+    verification_status: VerificationStatus,
+    protocol: ObservationProtocolRef,
+    protocol_note: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -186,6 +269,10 @@ pub struct GovernedMeasurementInput {
     pub metric: String,
     pub value: f64,
     pub unit: String,
+    #[serde(default)]
+    pub source_record_id: Option<String>,
+    #[serde(default)]
+    pub verification_status: Option<VerificationStatus>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -202,6 +289,7 @@ pub struct GovernedTimelineImportOutput {
     pub case_ids: Vec<String>,
     pub imported_event_count: usize,
     pub imported_observation_count: usize,
+    pub candidate_observation_count: usize,
     pub skipped_observation_count: usize,
     pub receipt: crate::artifact::ArtifactRecord,
 }
@@ -217,6 +305,7 @@ struct GovernedTimelineImportReceipt {
     case_ids: Vec<String>,
     imported_event_count: usize,
     imported_observation_count: usize,
+    candidate_observation_count: usize,
     skipped_observation_count: usize,
 }
 
@@ -347,6 +436,8 @@ pub fn import_ais_case(
             unit: observation.unit,
             verification_status: observation.verification_status,
             note: observation.note,
+            source_record_id: None,
+            protocol: None,
         })
         .collect();
     let review_decisions = source
@@ -399,6 +490,7 @@ pub fn import_ais_case(
         events,
         observations,
         review_decisions,
+        observation_reviews: Vec::new(),
         cohort_row: empty_cohort(case_id),
     };
     bundle.cohort_row = compute_cohort_row(&bundle);
@@ -442,28 +534,61 @@ pub fn import_governed_timeline(
     let dataset_source_id = format!("governed-dataset-{}", &dataset_hash[..12]);
     let quality_source_id = format!("quality-report-{}", &quality_hash[..12]);
 
-    let mut grouped: BTreeMap<String, Vec<GovernedMeasurementInput>> = BTreeMap::new();
+    let mut grouped: BTreeMap<String, Vec<NormalizedMeasurement>> = BTreeMap::new();
     for measurement in input.measurements {
         if !measurement.value.is_finite() {
             return Err("观察值包含非有限数值，未写入 Rehab ID。".into());
         }
         let case_id = normalize_governed_id(&measurement.case_id, "Rehab ID")?;
-        let metric = normalize_governed_id(&measurement.metric, "指标")?;
+        let original_metric = normalize_governed_id(&measurement.metric, "指标")?;
+        let unit = clean_unit(&measurement.unit);
+        let protocol = crate::rehab_protocol::resolve_metric(&original_metric, &unit)?;
+        if protocol.allowed_use == crate::rehab_protocol::AllowedUse::Excluded {
+            return Err(format!(
+                "指标 {original_metric} 被协议 {}@{} 排除，不能写入 Rehab ID。",
+                protocol.registry_id, protocol.registry_version
+            ));
+        }
+        let mut verification_status = measurement
+            .verification_status
+            .unwrap_or(VerificationStatus::Verified);
+        let mut protocol_notes = Vec::new();
+        if !protocol.registered {
+            verification_status = VerificationStatus::Candidate;
+            protocol_notes.push("指标尚未注册，只能进入研究候选队列");
+        }
+        if !protocol.unit_matches {
+            verification_status = VerificationStatus::Candidate;
+            protocol_notes.push("单位与协议不一致，必须更正或人工确认");
+        }
         let timepoint = normalize_timepoint(&measurement.timepoint)?;
         grouped
             .entry(case_id)
             .or_default()
-            .push(GovernedMeasurementInput {
-                case_id: String::new(),
+            .push(NormalizedMeasurement {
                 timepoint,
-                metric,
+                metric: protocol.canonical_metric.clone(),
                 value: measurement.value,
-                unit: clean_unit(&measurement.unit),
+                unit,
+                source_record_id: measurement.source_record_id.map(clean_source_record_id),
+                verification_status,
+                protocol: ObservationProtocolRef {
+                    registry_id: protocol.registry_id,
+                    registry_version: protocol.registry_version,
+                    original_metric,
+                    evidence_kind: protocol.evidence_kind,
+                    allowed_use: protocol.allowed_use,
+                    expected_unit: protocol.expected_unit,
+                    unit_matches: protocol.unit_matches,
+                    registered: protocol.registered,
+                },
+                protocol_note: (!protocol_notes.is_empty()).then(|| protocol_notes.join("；")),
             });
     }
 
     let mut imported_event_count = 0;
     let mut imported_observation_count = 0;
+    let mut candidate_observation_count = 0;
     let mut skipped_observation_count = 0;
     let mut case_ids = Vec::new();
     let import_prefix = &dataset_hash[..10];
@@ -532,6 +657,15 @@ pub fn import_governed_timeline(
                 })
                 .clone();
             if !bundle.events.iter().any(|event| event.event_id == event_id) {
+                let event_status = if measurements
+                    .iter()
+                    .filter(|item| item.timepoint == measurement.timepoint)
+                    .all(|item| item.verification_status == VerificationStatus::Verified)
+                {
+                    VerificationStatus::Verified
+                } else {
+                    VerificationStatus::Candidate
+                };
                 bundle.events.push(ClinicalEvent {
                     event_id: event_id.clone(),
                     case_id: case_id.clone(),
@@ -540,7 +674,7 @@ pub fn import_governed_timeline(
                     collection_context: CollectionContext::Unknown,
                     interventions: Vec::new(),
                     source_ids: vec![dataset_source_id.clone()],
-                    verification_status: VerificationStatus::Verified,
+                    verification_status: event_status,
                 });
                 imported_event_count += 1;
                 changed = true;
@@ -568,6 +702,16 @@ pub fn import_governed_timeline(
                 skipped_observation_count += 1;
                 continue;
             }
+            let verification_status = measurement.verification_status;
+            let provenance_note = measurement
+                .source_record_id
+                .as_deref()
+                .map(|record_id| format!("来自可追溯数据版本；上游来源记录 {record_id}"))
+                .unwrap_or_else(|| "来自 Galen 数据体检后的可追溯数据版本".into());
+            let note = Some(match measurement.protocol_note {
+                Some(protocol_note) => format!("{provenance_note}；{protocol_note}"),
+                None => provenance_note,
+            });
             bundle.observations.push(Observation {
                 observation_id,
                 case_id: case_id.clone(),
@@ -584,10 +728,15 @@ pub fn import_governed_timeline(
                     channel: "governed_dataset".into(),
                     figure: None,
                 },
-                verification_status: VerificationStatus::Verified,
-                note: Some("来自 Galen 数据体检后的可追溯数据版本".into()),
+                verification_status,
+                note,
+                source_record_id: measurement.source_record_id,
+                protocol: Some(measurement.protocol),
             });
             imported_observation_count += 1;
+            if verification_status == VerificationStatus::Candidate {
+                candidate_observation_count += 1;
+            }
             changed = true;
         }
         if changed {
@@ -608,6 +757,7 @@ pub fn import_governed_timeline(
         case_ids: case_ids.clone(),
         imported_event_count,
         imported_observation_count,
+        candidate_observation_count,
         skipped_observation_count,
     };
     let stamp = now_millis();
@@ -626,6 +776,7 @@ pub fn import_governed_timeline(
         case_ids,
         imported_event_count,
         imported_observation_count,
+        candidate_observation_count,
         skipped_observation_count,
         receipt,
     })
@@ -636,7 +787,16 @@ pub fn load_case_bundle(workspace: &Path, case_id: &str) -> Result<RehabCaseBund
     let path = case_path(workspace, case_id);
     let text = std::fs::read_to_string(&path)
         .map_err(|error| format!("读取康复病例 {} 失败: {error}", path.display()))?;
-    serde_json::from_str(&text).map_err(|error| format!("康复病例数据无效: {error}"))
+    let mut bundle: RehabCaseBundle =
+        serde_json::from_str(&text).map_err(|error| format!("康复病例数据无效: {error}"))?;
+    let expected_open_reviews = pending_review_target_count(&bundle);
+    if bundle.cohort_row.open_review_count != expected_open_reviews {
+        bundle.revision += 1;
+        bundle.case_record.updated_at = now_timestamp();
+        bundle.cohort_row = compute_cohort_row(&bundle);
+        save_case_bundle(workspace, &bundle)?;
+    }
+    Ok(bundle)
 }
 
 pub fn list_case_summaries(workspace: &Path) -> Result<Vec<RehabCaseSummary>, String> {
@@ -710,6 +870,154 @@ pub fn resolve_review(
     Ok(bundle)
 }
 
+pub fn review_observation(
+    workspace: &Path,
+    input: ObservationReviewInput,
+) -> Result<RehabCaseBundle, String> {
+    validate_id(&input.case_id)?;
+    if input.reason.trim().is_empty() {
+        return Err("观察审核必须填写具体理由。".into());
+    }
+    if input.reviewer.trim().is_empty() {
+        return Err("观察审核必须记录审核人。".into());
+    }
+    let mut bundle = load_case_bundle(workspace, &input.case_id)?;
+    if bundle.revision != input.expected_revision {
+        return Err(format!(
+            "REHAB_CASE_CONFLICT: 当前 revision={}，请求 revision={}",
+            bundle.revision, input.expected_revision
+        ));
+    }
+    let observation_index = bundle
+        .observations
+        .iter()
+        .position(|item| item.observation_id == input.observation_id)
+        .ok_or_else(|| format!("找不到观察值 {}", input.observation_id))?;
+    let observation = &mut bundle.observations[observation_index];
+    let previous_value = observation.value.clone();
+    let previous_unit = observation.unit.clone();
+    let previous_status = observation.verification_status;
+
+    match input.action {
+        ObservationReviewAction::Accept => {
+            if observation
+                .protocol
+                .as_ref()
+                .is_some_and(|protocol| {
+                    protocol.allowed_use == crate::rehab_protocol::AllowedUse::Excluded
+                        || !protocol.unit_matches
+                })
+            {
+                return Err("协议排除或单位不匹配的观察不能直接接受，请更正或拒绝。".into());
+            }
+            observation.verification_status = VerificationStatus::Verified;
+        }
+        ObservationReviewAction::Reject => {
+            observation.verification_status = VerificationStatus::Rejected;
+        }
+        ObservationReviewAction::Correct => {
+            let corrected_value = input
+                .corrected_value
+                .clone()
+                .ok_or("更正观察必须提供 correctedValue。")?;
+            if corrected_value.as_f64().is_none() && corrected_value.as_str().is_none() {
+                return Err("correctedValue 只支持有限数值或文本。".into());
+            }
+            if corrected_value.as_f64().is_some_and(|value| !value.is_finite()) {
+                return Err("correctedValue 不能是非有限数值。".into());
+            }
+            let corrected_unit = input
+                .corrected_unit
+                .as_deref()
+                .map(clean_unit)
+                .unwrap_or_else(|| observation.unit.clone());
+            let original_metric = observation
+                .protocol
+                .as_ref()
+                .map(|protocol| protocol.original_metric.clone())
+                .unwrap_or_else(|| observation.metric.clone());
+            let resolution =
+                crate::rehab_protocol::resolve_metric(&original_metric, &corrected_unit)?;
+            if resolution.allowed_use == crate::rehab_protocol::AllowedUse::Excluded {
+                return Err("被协议排除的指标不能通过人工更正进入事实层。".into());
+            }
+            if !resolution.unit_matches {
+                return Err(format!(
+                    "更正单位仍与协议不一致；预期 {}。",
+                    resolution.expected_unit.as_deref().unwrap_or("协议允许单位")
+                ));
+            }
+            observation.value = Some(corrected_value);
+            observation.unit = corrected_unit;
+            observation.metric = resolution.canonical_metric.clone();
+            observation.protocol = Some(ObservationProtocolRef {
+                registry_id: resolution.registry_id,
+                registry_version: resolution.registry_version,
+                original_metric,
+                evidence_kind: resolution.evidence_kind,
+                allowed_use: resolution.allowed_use,
+                expected_unit: resolution.expected_unit,
+                unit_matches: resolution.unit_matches,
+                registered: resolution.registered,
+            });
+            observation.verification_status = VerificationStatus::Verified;
+        }
+    }
+
+    let resulting_value = observation.value.clone();
+    let resulting_unit = observation.unit.clone();
+    let resulting_status = observation.verification_status;
+    let event_id = observation.event_id.clone();
+    bundle.observation_reviews.push(ObservationReviewRecord {
+        review_id: format!("review-{}-{}", slug(&input.observation_id, 36), now_millis()),
+        observation_id: input.observation_id,
+        action: input.action,
+        reason: input.reason.trim().chars().take(500).collect(),
+        reviewer: clean_reviewer(&input.reviewer),
+        reviewed_at: now_timestamp(),
+        previous_value,
+        previous_unit,
+        previous_status,
+        resulting_value,
+        resulting_unit,
+        resulting_status,
+        follow_up_action: input.follow_up_action,
+    });
+    refresh_event_verification(&mut bundle, &event_id);
+    bundle.revision += 1;
+    bundle.case_record.updated_at = now_timestamp();
+    bundle.cohort_row = compute_cohort_row(&bundle);
+    save_case_bundle(workspace, &bundle)?;
+    Ok(bundle)
+}
+
+fn refresh_event_verification(bundle: &mut RehabCaseBundle, event_id: &str) {
+    let statuses = bundle
+        .observations
+        .iter()
+        .filter(|item| item.event_id == event_id)
+        .map(|item| item.verification_status)
+        .collect::<Vec<_>>();
+    let status = if !statuses.is_empty()
+        && statuses
+            .iter()
+            .all(|status| *status == VerificationStatus::Verified)
+    {
+        VerificationStatus::Verified
+    } else if !statuses.is_empty()
+        && statuses
+            .iter()
+            .all(|status| *status == VerificationStatus::Rejected)
+    {
+        VerificationStatus::Rejected
+    } else {
+        VerificationStatus::Candidate
+    };
+    if let Some(event) = bundle.events.iter_mut().find(|event| event.event_id == event_id) {
+        event.verification_status = status;
+    }
+}
+
 pub fn compute_cohort_row(bundle: &RehabCaseBundle) -> CohortRow {
     let verified: Vec<_> = bundle
         .observations
@@ -753,11 +1061,7 @@ pub fn compute_cohort_row(bundle: &RehabCaseBundle) -> CohortRow {
     selected_observation_ids.sort();
     selected_observation_ids.dedup();
 
-    let open_review_count = bundle
-        .review_decisions
-        .iter()
-        .filter(|decision| decision.status == ReviewStatus::Open)
-        .count();
+    let open_review_count = pending_review_target_count(bundle);
     let located = verified
         .iter()
         .filter(|observation| {
@@ -798,6 +1102,28 @@ pub fn compute_cohort_row(bundle: &RehabCaseBundle) -> CohortRow {
         open_review_count,
         generated_at: now_timestamp(),
     }
+}
+
+fn pending_review_target_count(bundle: &RehabCaseBundle) -> usize {
+    let mut open_review_targets = bundle
+        .observations
+        .iter()
+        .filter(|observation| {
+            matches!(
+                observation.verification_status,
+                VerificationStatus::Candidate | VerificationStatus::Disputed
+            )
+        })
+        .map(|observation| observation.observation_id.clone())
+        .collect::<BTreeSet<_>>();
+    open_review_targets.extend(
+        bundle
+            .review_decisions
+            .iter()
+            .filter(|decision| decision.status == ReviewStatus::Open)
+            .map(|decision| decision.target_observation_id.clone()),
+    );
+    open_review_targets.len()
 }
 
 fn save_case_bundle(workspace: &Path, bundle: &RehabCaseBundle) -> Result<(), String> {
@@ -901,6 +1227,7 @@ fn new_governed_case(case_id: &str) -> RehabCaseBundle {
         events: Vec::new(),
         observations: Vec::new(),
         review_decisions: Vec::new(),
+        observation_reviews: Vec::new(),
         cohort_row: empty_cohort(case_id),
     }
 }
@@ -940,6 +1267,17 @@ fn clean_unit(value: &str) -> String {
     } else {
         unit
     }
+}
+
+fn clean_source_record_id(value: String) -> String {
+    value
+        .trim()
+        .chars()
+        .filter(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.' | ':')
+        })
+        .take(120)
+        .collect()
 }
 
 fn slug(value: &str, max: usize) -> String {
@@ -1110,6 +1448,8 @@ mod tests {
                     metric: "hrv_rmssd_ms".into(),
                     value: 42.0,
                     unit: "ms".into(),
+                    source_record_id: None,
+                    verification_status: None,
                 },
                 GovernedMeasurementInput {
                     case_id: "P-001".into(),
@@ -1117,6 +1457,8 @@ mod tests {
                     metric: "cmj_height_cm".into(),
                     value: 31.0,
                     unit: "cm".into(),
+                    source_record_id: None,
+                    verification_status: None,
                 },
                 GovernedMeasurementInput {
                     case_id: "P-001".into(),
@@ -1124,6 +1466,8 @@ mod tests {
                     metric: "hrv_rmssd_ms".into(),
                     value: 55.0,
                     unit: "ms".into(),
+                    source_record_id: None,
+                    verification_status: None,
                 },
                 GovernedMeasurementInput {
                     case_id: "P-001".into(),
@@ -1131,6 +1475,8 @@ mod tests {
                     metric: "cmj_height_cm".into(),
                     value: 34.0,
                     unit: "cm".into(),
+                    source_record_id: None,
+                    verification_status: None,
                 },
             ],
         };
@@ -1177,6 +1523,8 @@ mod tests {
                         metric: "hrv_rmssd_ms".into(),
                         value: 40.0,
                         unit: "ms".into(),
+                        source_record_id: None,
+                        verification_status: None,
                     },
                     GovernedMeasurementInput {
                         case_id: "P-002".into(),
@@ -1184,6 +1532,8 @@ mod tests {
                         metric: "hrv_rmssd_ms".into(),
                         value: 38.0,
                         unit: "ms".into(),
+                        source_record_id: None,
+                        verification_status: None,
                     },
                     GovernedMeasurementInput {
                         case_id: "P-002".into(),
@@ -1191,6 +1541,8 @@ mod tests {
                         metric: "hrv_rmssd_ms".into(),
                         value: 46.0,
                         unit: "ms".into(),
+                        source_record_id: None,
+                        verification_status: None,
                     },
                 ],
             },
@@ -1222,10 +1574,175 @@ mod tests {
                     metric: "rpe".into(),
                     value: 12.0,
                     unit: "score".into(),
+                    source_record_id: None,
+                    verification_status: None,
                 }],
             },
         );
         assert!(result.is_err());
         assert_eq!(std::fs::read_to_string(corrupt).unwrap(), "not valid json");
+    }
+
+    #[test]
+    fn protocol_registry_blocks_excluded_measurements() {
+        let workspace = fixture_workspace();
+        std::fs::create_dir_all(workspace.join("output")).unwrap();
+        std::fs::write(workspace.join("output/cleaned.csv"), "metric\n1\n").unwrap();
+        std::fs::write(workspace.join("output/quality.json"), "{}").unwrap();
+        let error = import_governed_timeline(
+            &workspace,
+            GovernedTimelineImportInput {
+                dataset_path: "output/cleaned.csv".into(),
+                quality_report_path: "output/quality.json".into(),
+                measurements: vec![GovernedMeasurementInput {
+                    case_id: "RID-BLOCKED".into(),
+                    timepoint: "baseline".into(),
+                    metric: "adams_cobbAngleEstimate".into(),
+                    value: 18.0,
+                    unit: "deg".into(),
+                    source_record_id: Some("assessment-x".into()),
+                    verification_status: Some(VerificationStatus::Candidate),
+                }],
+            },
+        )
+        .unwrap_err();
+        assert!(error.contains("协议") && error.contains("排除"));
+        assert!(!case_path(&workspace, "RID-BLOCKED").exists());
+    }
+
+    #[test]
+    fn observation_review_is_revision_safe_and_auditable() {
+        let workspace = fixture_workspace();
+        std::fs::create_dir_all(workspace.join("output")).unwrap();
+        std::fs::write(workspace.join("output/cleaned.csv"), "metric\n1\n").unwrap();
+        std::fs::write(workspace.join("output/quality.json"), "{}").unwrap();
+        let imported = import_governed_timeline(
+            &workspace,
+            GovernedTimelineImportInput {
+                dataset_path: "output/cleaned.csv".into(),
+                quality_report_path: "output/quality.json".into(),
+                measurements: vec![
+                    GovernedMeasurementInput {
+                        case_id: "RID-REVIEW".into(),
+                        timepoint: "baseline".into(),
+                        metric: "adams_atrDegrees".into(),
+                        value: 7.0,
+                        unit: "deg".into(),
+                        source_record_id: Some("assessment-a".into()),
+                        verification_status: Some(VerificationStatus::Candidate),
+                    },
+                    GovernedMeasurementInput {
+                        case_id: "RID-REVIEW".into(),
+                        timepoint: "baseline".into(),
+                        metric: "rom_knee_flexion_left".into(),
+                        value: 32.0,
+                        unit: "cm".into(),
+                        source_record_id: Some("assessment-b".into()),
+                        verification_status: Some(VerificationStatus::Candidate),
+                    },
+                    GovernedMeasurementInput {
+                        case_id: "RID-REVIEW".into(),
+                        timepoint: "baseline".into(),
+                        metric: "novel_sensor_index".into(),
+                        value: 0.8,
+                        unit: "value".into(),
+                        source_record_id: Some("assessment-c".into()),
+                        verification_status: Some(VerificationStatus::Candidate),
+                    },
+                ],
+            },
+        )
+        .unwrap();
+        let initial = load_case_bundle(&workspace, "RID-REVIEW").unwrap();
+        assert_eq!(initial.cohort_row.open_review_count, 3);
+        let atr_id = initial
+            .observations
+            .iter()
+            .find(|item| item.metric == "adams_atr_deg")
+            .unwrap()
+            .observation_id
+            .clone();
+        let accepted = review_observation(
+            &workspace,
+            ObservationReviewInput {
+                case_id: "RID-REVIEW".into(),
+                observation_id: atr_id.clone(),
+                expected_revision: initial.revision,
+                action: ObservationReviewAction::Accept,
+                reason: "已核对原始测角仪记录与单位".into(),
+                reviewer: "reviewer-1".into(),
+                corrected_value: None,
+                corrected_unit: None,
+                follow_up_action: ResearchFollowUpAction::None,
+            },
+        )
+        .unwrap();
+        assert_eq!(accepted.cohort_row.open_review_count, 2);
+        assert_eq!(accepted.observation_reviews.len(), 1);
+        assert_eq!(accepted.observation_reviews[0].previous_status, VerificationStatus::Candidate);
+        let stale = review_observation(
+            &workspace,
+            ObservationReviewInput {
+                case_id: "RID-REVIEW".into(),
+                observation_id: atr_id,
+                expected_revision: initial.revision,
+                action: ObservationReviewAction::Reject,
+                reason: "模拟过期操作".into(),
+                reviewer: "reviewer-2".into(),
+                corrected_value: None,
+                corrected_unit: None,
+                follow_up_action: ResearchFollowUpAction::None,
+            },
+        )
+        .unwrap_err();
+        assert!(stale.contains("REHAB_CASE_CONFLICT"));
+
+        let rom_id = accepted
+            .observations
+            .iter()
+            .find(|item| item.metric.starts_with("rom_"))
+            .unwrap()
+            .observation_id
+            .clone();
+        let corrected = review_observation(
+            &workspace,
+            ObservationReviewInput {
+                case_id: "RID-REVIEW".into(),
+                observation_id: rom_id,
+                expected_revision: accepted.revision,
+                action: ObservationReviewAction::Correct,
+                reason: "原导出把角度单位错误标成 cm".into(),
+                reviewer: "reviewer-1".into(),
+                corrected_value: Some(Value::from(32.0)),
+                corrected_unit: Some("deg".into()),
+                follow_up_action: ResearchFollowUpAction::None,
+            },
+        )
+        .unwrap();
+        let unknown_id = corrected
+            .observations
+            .iter()
+            .find(|item| item.metric == "novel_sensor_index")
+            .unwrap()
+            .observation_id
+            .clone();
+        let rejected = review_observation(
+            &workspace,
+            ObservationReviewInput {
+                case_id: "RID-REVIEW".into(),
+                observation_id: unknown_id,
+                expected_revision: corrected.revision,
+                action: ObservationReviewAction::Reject,
+                reason: "设备字段尚未注册且无法追溯校准".into(),
+                reviewer: "reviewer-1".into(),
+                corrected_value: None,
+                corrected_unit: None,
+                follow_up_action: ResearchFollowUpAction::Recapture,
+            },
+        )
+        .unwrap();
+        assert_eq!(rejected.cohort_row.open_review_count, 0);
+        assert_eq!(rejected.observation_reviews.len(), 3);
+        assert_eq!(imported.case_ids, vec!["RID-REVIEW"]);
     }
 }

@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "registryId": "rehab-screening-core",
+  "version": "1.0.0",
+  "title": "青少年姿态与脊柱风险筛查核心测量协议",
+  "scope": "screening_and_research",
+  "metrics": [
+    {
+      "canonicalMetric": "adams_atr_deg",
+      "aliases": ["adams_atr_deg", "adams_atrDegrees", "adams_atr_degrees", "adams_scoliometerReading", "adams_scoliometer_reading"],
+      "prefixes": [],
+      "unit": "deg",
+      "evidenceKind": "observed",
+      "allowedUse": "specialty_evidence",
+      "requiresHumanReview": true,
+      "directional": true
+    },
+    {
+      "canonicalMetric": "excluded_cobb_estimate",
+      "aliases": ["excluded_cobb_estimate", "adams_cobbAngleEstimate", "adams_cobb_angle_estimate", "cobbAngleEstimate"],
+      "prefixes": [],
+      "unit": "deg",
+      "evidenceKind": "model_estimate",
+      "allowedUse": "excluded",
+      "requiresHumanReview": true,
+      "directional": false
+    },
+    {
+      "canonicalMetric": "posture_measurement",
+      "aliases": [],
+      "prefixes": ["posture_"],
+      "unit": null,
+      "evidenceKind": "observed",
+      "allowedUse": "screening_evidence",
+      "requiresHumanReview": true,
+      "directional": true
+    },
+    {
+      "canonicalMetric": "rom_measurement",
+      "aliases": [],
+      "prefixes": ["rom_"],
+      "unit": "deg",
+      "evidenceKind": "observed",
+      "allowedUse": "research_only",
+      "requiresHumanReview": true,
+      "directional": true
+    },
+    {
+      "canonicalMetric": "scale_measurement",
+      "aliases": [],
+      "prefixes": ["vas_", "fma-", "scale_"],
+      "unit": null,
+      "evidenceKind": "human_judgment",
+      "allowedUse": "research_only",
+      "requiresHumanReview": true,
+      "directional": false
+    },
+    {
+      "canonicalMetric": "hrv_rmssd_ms",
+      "aliases": ["hrv_rmssd_ms"],
+      "prefixes": [],
+      "unit": "ms",
+      "evidenceKind": "observed",
+      "allowedUse": "research_only",
+      "requiresHumanReview": false,
+      "directional": false
+    },
+    {
+      "canonicalMetric": "cmj_height_cm",
+      "aliases": ["cmj_height_cm"],
+      "prefixes": [],
+      "unit": "cm",
+      "evidenceKind": "observed",
+      "allowedUse": "research_only",
+      "requiresHumanReview": false,
+      "directional": false
+    }
+  ]
+}

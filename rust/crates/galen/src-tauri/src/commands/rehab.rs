@@ -77,6 +77,17 @@ pub fn resolve_rehab_review(
 }
 
 #[tauri::command]
+pub fn review_rehab_observation(
+    state: State<AppState>,
+    input: crate::rehab_context::ObservationReviewInput,
+) -> Result<crate::rehab_context::RehabCaseBundle, String> {
+    let root = selected_workspace(&state)?;
+    let bundle = crate::rehab_context::review_observation(&root, input)?;
+    crate::connectors::publish_review_feedback(&root, &bundle)?;
+    Ok(bundle)
+}
+
+#[tauri::command]
 pub fn run_rehab_golden_journeys(
     state: State<AppState>,
     source_path: String,

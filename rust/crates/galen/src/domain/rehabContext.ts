@@ -1,4 +1,6 @@
-export type VerificationStatus = "candidate" | "verified" | "disputed";
+export type VerificationStatus = "candidate" | "verified" | "disputed" | "rejected";
+export type ObservationReviewAction = "accept" | "reject" | "correct";
+export type ResearchFollowUpAction = "none" | "recapture" | "schedule_retest";
 export type CohortStatus = "included" | "excluded" | "pending_review";
 
 export interface ClinicalEvent {
@@ -18,6 +20,18 @@ export interface Observation {
   unit: string;
   collection_context: string;
   verification_status: VerificationStatus;
+  note?: string | null;
+  source_record_id?: string | null;
+  protocol?: {
+    registryId: string;
+    registryVersion: string;
+    originalMetric: string;
+    evidenceKind: "observed" | "derived" | "model_estimate" | "human_judgment" | "unknown";
+    allowedUse: "specialty_evidence" | "screening_evidence" | "research_only" | "excluded";
+    expectedUnit: string | null;
+    unitMatches: boolean;
+    registered: boolean;
+  } | null;
   source_locator: {
     pdf_page: number | null;
     book_page: number | null;
@@ -51,6 +65,17 @@ export interface RehabCaseBundle {
   events: ClinicalEvent[];
   observations: Observation[];
   review_decisions: ReviewDecision[];
+  observation_reviews?: Array<{
+    reviewId: string;
+    observationId: string;
+    action: ObservationReviewAction;
+    reason: string;
+    reviewer: string;
+    reviewedAt: string;
+    previousStatus: VerificationStatus;
+    resultingStatus: VerificationStatus;
+    followUpAction: ResearchFollowUpAction;
+  }>;
   cohort_row: {
     status: CohortStatus;
     reasons: string[];

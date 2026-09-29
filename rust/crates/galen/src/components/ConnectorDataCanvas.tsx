@@ -13,6 +13,7 @@ export function ConnectorDataCanvas({ preview, result, latestAssessments, onCont
   const caseIds = result?.caseIds ?? preview?.cases.map((item) => item.caseId) ?? [];
   const eventCount = result?.importedEventCount ?? preview?.timepointCount ?? 0;
   const observationCount = result?.importedObservationCount ?? preview?.measurementCount ?? 0;
+  const candidateCount = result?.candidateObservationCount ?? 0;
   const sourceLabel = preview?.sourceLabel ?? "康复数据源";
   const previewTitle = `${sourceLabel}数据预览`;
   const sourceProvenance = preview?.connectionMode === "live_bridge"
@@ -65,6 +66,10 @@ export function ConnectorDataCanvas({ preview, result, latestAssessments, onCont
         <div>
           <span>可追溯记录</span>
           <strong>{result ? result.receipt.path.split(/[/\\]/).pop() : "确认后生成"}</strong>
+        </div>
+        <div>
+          <span>核验状态</span>
+          <strong>{imported ? `${candidateCount} 条待人工/质量核验` : "导入后进入候选队列"}</strong>
         </div>
       </section>
 

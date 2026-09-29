@@ -72,7 +72,7 @@ export function ConnectorConfirmation({
         {result && (
           <>
             <h3>数据已进入研究时间轴</h3>
-            <p>已建立 {result.caseIds.length} 个 RehabID，新增 {result.importedEventCount} 个时间点和 {result.importedObservationCount} 条观察记录。</p>
+            <p>已建立 {result.caseIds.length} 个 RehabID，新增 {result.importedEventCount} 个时间点和 {result.importedObservationCount} 条观察记录，其中 {result.candidateObservationCount ?? 0} 条等待人工或质量核验。</p>
             <div className="connector-case-strip">
               {result.caseIds.map((caseId) => <span key={caseId}><strong>{caseId}</strong>可继续在对话中分析</span>)}
             </div>

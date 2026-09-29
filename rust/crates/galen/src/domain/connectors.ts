@@ -21,10 +21,10 @@ export const FIRST_PARTY_CONNECTORS: FirstPartyConnector[] = [
     label: "康复师工作台",
     kind: "local_export",
     status: "ready",
-    sourcePath: "D:/DEV/Rehab",
+    sourcePath: "%LOCALAPPDATA%/Rehab/GalenConnector/latest.json",
     exportFormats: ["JSON"],
     normalizedEntities: ["RehabID", "session", "assessment", "measurement"],
-    notes: "已接通完整备份结构；在对话中说出对象和时间范围即可发现并确认获取。",
+    notes: "RehabMain 桌面端自动写出最小脱敏快照；在对话中说出 RehabID 和时间范围即可发现并确认获取。",
   },
   {
     id: "qingyue-workbench",

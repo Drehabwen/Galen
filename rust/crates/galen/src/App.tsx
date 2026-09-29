@@ -435,6 +435,7 @@ export default function App() {
             onOpenCase={(caseId) => void rehabContext.openCase(caseId)}
             onImportCase={(sourcePath, caseId) => void rehabContext.importCase(sourcePath, caseId)}
             onResolveReview={(decisionId, optionId) => void rehabContext.resolveReview(decisionId, optionId)}
+            onReviewObservation={(observationId, action, reason, correctedValue, correctedUnit) => void rehabContext.reviewObservation(observationId, action, reason, correctedValue, correctedUnit)}
             onRunGoldenJourneys={(sourcePath) => void rehabContext.runGoldenJourneys(sourcePath)}
           />
           )}

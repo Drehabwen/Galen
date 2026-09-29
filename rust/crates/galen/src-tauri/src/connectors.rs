@@ -71,6 +71,36 @@ struct ConnectorMeasurement {
     created_at: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectorFeedbackItem {
+    pub feedback_id: String,
+    pub rehab_id: String,
+    pub source_assessment_id: String,
+    pub observation_id: String,
+    pub metric: String,
+    pub action: crate::rehab_context::ObservationReviewAction,
+    pub follow_up_action: crate::rehab_context::ResearchFollowUpAction,
+    pub reason: String,
+    pub reviewer: String,
+    pub reviewed_at: String,
+    pub previous_value: Option<Value>,
+    pub previous_unit: String,
+    pub resulting_value: Option<Value>,
+    pub resulting_unit: String,
+    pub resulting_status: crate::rehab_context::VerificationStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectorFeedbackFile {
+    pub schema_version: u32,
+    pub connector_id: String,
+    pub generated_at: u64,
+    #[serde(default)]
+    pub items: Vec<ConnectorFeedbackItem>,
+}
+
 pub fn discover_latest(
     source_id: &str,
     case_hint: Option<&str>,
@@ -114,6 +144,115 @@ pub fn import_from_export(
     let export_path = validate_connector_export(&request.export_path, connector_id)?;
     let backup = read_backup(&export_path)?;
     import_backup(workspace, &export_path, backup, request, connector_id, connector_label)
+}
+
+pub fn publish_review_feedback(
+    _workspace: &Path,
+    bundle: &crate::rehab_context::RehabCaseBundle,
+) -> Result<bool, String> {
+    let is_workbench_case = bundle.sources.iter().any(|source| {
+        source.kind == "quality_report"
+            && source
+                .title
+                .replace('\\', "/")
+                .contains("output/connector-imports/rehab-workbench-")
+    });
+    if !is_workbench_case {
+        return Ok(false);
+    }
+
+    let target = galen_bridge_snapshot_path()?.with_file_name("feedback.json");
+    publish_review_feedback_to(bundle, &target)?;
+    Ok(true)
+}
+
+fn publish_review_feedback_to(
+    bundle: &crate::rehab_context::RehabCaseBundle,
+    target: &Path,
+) -> Result<(), String> {
+    let mut existing = if target.is_file() {
+        let bytes = fs::read(&target)
+            .map_err(|error| format!("读取 RehabMain 研究反馈失败: {error}"))?;
+        serde_json::from_slice::<ConnectorFeedbackFile>(&bytes)
+            .map_err(|error| format!("RehabMain 研究反馈格式无效: {error}"))?
+    } else {
+        ConnectorFeedbackFile {
+            schema_version: 1,
+            connector_id: REHAB_WORKBENCH_ID.into(),
+            generated_at: now_millis(),
+            items: Vec::new(),
+        }
+    };
+
+    let observations = bundle
+        .observations
+        .iter()
+        .map(|observation| (observation.observation_id.as_str(), observation))
+        .collect::<BTreeMap<_, _>>();
+    let mut items = existing
+        .items
+        .into_iter()
+        .map(|item| (item.feedback_id.clone(), item))
+        .collect::<BTreeMap<_, _>>();
+    for review in &bundle.observation_reviews {
+        let Some(observation) = observations.get(review.observation_id.as_str()) else {
+            continue;
+        };
+        let Some(source_assessment_id) = observation.source_record_id.clone() else {
+            continue;
+        };
+        let item = ConnectorFeedbackItem {
+            feedback_id: review.review_id.clone(),
+            rehab_id: bundle.case_record.case_id.clone(),
+            source_assessment_id,
+            observation_id: review.observation_id.clone(),
+            metric: observation.metric.clone(),
+            action: review.action,
+            follow_up_action: review.follow_up_action,
+            reason: review.reason.clone(),
+            reviewer: review.reviewer.clone(),
+            reviewed_at: review.reviewed_at.clone(),
+            previous_value: review.previous_value.clone(),
+            previous_unit: review.previous_unit.clone(),
+            resulting_value: review.resulting_value.clone(),
+            resulting_unit: review.resulting_unit.clone(),
+            resulting_status: review.resulting_status,
+        };
+        items.insert(item.feedback_id.clone(), item);
+    }
+    existing.generated_at = now_millis();
+    existing.items = items.into_values().collect();
+    let json = serde_json::to_vec_pretty(&existing)
+        .map_err(|error| format!("生成 RehabMain 研究反馈失败: {error}"))?;
+    write_connector_json(&target, &json)?;
+    Ok(())
+}
+
+fn write_connector_json(path: &Path, content: &[u8]) -> Result<(), String> {
+    let parent = path.parent().ok_or("连接器反馈路径没有父目录")?;
+    fs::create_dir_all(parent).map_err(|error| format!("创建连接器反馈目录失败: {error}"))?;
+    let pending = path.with_extension("json.pending");
+    fs::write(&pending, content).map_err(|error| format!("写入连接器反馈临时文件失败: {error}"))?;
+    if path.exists() {
+        let backup = path.with_extension("json.backup");
+        let _ = fs::remove_file(&backup);
+        fs::rename(path, &backup).map_err(|error| format!("备份旧连接器反馈失败: {error}"))?;
+        if let Err(error) = fs::rename(&pending, path) {
+            let _ = fs::rename(&backup, path);
+            return Err(format!("替换连接器反馈失败: {error}"));
+        }
+        let _ = fs::remove_file(backup);
+    } else {
+        fs::rename(&pending, path).map_err(|error| format!("保存连接器反馈失败: {error}"))?;
+    }
+    Ok(())
+}
+
+fn now_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
 }
 
 fn import_backup(
@@ -190,6 +329,10 @@ fn import_backup(
                     metric: item.metric,
                     value: item.value,
                     unit: item.unit,
+                    source_record_id: Some(item.assessment_id),
+                    verification_status: Some(
+                        crate::rehab_context::VerificationStatus::Candidate,
+                    ),
                 })
                 .collect(),
         },
@@ -291,7 +434,7 @@ fn preview_export(
         .filter_map(|patient| {
             let source_id = text_at(patient, "id")?;
             let case_id = patient_map.get(&source_id)?.clone();
-            let display_name = text_at(patient, "name").unwrap_or_else(|| case_id.clone());
+            let display_name = text_at(patient, "shortCode").unwrap_or_else(|| case_id.clone());
             if let Some(hint) = &hint {
                 let searchable =
                     format!("{} {} {}", case_id, display_name, source_id).to_ascii_lowercase();
@@ -386,7 +529,7 @@ fn build_case_previews(
             let source_id = text_at(patient, "id")?;
             let case_id = patient_map.get(&source_id)?.clone();
             Some(ConnectorCasePreview {
-                display_name: text_at(patient, "name").unwrap_or_else(|| case_id.clone()),
+                display_name: text_at(patient, "shortCode").unwrap_or_else(|| case_id.clone()),
                 session_count: backup
                     .sessions
                     .iter()
@@ -436,9 +579,11 @@ fn patient_case_map(backup: &RehabBackup) -> BTreeMap<String, String> {
         .iter()
         .filter_map(|patient| {
             let source_id = text_at(patient, "id")?;
+            // Human names are not research identifiers. If the source has no
+            // explicit short code, persist a stable pseudonym derived from the
+            // opaque upstream record ID instead of leaking identity into RehabID.
             let candidate = text_at(patient, "shortCode")
-                .or_else(|| text_at(patient, "name"))
-                .unwrap_or_else(|| source_id.clone());
+                .unwrap_or_else(|| format!("RID-{}", short_hash(source_id.as_bytes())));
             Some((source_id, normalize_id(&candidate)))
         })
         .collect()
@@ -549,7 +694,10 @@ fn extract_measurements(backup: &RehabBackup) -> Vec<ConnectorMeasurement> {
             }
         }
         if let Some(adams) = assessment.pointer("/data/adams") {
-            for key in ["atrDegrees", "cobbAngleEstimate", "scoliometerReading"] {
+            // Observed ATR/scoliometer readings can enter review. A model or
+            // mobile estimated Cobb angle is diagnosis-like derived output and
+            // must not become a governed clinical observation.
+            for key in ["atrDegrees", "scoliometerReading"] {
                 if let Some(value) = adams.get(key).and_then(Value::as_f64) {
                     push(format!("adams_{key}"), value, "deg".into());
                 }
@@ -746,9 +894,79 @@ mod tests {
         assert_eq!(preview.patient_count, 1);
         assert_eq!(preview.assessment_count, 3);
         assert_eq!(preview.timepoint_count, 3);
-        assert_eq!(preview.measurement_count, 6);
+        assert_eq!(preview.measurement_count, 5);
         assert!(preview.can_import);
         assert_eq!(preview.cases[0].case_id, "ATH-001");
+        let backup = read_backup(&path).unwrap();
+        assert!(!extract_measurements(&backup)
+            .iter()
+            .any(|item| item.metric == "adams_cobbAngleEstimate"));
+    }
+
+    #[test]
+    fn missing_short_code_uses_pseudonym_and_never_displays_name() {
+        let dir = temp_dir("pseudonym");
+        let path = dir.join("rehab-backup-private.json");
+        fs::write(
+            &path,
+            r#"{"version":"1.0.0","exportedAt":1789000000000,"patients":[{"id":"opaque-patient-42","name":"真实姓名"}],"sessions":[],"assessments":[{"id":"a1","patientId":"opaque-patient-42","createdAt":1788990000000,"metrics":{"pain":4}}]}"#,
+        )
+        .unwrap();
+
+        let preview = preview_export(
+            &path,
+            None,
+            "file_fallback",
+            REHAB_WORKBENCH_ID,
+            "康复师工作台",
+        )
+        .unwrap();
+
+        assert_eq!(preview.cases.len(), 1);
+        assert!(preview.cases[0].case_id.starts_with("RID-"));
+        assert_eq!(preview.cases[0].display_name, preview.cases[0].case_id);
+        assert!(!serde_json::to_string(&preview).unwrap().contains("真实姓名"));
+    }
+
+    #[test]
+    fn connector_import_marks_observations_candidate_and_keeps_record_provenance() {
+        let workspace = temp_dir("candidate-workspace");
+        let export = workspace.join("rehab-backup-source.json");
+        fs::write(&export, fixture()).unwrap();
+        let backup = read_backup(&export).unwrap();
+        let output = import_backup(
+            &workspace,
+            &export,
+            backup,
+            ConnectorImportRequest {
+                source_id: REHAB_WORKBENCH_ID.into(),
+                export_path: export.to_string_lossy().into_owned(),
+                case_ids: vec!["ATH-001".into()],
+                latest_assessments: None,
+            },
+            REHAB_WORKBENCH_ID,
+            "康复师工作台",
+        )
+        .unwrap();
+
+        assert_eq!(output.imported_observation_count, 5);
+        assert_eq!(output.candidate_observation_count, 5);
+        let bundle = crate::rehab_context::load_case_bundle(&workspace, "ATH-001").unwrap();
+        assert!(bundle.observations.iter().all(|item| {
+            item.verification_status == crate::rehab_context::VerificationStatus::Candidate
+        }));
+        assert!(bundle
+            .observations
+            .iter()
+            .all(|item| item.note.as_deref().unwrap_or_default().contains("上游来源记录")));
+        assert!(bundle
+            .observations
+            .iter()
+            .all(|item| item.source_record_id.is_some()));
+        assert!(!bundle
+            .observations
+            .iter()
+            .any(|item| item.metric.contains("cobb")));
     }
 
     #[test]
@@ -793,7 +1011,7 @@ mod tests {
             preview.export_path,
             dir.join("latest.json").to_string_lossy()
         );
-        assert_eq!(preview.measurement_count, 6);
+        assert_eq!(preview.measurement_count, 5);
     }
 
     #[test]
@@ -810,7 +1028,7 @@ mod tests {
         assert_eq!(preview.source_id, "rehabgpt");
         assert_eq!(preview.source_label, "RehabGPT");
         assert_eq!(preview.connection_mode, "live_bridge");
-        assert_eq!(preview.measurement_count, 6);
+        assert_eq!(preview.measurement_count, 5);
     }
 
     #[test]
@@ -821,7 +1039,7 @@ mod tests {
         ).unwrap());
         let all = extract_measurements(&backup);
         let latest = keep_latest_timepoints(all, 1);
-        assert_eq!(latest.len(), 3);
+        assert_eq!(latest.len(), 2);
         assert!(latest.iter().all(|item| item.created_at == 1788999000000));
         assert_eq!(
             latest
@@ -865,10 +1083,67 @@ mod tests {
         .unwrap();
         assert_eq!(output.case_ids, vec!["ATH-001"]);
         assert_eq!(output.imported_event_count, 3);
-        assert_eq!(output.imported_observation_count, 6);
+        assert_eq!(output.imported_observation_count, 5);
+        assert_eq!(output.candidate_observation_count, 5);
         let bundle = crate::rehab_context::load_case_bundle(&workspace, "ATH-001").unwrap();
         assert_eq!(bundle.events.len(), 3);
-        assert_eq!(bundle.observations.len(), 6);
+        assert_eq!(bundle.observations.len(), 5);
         assert!(workspace.join(output.receipt.path).is_file());
+    }
+
+    #[test]
+    fn reviewed_observation_becomes_idempotent_rehabmain_feedback() {
+        let workspace = temp_dir("feedback-workspace");
+        let export = workspace.join("rehab-backup-source.json");
+        fs::write(&export, fixture()).unwrap();
+        let backup = read_backup(&export).unwrap();
+        import_backup(
+            &workspace,
+            &export,
+            backup,
+            ConnectorImportRequest {
+                source_id: REHAB_WORKBENCH_ID.into(),
+                export_path: export.to_string_lossy().into_owned(),
+                case_ids: vec!["ATH-001".into()],
+                latest_assessments: None,
+            },
+            REHAB_WORKBENCH_ID,
+            "康复师工作台",
+        )
+        .unwrap();
+        let initial = crate::rehab_context::load_case_bundle(&workspace, "ATH-001").unwrap();
+        let observation = initial
+            .observations
+            .iter()
+            .find(|item| item.source_record_id.as_deref() == Some("a3"))
+            .unwrap();
+        let reviewed = crate::rehab_context::review_observation(
+            &workspace,
+            crate::rehab_context::ObservationReviewInput {
+                case_id: "ATH-001".into(),
+                observation_id: observation.observation_id.clone(),
+                expected_revision: initial.revision,
+                action: crate::rehab_context::ObservationReviewAction::Reject,
+                reason: "该时间点需重新采集".into(),
+                reviewer: "researcher-1".into(),
+                corrected_value: None,
+                corrected_unit: None,
+                follow_up_action: crate::rehab_context::ResearchFollowUpAction::Recapture,
+            },
+        )
+        .unwrap();
+        let feedback_path = workspace.join("feedback.json");
+        publish_review_feedback_to(&reviewed, &feedback_path).unwrap();
+        publish_review_feedback_to(&reviewed, &feedback_path).unwrap();
+
+        let feedback: ConnectorFeedbackFile =
+            serde_json::from_slice(&fs::read(feedback_path).unwrap()).unwrap();
+        assert_eq!(feedback.items.len(), 1);
+        assert_eq!(feedback.items[0].source_assessment_id, "a3");
+        assert_eq!(feedback.items[0].rehab_id, "ATH-001");
+        assert_eq!(
+            feedback.items[0].follow_up_action,
+            crate::rehab_context::ResearchFollowUpAction::Recapture
+        );
     }
 }

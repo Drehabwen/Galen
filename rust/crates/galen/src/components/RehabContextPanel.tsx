@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { AgentBenchmarkReport, RehabCaseBundle, RehabCaseSummary, RehabGoldenEvalReport } from "../domain/rehabContext";
+import type { AgentBenchmarkReport, ObservationReviewAction, RehabCaseBundle, RehabCaseSummary, RehabGoldenEvalReport, ResearchFollowUpAction, VerificationStatus } from "../domain/rehabContext";
 
 interface RehabContextPanelProps {
   workspaceSelected: boolean;
@@ -12,6 +12,7 @@ interface RehabContextPanelProps {
   onOpenCase: (caseId: string) => void;
   onImportCase: (sourcePath: string, caseId: string) => void;
   onResolveReview: (decisionId: string, optionId: string) => void;
+  onReviewObservation: (observationId: string, action: ObservationReviewAction, reason: string, correctedValue?: number | string, correctedUnit?: string, followUpAction?: ResearchFollowUpAction) => void;
   onRunGoldenJourneys: (sourcePath: string) => void;
 }
 
@@ -34,10 +35,42 @@ const eventLabel: Record<string, string> = {
   other: "记录",
 };
 
+const verificationLabel: Record<VerificationStatus, string> = {
+  candidate: "待复核",
+  verified: "来源已锁定",
+  disputed: "来源冲突",
+  rejected: "已拒绝",
+};
+
 export function RehabContextPanel(props: RehabContextPanelProps) {
   const [sourcePath, setSourcePath] = useState("");
   const [caseId, setCaseId] = useState("");
+  const [reviewingObservation, setReviewingObservation] = useState<string | null>(null);
+  const [reviewAction, setReviewAction] = useState<ObservationReviewAction>("accept");
+  const [reviewReason, setReviewReason] = useState("");
+  const [correctedValue, setCorrectedValue] = useState("");
+  const [correctedUnit, setCorrectedUnit] = useState("");
+  const [followUpAction, setFollowUpAction] = useState<ResearchFollowUpAction>("none");
   const bundle = props.activeCase;
+
+  const submitObservationReview = (observationId: string) => {
+    const value = correctedValue.trim();
+    const numeric = Number(value);
+    const parsedValue = value && Number.isFinite(numeric) ? numeric : value || undefined;
+    props.onReviewObservation(
+      observationId,
+      reviewAction,
+      reviewReason.trim(),
+      reviewAction === "correct" ? parsedValue : undefined,
+      reviewAction === "correct" ? correctedUnit.trim() : undefined,
+      followUpAction,
+    );
+    setReviewingObservation(null);
+    setReviewReason("");
+    setCorrectedValue("");
+    setCorrectedUnit("");
+    setFollowUpAction("none");
+  };
 
   if (!props.workspaceSelected) {
     return <div className="rehab-empty"><h2>Rehab ID 时间轴</h2><p>先选择工作区，再将清洗后的研究数据写入对应 Rehab ID。</p></div>;
@@ -144,8 +177,36 @@ export function RehabContextPanel(props: RehabContextPanelProps) {
                   <div className="rehab-observation" key={item.observation_id}>
                     <div><strong>{item.region} · {item.metric}</strong><small>{item.event_id} / {contextLabel[item.collection_context]}</small></div>
                     <b>{item.value ?? "—"}<small>{item.unit}</small></b>
-                    <span className={`rehab-verification ${item.verification_status}`}>{item.verification_status === "verified" ? "来源已锁定" : "待复核"}</span>
+                    <span className={`rehab-verification ${item.verification_status}`}>{verificationLabel[item.verification_status]}</span>
                     <code>{item.source_locator.channel === "governed_dataset" ? "清洗数据版本" : `p.${item.source_locator.pdf_page ?? "?"}`} · {item.source_locator.channel}</code>
+                    {item.protocol && <small className="rehab-protocol-ref">{item.protocol.registryId}@{item.protocol.registryVersion} · {item.protocol.allowedUse}{!item.protocol.unitMatches ? " · 单位待更正" : ""}</small>}
+                    {item.verification_status !== "verified" && item.verification_status !== "rejected" && (
+                      <button className="btn btn-ghost" type="button" onClick={() => {
+                        setReviewingObservation(item.observation_id);
+                        setReviewAction("accept");
+                        setReviewReason("");
+                        setCorrectedValue(item.value == null ? "" : String(item.value));
+                        setCorrectedUnit(item.unit);
+                        setFollowUpAction("none");
+                      }}>审核观察</button>
+                    )}
+                    {reviewingObservation === item.observation_id && (
+                      <div className="rehab-observation-review">
+                        <label>处理方式<select aria-label="观察审核处理方式" value={reviewAction} onChange={(event) => setReviewAction(event.target.value as ObservationReviewAction)}>
+                          <option value="accept">接受为已核验</option>
+                          <option value="reject">拒绝该观察</option>
+                          <option value="correct">更正后接受</option>
+                        </select></label>
+                        {reviewAction === "correct" && <div className="rehab-review-correction"><input aria-label="更正值" value={correctedValue} onChange={(event) => setCorrectedValue(event.target.value)} /><input aria-label="更正单位" value={correctedUnit} onChange={(event) => setCorrectedUnit(event.target.value)} /></div>}
+                        <label>后续研究动作<select aria-label="后续研究动作" value={followUpAction} onChange={(event) => setFollowUpAction(event.target.value as ResearchFollowUpAction)}>
+                          <option value="none">仅记录本次决定</option>
+                          <option value="recapture">要求复采</option>
+                          <option value="schedule_retest">安排复测</option>
+                        </select></label>
+                        <textarea aria-label="观察审核理由" placeholder="说明核验来源、拒绝原因或更正依据" value={reviewReason} onChange={(event) => setReviewReason(event.target.value)} />
+                        <div><button className="btn btn-primary" type="button" disabled={props.loading || !reviewReason.trim() || (reviewAction === "correct" && !correctedValue.trim())} onClick={() => submitObservationReview(item.observation_id)}>提交审核</button><button className="btn btn-ghost" type="button" onClick={() => setReviewingObservation(null)}>取消</button></div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -160,6 +221,10 @@ export function RehabContextPanel(props: RehabContextPanelProps) {
                   {decision.options.map((option) => <button key={option.option_id} disabled={props.loading} onClick={() => props.onResolveReview(decision.decision_id, option.option_id)}><strong>{option.value}</strong> {option.channel}</button>)}
                 </section>
               ))}
+              {(bundle.observation_reviews?.length ?? 0) > 0 && <section className="rehab-output">
+                <span>最近观察审核</span>
+                {bundle.observation_reviews!.slice(-5).reverse().map((review) => <div key={review.reviewId}><code>{review.action} · {review.observationId}{review.followUpAction !== "none" ? ` · ${review.followUpAction}` : ""}</code><strong>{review.resultingStatus}</strong></div>)}
+              </section>}
               <section className="rehab-output">
                 <span>可复算队列行</span>
                 {Object.entries(bundle.cohort_row.derived_values).map(([key, value]) => <div key={key}><code>{key}</code><strong>{value}</strong></div>)}

@@ -29,6 +29,7 @@ pub mod probe;
 pub mod rag_eval;
 pub mod rehab_context;
 pub mod rehab_eval;
+pub mod rehab_protocol;
 pub mod research_task;
 pub mod review_flow;
 pub mod runtime_manager;
@@ -133,6 +134,7 @@ pub fn run() {
             commands::rehab::get_rehab_case,
             commands::rehab::list_rehab_cases,
             commands::rehab::resolve_rehab_review,
+            commands::rehab::review_rehab_observation,
             commands::rehab::run_rehab_golden_journeys,
             commands::rehab::get_agent_benchmark_report,
         ])
