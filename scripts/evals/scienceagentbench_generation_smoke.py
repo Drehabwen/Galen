@@ -10,11 +10,15 @@ import sys
 import time
 from pathlib import Path
 
-import pyarrow.parquet as pq
+try:
+    from .scienceagentbench_contract import DEFAULT_CONTRACT, load_contract, render_prompt_block
+except ImportError:  # direct script execution
+    from scienceagentbench_contract import DEFAULT_CONTRACT, load_contract, render_prompt_block
 
 
 ROOT = Path(__file__).resolve().parents[2]
 DATASET = ROOT / "evals/public-benchmarks/data/ScienceAgentBench-default-verified-0000.parquet"
+DATASET_JSON = ROOT / "evals/public-benchmarks/data/scienceagentbench-verified.json"
 UPSTREAM_AGENT = ROOT / "evals/public-benchmarks/ScienceAgentBench/agent.py"
 WRAPPER = ROOT / "evals/external-runtimes/with-deepseek.ps1"
 
@@ -29,13 +33,25 @@ def _official_prompt(name: str) -> str:
 
 
 def _task(instance_id: int) -> dict[str, object]:
-    for row in pq.read_table(DATASET).to_pylist():
+    if DATASET_JSON.is_file():
+        rows = json.loads(DATASET_JSON.read_text(encoding="utf-8"))
+    else:
+        import pyarrow.parquet as pq
+
+        rows = pq.read_table(DATASET).to_pylist()
+    for row in rows:
         if int(row["instance_id"]) == instance_id:
             return row
     raise KeyError(f"Unknown instance_id: {instance_id}")
 
 
 def _prompt(row: dict[str, object]) -> str:
+    contract = load_contract(DEFAULT_CONTRACT)
+    if int(row["instance_id"]) != int(contract["instance_id"]):
+        raise ValueError(
+            f"No explicit runtime contract for instance {row['instance_id']}; "
+            "refusing an ambiguous generation run"
+        )
     return "\n\n".join(
         [
             _official_prompt("SYSTEM_PROMPT"),
@@ -43,6 +59,7 @@ def _prompt(row: dict[str, object]) -> str:
             "Domain knowledge:\n" + str(row["domain_knowledge"]),
             "Dataset directory structure:\n```\n" + str(row["dataset_folder_tree"]) + "\n```",
             "Dataset preview:\n" + str(row["dataset_preview"]),
+            render_prompt_block(contract),
             _official_prompt("FORMAT_PROMPT"),
             (
                 "This is a public-prompt generation-only diagnostic: the full dataset is not present. "
@@ -55,21 +72,26 @@ def _prompt(row: dict[str, object]) -> str:
     )
 
 
-def _command(backend: str, prompt: str, workspace: Path) -> tuple[list[str], bytes | None]:
+def _command(
+    backend: str, prompt: str, workspace: Path, model: str
+) -> tuple[list[str], bytes | None]:
     if backend == "codex":
         args = [
             "exec", "--json", "--ephemeral", "--skip-git-repo-check",
             "-C", str(workspace), "-s", "danger-full-access",
-            "-c", 'approval_policy="never"', "-",
+            "-c", 'approval_policy="never"', "-m", model, "-",
         ]
         stdin = prompt.encode("utf-8")
     else:
         args = [
-            "-p", prompt, "--output-format", "stream-json", "--verbose",
+            "-p", "--output-format", "stream-json", "--verbose",
             "--no-session-persistence", "--dangerously-skip-permissions",
-            "--model", "deepseek-flash", "--max-budget-usd", "1.00",
+            "--model", model, "--max-budget-usd", "1.00",
         ]
-        stdin = None
+        # Passing a long prompt as a Windows argv value can silently leave
+        # Claude print mode with no user message. Print mode accepts stdin;
+        # use it for parity with Codex and verify artifact creation separately.
+        stdin = prompt.encode("utf-8")
     command = [
         "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(WRAPPER),
         "-Backend", backend, "-CommandArgsJson", json.dumps(args, ensure_ascii=False, separators=(",", ":")),
@@ -77,12 +99,21 @@ def _command(backend: str, prompt: str, workspace: Path) -> tuple[list[str], byt
     return command, stdin
 
 
-def _run(backend: str, row: dict[str, object], output: Path, timeout: int) -> dict[str, object]:
+def _run(
+    backend: str,
+    row: dict[str, object],
+    output: Path,
+    timeout: int,
+    model: str,
+) -> dict[str, object]:
     workspace = output / backend / f"instance-{row['instance_id']}"
     workspace.mkdir(parents=True, exist_ok=False)
     prompt = _prompt(row)
     (workspace / "prompt.txt").write_text(prompt, encoding="utf-8")
-    command, stdin = _command(backend, prompt, workspace)
+    (workspace / "task-contract.json").write_text(
+        DEFAULT_CONTRACT.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    command, stdin = _command(backend, prompt, workspace, model)
     started = time.perf_counter()
     try:
         completed = subprocess.run(
@@ -111,7 +142,7 @@ def _run(backend: str, row: dict[str, object], output: Path, timeout: int) -> di
     return {
         "instance_id": row["instance_id"],
         "backend": backend,
-        "model": "deepseek-flash",
+        "model": model,
         "returncode": returncode,
         "elapsed_ms": elapsed_ms,
         "program_created": program.is_file(),
@@ -132,6 +163,7 @@ def main() -> int:
     parser.add_argument("--backend", choices=("codex", "claude", "both"), default="both")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--timeout", type=int, default=300)
+    parser.add_argument("--model", default="deepseek-flash")
     args = parser.parse_args()
     output = args.output.resolve()
     if output.exists():
@@ -139,7 +171,7 @@ def main() -> int:
     output.mkdir(parents=True)
     row = _task(args.instance)
     backends = ("codex", "claude") if args.backend == "both" else (args.backend,)
-    records = [_run(backend, row, output, args.timeout) for backend in backends]
+    records = [_run(backend, row, output, args.timeout, args.model) for backend in backends]
     (output / "summary.json").write_text(
         json.dumps(records, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )

@@ -1837,7 +1837,43 @@ fn is_previewable(path: &Path) -> bool {
         .is_some_and(|extension| {
             matches!(
                 extension.to_ascii_lowercase().as_str(),
-                "md" | "txt" | "csv" | "json" | "html" | "pdf" | "png" | "jpg" | "svg"
+                "md"
+                    | "txt"
+                    | "csv"
+                    | "tsv"
+                    | "json"
+                    | "html"
+                    | "typ"
+                    | "py"
+                    | "r"
+                    | "js"
+                    | "jsx"
+                    | "ts"
+                    | "tsx"
+                    | "rs"
+                    | "go"
+                    | "java"
+                    | "c"
+                    | "cpp"
+                    | "h"
+                    | "hpp"
+                    | "sh"
+                    | "bash"
+                    | "ps1"
+                    | "css"
+                    | "scss"
+                    | "sql"
+                    | "toml"
+                    | "yaml"
+                    | "yml"
+                    | "xml"
+                    | "pdf"
+                    | "png"
+                    | "jpg"
+                    | "jpeg"
+                    | "svg"
+                    | "webp"
+                    | "gif"
             )
         })
 }
@@ -1900,6 +1936,14 @@ fn change(baseline: Option<f64>, candidate: Option<f64>) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn source_code_artifacts_are_previewable() {
+        assert!(is_previewable(Path::new("program.py")));
+        assert!(is_previewable(Path::new("analysis.rs")));
+        assert!(is_previewable(Path::new("pipeline.R")));
+        assert!(!is_previewable(Path::new("archive.zip")));
+    }
 
     fn summary() -> ChatRunSummary {
         ChatRunSummary {

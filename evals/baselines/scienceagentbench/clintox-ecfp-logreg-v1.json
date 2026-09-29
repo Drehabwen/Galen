@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "baseline_id": "clintox-ecfp-logreg-v1",
+  "benchmark": "ScienceAgentBench",
+  "instance_id": 1,
+  "contract_id": "scienceagentbench-clintox-v1",
+  "method": {
+    "features": "RDKit Morgan/ECFP radius 2, 1024 bits",
+    "estimator": "one class-balanced logistic regression per target",
+    "random_seed": 42,
+    "network_access": false,
+    "label_leakage": false
+  },
+  "result": {
+    "valid_program": 1,
+    "roc_auc": 0.8398049301242236,
+    "threshold": 0.77,
+    "threshold_passed": true,
+    "official_success": 1,
+    "data_correctness": true,
+    "function_correctness": true
+  },
+  "data_quality": {
+    "train_rows": 1192,
+    "test_rows": 292,
+    "train_standard_fingerprints": 1189,
+    "train_relaxed_sanitization": 2,
+    "train_zero_fallback": 1,
+    "test_standard_fingerprints": 292,
+    "test_relaxed_sanitization": 0,
+    "test_zero_fallback": 0
+  },
+  "provenance": {
+    "program_sha256": "77aa6ccfe19d5c6715d497b5fbad84f5153cd50b54f449e51a0275c251c2eb8e",
+    "contract_sha256": "878a95355c22c4918e4c8c365445c0766c8ed77d74bf33e5328a6ed1366d57a4",
+    "train_sha256": "e92939b4ef0bb3f2e026118303735a75cf8f8ed7cfcfa2d214685ff2f342331f",
+    "test_sha256": "3f68a05792aae9ce21bf7bd01875936547aa4073dbea0cfa781a4be524b89cac",
+    "image_id": "sha256:e7517315512ae1bd77fe3e38b120ca5f49c44519d0ca136425d712684437f2a1"
+  },
+  "interpretation": "This is a transparent scientific lower bound and environment/contract calibration, not an agent score. Agent programs must first pass the same validity gates and should then be compared against ROC-AUC 0.8398049301242236."
+}

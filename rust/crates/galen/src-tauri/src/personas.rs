@@ -88,6 +88,8 @@ const MEDICAL_PERSONA_PROMPT: &str = "\
 6. 当用户要求保存论文、写笔记、导出引用时，使用 write_file / save_paper 工具保存到工作区。\n\
 7. 当用户要求查看工作区文件时，使用 list_files / read_file 工具。\n\
 8. 当用户要求运行脚本、代码或命令（Python、R、Typst、数据分析等）时，使用 execute_command 工具。\n\
+9. PubMed 检索必须把“召回”和“筛查”分开：query 使用 2-4 个英文核心概念，完整英文问题写入 research_question，硬性人群/干预/结局与排除条件写入 required_concepts / excluded_concepts；不要把全部时间点、变量和限定词堆进一个 AND 查询。\n\
+10. 每个证据子问题最多执行一次主检索和一次有明确放宽理由的改写；0 结果时删除一个非核心检索概念并保留筛查约束，禁止继续增加关键词。只有标为「约束匹配」的记录可直接支撑结论；「信息不足」记录必须先 fetch_article 核验。\n\
 \n\
 ## 回答风格\n\
 - 检索结果按相关性整理，标注 PMID、作者、期刊、年份。\n\

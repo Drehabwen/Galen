@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "contract_id": "scienceagentbench-clintox-v1",
+  "benchmark": "ScienceAgentBench",
+  "instance_id": 1,
+  "task": "clintox_nn",
+  "runtime": {
+    "platform": "linux-container",
+    "working_directory": "/testbed",
+    "benchmark_root": "/testbed/benchmark",
+    "hardware": "cpu"
+  },
+  "dataset": {
+    "relative_path": "datasets/clintox",
+    "runtime_path": "/testbed/benchmark/datasets/clintox",
+    "train_file": "clintox_train.csv",
+    "test_file": "clintox_test.csv",
+    "feature_column": "smiles",
+    "target_columns": ["FDA_APPROVED", "CT_TOX"]
+  },
+  "output": {
+    "relative_path": "pred_results/clintox_test_pred.csv",
+    "required_columns": ["smiles", "FDA_APPROVED", "CT_TOX"],
+    "row_order": "must match clintox_test.csv exactly"
+  },
+  "evaluation": {
+    "relative_path": "eval_programs/clintox_nn_eval.py",
+    "metric": "multitask ROC-AUC",
+    "threshold": 0.77,
+    "gates": [
+      "program exits with status 0",
+      "output file exists",
+      "output smiles match test rows in order",
+      "ROC-AUC is at least 0.77"
+    ]
+  },
+  "stop_conditions": {
+    "success": "all evaluation gates pass",
+    "failure": "stop immediately when a required input or output contract is missing"
+  }
+}

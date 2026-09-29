@@ -322,13 +322,20 @@ pub(crate) fn tool_result_budget(tool_name: &str, is_error: bool) -> (usize, usi
     if is_error {
         return (3_000, 2_200, 500);
     }
+    if crate::tools::research::is_recognized_qualified_mcp_search(tool_name) {
+        return (8_000, 7_200, 500);
+    }
     match tool_name {
         // File contents need enough room for local evidence, but should not
         // replay an entire document into every subsequent model request.
         "read_file" | "fetch_article" => (6_000, 4_500, 1_000),
         // Search/list/command output is usually repetitive and benefits from a
         // smaller envelope.
-        "list_files" | "search_files" | "search_pubmed" | "execute_command" => (4_000, 2_800, 800),
+        // PubMed entries now carry a short abstract excerpt and screening
+        // rationale. Keep complete top records instead of cutting the middle
+        // of the evidence list at the generic command-output budget.
+        "search_pubmed" | "search_rehab_literature" => (8_000, 7_200, 500),
+        "list_files" | "search_files" | "execute_command" => (4_000, 2_800, 800),
         _ => (4_000, 2_800, 800),
     }
 }

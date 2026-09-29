@@ -1230,7 +1230,9 @@ mod tests {
             .await;
         let runs = load_search_runs(&root, &task_id).unwrap();
 
-        assert_eq!(result.unwrap(), r#"{"items":[]}"#);
+        let result = result.unwrap();
+        assert!(result.contains("规范化结果：0"));
+        assert!(result.contains("成功的零结果检索"));
         assert_eq!(runs.len(), 1);
         assert_eq!(runs[0].provider_id, "crossref");
         assert_eq!(runs[0].status, SearchRunStatus::Succeeded);
@@ -1239,6 +1241,147 @@ mod tests {
             runs[0].raw_result_hash.as_str(),
             "a307cc6ebd7b03f3d581a0b146b27ec213e6f8a72d4ce3ddafb93845db9f92c8"
         );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn resolved_crossref_results_are_screened_before_model_context() {
+        let root = temp_workspace("crossref-screened");
+        let task_id = active_task(&root);
+        let response = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "content": [{"type": "text", "text": "provider markdown must not pass through"}],
+                "structuredContent": {
+                    "works": [
+                        {
+                            "doi": "10.1000/sci",
+                            "title": "Exoskeleton gait training after spinal cord injury",
+                            "abstract": "Adults with spinal cord injury completed gait training."
+                        },
+                        {
+                            "doi": "10.1000/stroke",
+                            "title": "Exoskeleton gait training after stroke",
+                            "abstract": "Adults with stroke completed gait training."
+                        }
+                    ]
+                },
+                "isError": false
+            }
+        })
+        .to_string();
+        let mut registry = ToolRegistry::new();
+        registry.load_mcp_from_cache(vec![Arc::new(Mutex::new(fixture_server(
+            McpConnectionStatus::Connected,
+            Some(&response),
+        )))]);
+        let input = serde_json::json!({
+            "query": "exoskeleton gait training",
+            "_galen_screening": {
+                "research_question": "exoskeleton gait training after spinal cord injury",
+                "required_concepts": [{
+                    "label": "population: spinal cord injury",
+                    "terms": ["spinal cord injury", "SCI"]
+                }]
+            }
+        });
+
+        let result = registry
+            .execute_dynamic(
+                "mcp__crossref__crossref_search_works",
+                input,
+                &search_context(root.clone()),
+            )
+            .await
+            .unwrap();
+        let runs = load_search_runs(&root, &task_id).unwrap();
+
+        assert!(result.contains("10.1000/sci"));
+        assert!(!result.contains("10.1000/stroke"));
+        assert!(!result.contains("provider markdown must not pass through"));
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].status, SearchRunStatus::Succeeded);
+        assert_eq!(runs[0].result_count, Some(2));
+        assert!(runs[0].arguments().get("_galen_screening").is_some());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn unrecognized_crossref_payload_fails_closed_and_is_recorded() {
+        let root = temp_workspace("crossref-unrecognized");
+        let task_id = active_task(&root);
+        let response = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "content": [{"type": "text", "text": "unstructured provider prose"}],
+                "structuredContent": {"unexpected": [{"title": "Unsafe record"}]},
+                "isError": false
+            }
+        })
+        .to_string();
+        let mut registry = ToolRegistry::new();
+        registry.load_mcp_from_cache(vec![Arc::new(Mutex::new(fixture_server(
+            McpConnectionStatus::Connected,
+            Some(&response),
+        )))]);
+
+        let error = registry
+            .execute_dynamic(
+                "mcp__crossref__crossref_search_works",
+                serde_json::json!({"query": "stroke"}),
+                &search_context(root.clone()),
+            )
+            .await
+            .unwrap_err();
+        let runs = load_search_runs(&root, &task_id).unwrap();
+
+        assert!(error.contains("invalid response"));
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].status, SearchRunStatus::Failed);
+        assert_eq!(runs[0].error_class, Some(SearchErrorClass::InvalidResponse));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn provider_declared_partial_results_are_withheld_from_model_context() {
+        let root = temp_workspace("crossref-partial-withheld");
+        let task_id = active_task(&root);
+        let response = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "content": [{"type": "text", "text": "one incomplete record"}],
+                "structuredContent": {
+                    "status": "partial",
+                    "works": [{"title": "Incomplete result", "doi": "10.1000/incomplete"}]
+                },
+                "isError": false
+            }
+        })
+        .to_string();
+        let mut registry = ToolRegistry::new();
+        registry.load_mcp_from_cache(vec![Arc::new(Mutex::new(fixture_server(
+            McpConnectionStatus::Connected,
+            Some(&response),
+        )))]);
+
+        let result = registry
+            .execute_dynamic(
+                "mcp__crossref__crossref_search_works",
+                serde_json::json!({"query": "stroke"}),
+                &search_context(root.clone()),
+            )
+            .await
+            .unwrap();
+        let runs = load_search_runs(&root, &task_id).unwrap();
+
+        assert!(result.contains("结果不完整"));
+        assert!(!result.contains("Incomplete result"));
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].status, SearchRunStatus::Partial);
+        assert_eq!(runs[0].result_count, Some(1));
         let _ = std::fs::remove_dir_all(root);
     }
 

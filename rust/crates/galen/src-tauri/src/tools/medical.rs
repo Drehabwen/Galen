@@ -5,7 +5,7 @@ use medical_core::types::CitationStyle;
 use medical_core::types::Paper;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::{GalenTool, ToolContext, ToolExecution};
 use crate::backend::ChatEvent;
@@ -22,13 +22,42 @@ impl GalenTool for SearchPubMed {
         ToolDefinition {
             name: "search_pubmed".into(),
             description: Some(
-                "Search PubMed for medical literature. Returns papers with PMID, title, authors, journal, year, DOI.".into(),
+                "Search PubMed with a concise English retrieval query, then screen candidates against explicit scientific constraints. Keep the query broad (normally 2-4 concepts); put the full question in research_question and use required_concepts/excluded_concepts for eligibility instead of appending every constraint to the query. Returns only matched or explicitly ambiguous papers with PMID and screening reasons.".into(),
             ),
             input_schema: json!({
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "PubMed search query"},
-                    "research_question": {"type": "string", "description": "Optional plain-language question used to rank candidates by topic fit"},
+                    "research_question": {"type": "string", "description": "Optional full English research question used for lexical ranking; do not use Chinese text as the only ranking anchor"},
+                    "required_concepts": {
+                        "type": "array",
+                        "description": "Hard inclusion concepts. Every group must match at least one English synonym in title, abstract, or MeSH.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "label": {"type": "string"},
+                                "terms": {"type": "array", "items": {"type": "string"}}
+                            },
+                            "required": ["label", "terms"]
+                        }
+                    },
+                    "excluded_concepts": {
+                        "type": "array",
+                        "description": "Hard exclusion concepts. A match to any English synonym rejects the candidate.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "label": {"type": "string"},
+                                "terms": {"type": "array", "items": {"type": "string"}}
+                            },
+                            "required": ["label", "terms"]
+                        }
+                    },
+                    "publication_types": {
+                        "type": "array",
+                        "description": "Optional accepted PubMed publication types, for example Randomized Controlled Trial or Systematic Review.",
+                        "items": {"type": "string"}
+                    },
                     "max_results": {"type": "integer", "description": "Max results (1-20, default 10)"}
                 },
                 "required": ["query"]
@@ -54,6 +83,10 @@ async fn execute_pubmed(input: Value, ctx: &ToolContext) -> ToolExecution {
         .as_str()
         .filter(|value| !value.trim().is_empty())
         .unwrap_or(query);
+    let constraints = match SearchConstraints::from_input(&input) {
+        Ok(constraints) => constraints,
+        Err(error) => return ToolExecution::from_result(Err(error)),
+    };
     let candidates = match ctx
         .medical
         .search_pubmed(query, candidate_limit(limit))
@@ -65,13 +98,20 @@ async fn execute_pubmed(input: Value, ctx: &ToolContext) -> ToolExecution {
         }
     };
     let candidates = dedupe_papers(candidates);
-    let ranked = rank_papers(&candidates, research_question, limit as usize);
+    let ranking_anchor = ranking_anchor(research_question, query);
+    let ranked = rank_papers_with_constraints(
+        &candidates,
+        &ranking_anchor,
+        &constraints,
+        limit as usize,
+    );
     let papers = ranked
+        .shown
         .iter()
         .map(|item| item.paper.clone())
         .collect::<Vec<_>>();
     ctx.send_event(ChatEvent::SearchResults(papers.clone()));
-    let text = if ranked.is_empty() {
+    let text = if candidates.is_empty() {
         "No results found.".into()
     } else {
         format_search_report(query, research_question, candidates.len(), &ranked)
@@ -278,13 +318,19 @@ async fn execute_rehab_search(input: Value, ctx: &ToolContext) -> ToolExecution 
         }
     };
     let candidates = dedupe_papers(candidates);
-    let ranked = rank_papers(&candidates, topic, limit as usize);
+    let ranked = rank_papers_with_constraints(
+        &candidates,
+        &ranking_anchor(topic, &query),
+        &SearchConstraints::default(),
+        limit as usize,
+    );
     let papers = ranked
+        .shown
         .iter()
         .map(|item| item.paper.clone())
         .collect::<Vec<_>>();
     ctx.send_event(ChatEvent::SearchResults(papers.clone()));
-    let text = if ranked.is_empty() {
+    let text = if candidates.is_empty() {
         format!("No results found.\nQuery used: {query}")
     } else {
         format_search_report(&query, topic, candidates.len(), &ranked)
@@ -301,11 +347,124 @@ async fn execute_rehab_search(input: Value, ctx: &ToolContext) -> ToolExecution 
 // Search quality gate and shared formatting
 // ---------------------------------------------------------------------------
 
+#[derive(Debug, Default)]
+struct SearchConstraints {
+    required_concepts: Vec<ConceptGroup>,
+    excluded_concepts: Vec<ConceptGroup>,
+    publication_types: Vec<String>,
+}
+
+impl SearchConstraints {
+    fn from_input(input: &Value) -> Result<Self, String> {
+        Ok(Self {
+            required_concepts: parse_concept_groups(input, "required_concepts")?,
+            excluded_concepts: parse_concept_groups(input, "excluded_concepts")?,
+            publication_types: parse_string_array(input, "publication_types")?,
+        })
+    }
+
+    fn is_empty(&self) -> bool {
+        self.required_concepts.is_empty()
+            && self.excluded_concepts.is_empty()
+            && self.publication_types.is_empty()
+    }
+}
+
+#[derive(Debug)]
+struct ConceptGroup {
+    label: String,
+    terms: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Eligibility {
+    Matched,
+    Ambiguous,
+    Rejected,
+}
+
+impl Eligibility {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Matched => "约束匹配",
+            Self::Ambiguous => "信息不足 · 禁止直接支撑结论",
+            Self::Rejected => "约束不匹配 · 已排除",
+        }
+    }
+}
+
 struct RankedPaper<'a> {
     paper: &'a Paper,
     score: u8,
     matched_terms: Vec<String>,
+    eligibility: Eligibility,
+    screening_reasons: Vec<String>,
     verification: CitationVerification,
+}
+
+struct RankedSearch<'a> {
+    shown: Vec<RankedPaper<'a>>,
+    rejected_count: usize,
+    ambiguous_count: usize,
+    rejection_reasons: BTreeMap<String, usize>,
+}
+
+fn parse_concept_groups(input: &Value, field: &str) -> Result<Vec<ConceptGroup>, String> {
+    let Some(value) = input.get(field) else {
+        return Ok(Vec::new());
+    };
+    let groups = value
+        .as_array()
+        .ok_or_else(|| format!("'{field}' must be an array"))?;
+    if groups.len() > 12 {
+        return Err(format!("'{field}' accepts at most 12 concept groups"));
+    }
+    groups
+        .iter()
+        .map(|group| {
+            let label = group
+                .get("label")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| format!("every '{field}' item needs a non-empty label"))?;
+            let terms = group
+                .get("terms")
+                .and_then(Value::as_array)
+                .ok_or_else(|| format!("concept '{label}' needs a terms array"))?
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .take(12)
+                .map(ToString::to_string)
+                .collect::<Vec<_>>();
+            if terms.is_empty() {
+                return Err(format!("concept '{label}' needs at least one term"));
+            }
+            Ok(ConceptGroup {
+                label: label.to_string(),
+                terms,
+            })
+        })
+        .collect()
+}
+
+fn parse_string_array(input: &Value, field: &str) -> Result<Vec<String>, String> {
+    let Some(value) = input.get(field) else {
+        return Ok(Vec::new());
+    };
+    let values = value
+        .as_array()
+        .ok_or_else(|| format!("'{field}' must be an array"))?;
+    Ok(values
+        .iter()
+        .filter_map(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .take(12)
+        .map(ToString::to_string)
+        .collect())
 }
 
 /// Collapse duplicate records before ranking or reporting counts. PubMed can
@@ -490,12 +649,28 @@ fn candidate_limit(limit: u32) -> u32 {
     limit.saturating_mul(3).clamp(10, 60)
 }
 
+#[cfg(test)]
 fn rank_papers<'a>(
     papers: &'a [Paper],
     research_question: &str,
     limit: usize,
 ) -> Vec<RankedPaper<'a>> {
-    let terms = search_terms(research_question);
+    rank_papers_with_constraints(
+        papers,
+        research_question,
+        &SearchConstraints::default(),
+        limit,
+    )
+    .shown
+}
+
+fn rank_papers_with_constraints<'a>(
+    papers: &'a [Paper],
+    ranking_anchor: &str,
+    constraints: &SearchConstraints,
+    limit: usize,
+) -> RankedSearch<'a> {
+    let terms = search_terms(ranking_anchor);
     let mut ranked = papers
         .iter()
         .map(|paper| {
@@ -522,17 +697,15 @@ fn rank_papers<'a>(
                     weighted_hits += if abstract_hit { 2 } else { 0 };
                 }
             }
-            let coverage = if terms.is_empty() {
-                0
-            } else {
-                (matched_terms.len() as u32 * 70 / terms.len() as u32) as u8
-            };
+            let lexical_score = score_from_hits(&terms, &matched_terms, weighted_hits);
+            let (eligibility, screening_reasons) =
+                screen_paper(paper, constraints, lexical_score);
             RankedPaper {
                 paper,
-                score: coverage
-                    .saturating_add(weighted_hits.min(30) as u8)
-                    .min(100),
+                score: lexical_score,
                 matched_terms,
+                eligibility,
+                screening_reasons,
                 verification: verify_pubmed_paper(paper, None, None),
             }
         })
@@ -547,8 +720,150 @@ fn rank_papers<'a>(
     // A record without a valid PubMed identity is not a literature result;
     // never surface it as a candidate the model could later cite.
     ranked.retain(|item| item.verification.status != VerificationStatus::Rejected);
+    let rejected_count = ranked
+        .iter()
+        .filter(|item| item.eligibility == Eligibility::Rejected)
+        .count();
+    let mut rejection_reasons = BTreeMap::new();
+    for item in ranked
+        .iter()
+        .filter(|item| item.eligibility == Eligibility::Rejected)
+    {
+        for reason in item.screening_reasons.iter().filter(|reason| {
+            reason.starts_with("命中排除概念")
+                || reason.starts_with("文献类型不匹配")
+                || reason.starts_with("缺少必含概念")
+        }) {
+            *rejection_reasons.entry(reason.clone()).or_insert(0) += 1;
+        }
+    }
+    let ambiguous_count = ranked
+        .iter()
+        .filter(|item| item.eligibility == Eligibility::Ambiguous)
+        .count();
+    ranked.retain(|item| item.eligibility != Eligibility::Rejected);
     ranked.truncate(limit);
-    ranked
+    RankedSearch {
+        shown: ranked,
+        rejected_count,
+        ambiguous_count,
+        rejection_reasons,
+    }
+}
+
+fn score_from_hits(terms: &[String], matched_terms: &[String], weighted_hits: u32) -> u8 {
+    let coverage = if terms.is_empty() {
+        0
+    } else {
+        (matched_terms.len() as u32 * 70 / terms.len() as u32) as u8
+    };
+    coverage
+        .saturating_add(weighted_hits.min(30) as u8)
+        .min(100)
+}
+
+fn screen_paper(
+    paper: &Paper,
+    constraints: &SearchConstraints,
+    lexical_score: u8,
+) -> (Eligibility, Vec<String>) {
+    if constraints.is_empty() {
+        return if lexical_score < 45 {
+            (
+                Eligibility::Ambiguous,
+                vec!["词项覆盖不足；需读取摘要后人工确认".to_string()],
+            )
+        } else {
+            (
+                Eligibility::Matched,
+                vec!["未提供硬约束；仅通过词项覆盖排序".to_string()],
+            )
+        };
+    }
+
+    let title = normalize(&paper.title);
+    let abstract_text = normalize(paper.abstract_text.as_deref().unwrap_or_default());
+    let mesh = normalize(
+        &paper
+            .mesh_terms
+            .iter()
+            .map(|term| term.descriptor.as_str())
+            .collect::<Vec<_>>()
+            .join(" "),
+    );
+    let fields = [&title, &abstract_text, &mesh];
+    let mut reasons = Vec::new();
+    let mut missing = Vec::new();
+    for concept in &constraints.required_concepts {
+        if concept_matches(concept, &fields) {
+            reasons.push(format!("必含概念命中：{}", concept.label));
+        } else {
+            missing.push(concept.label.clone());
+        }
+    }
+    let excluded = constraints
+        .excluded_concepts
+        .iter()
+        .filter(|concept| concept_matches(concept, &fields))
+        .map(|concept| concept.label.clone())
+        .collect::<Vec<_>>();
+    if !excluded.is_empty() {
+        reasons.push(format!("命中排除概念：{}", excluded.join("、")));
+        return (Eligibility::Rejected, reasons);
+    }
+
+    if !constraints.publication_types.is_empty() {
+        if paper.publication_types.is_empty() {
+            reasons.push("PubMed 未返回文献类型，需人工核验".to_string());
+            return (Eligibility::Ambiguous, reasons);
+        }
+        let accepted_type = constraints.publication_types.iter().any(|expected| {
+            let expected = normalize(expected);
+            paper
+                .publication_types
+                .iter()
+                .any(|actual| phrase_matches(&normalize(actual), &expected))
+        });
+        if !accepted_type {
+            reasons.push(format!(
+                "文献类型不匹配：{}",
+                paper.publication_types.join("、")
+            ));
+            return (Eligibility::Rejected, reasons);
+        }
+        reasons.push("文献类型符合限定".to_string());
+    }
+
+    if missing.is_empty() {
+        (Eligibility::Matched, reasons)
+    } else {
+        reasons.push(format!("缺少必含概念：{}", missing.join("、")));
+        if paper.abstract_text.as_deref().is_none_or(str::is_empty) {
+            (Eligibility::Ambiguous, reasons)
+        } else {
+            (Eligibility::Rejected, reasons)
+        }
+    }
+}
+
+fn concept_matches(concept: &ConceptGroup, fields: &[&String]) -> bool {
+    concept.terms.iter().any(|term| {
+        let term = normalize(term);
+        !term.is_empty() && fields.iter().any(|field| phrase_matches(field, &term))
+    })
+}
+
+fn phrase_matches(text: &str, phrase: &str) -> bool {
+    text == phrase || format!(" {text} ").contains(&format!(" {phrase} "))
+}
+
+fn ranking_anchor(research_question: &str, query: &str) -> String {
+    let question_terms = search_terms(research_question);
+    if question_terms.is_empty() {
+        query.to_string()
+    } else {
+        format!("{research_question} {query}")
+    }
 }
 
 fn search_terms(research_question: &str) -> Vec<String> {
@@ -574,7 +889,11 @@ fn search_terms(research_question: &str) -> Vec<String> {
     let normalized = normalize(research_question);
     let mut terms = normalized
         .split_whitespace()
-        .filter(|term| term.len() >= 3 && !STOP_WORDS.contains(term))
+        .filter(|term| {
+            term.len() >= 3
+                && term.chars().any(|character| character.is_ascii_alphabetic())
+                && !STOP_WORDS.contains(term)
+        })
         .map(ToString::to_string)
         .collect::<Vec<_>>();
     for (needle, aliases) in [
@@ -622,20 +941,29 @@ fn format_search_report(
     query: &str,
     research_question: &str,
     candidate_count: usize,
-    ranked: &[RankedPaper<'_>],
+    ranked: &RankedSearch<'_>,
 ) -> String {
-    let low_fit_count = ranked.iter().filter(|item| item.score < 45).count();
     let mut lines = vec![
         format!("检索式：{query}"),
         format!("问题锚点：{research_question}"),
-        format!("来源覆盖：本轮仅 PubMed；检出 {candidate_count} 篇候选，按问题匹配度筛选并展示前 {} 篇。", ranked.len()),
+        format!("来源覆盖：本轮仅 PubMed；检出 {candidate_count} 篇候选，经约束筛查后展示 {} 篇；排除 {} 篇；信息不足 {} 篇。", ranked.shown.len(), ranked.rejected_count, ranked.ambiguous_count),
+        "评分说明：下列分数仅表示词项覆盖，不是语义相关性、证据等级或可引用概率；只有“约束匹配”记录可直接进入证据候选集。".to_string(),
     ];
-    if low_fit_count > 0 {
+    if ranked.shown.is_empty() {
+        lines.push("没有候选通过当前约束。不要继续向检索式堆叠概念；应保留核心主题、放宽一个检索概念，再用 required_concepts 做检索后筛查。".to_string());
+    }
+    if !ranked.rejection_reasons.is_empty() {
         lines.push(format!(
-            "质量提醒：当前展示中有 {low_fit_count} 篇匹配度偏低，不能直接作为结论依据；应补充同义词或改写检索式后复检。"
+            "排除原因汇总：{}",
+            ranked
+                .rejection_reasons
+                .iter()
+                .map(|(reason, count)| format!("{reason}（{count}）"))
+                .collect::<Vec<_>>()
+                .join("；")
         ));
     }
-    for item in ranked {
+    for item in &ranked.shown {
         let paper = item.paper;
         let authors = if paper.authors.is_empty() {
             "Unknown".to_string()
@@ -651,9 +979,11 @@ fn format_search_report(
         } else {
             item.matched_terms.join("、")
         };
+        let screening = item.screening_reasons.join("；");
         let mut entry = format!(
-            "[{}；匹配度 {} / 100；命中：{matched}]\n  [PMID: {}](https://pubmed.ncbi.nlm.nih.gov/{}/)\n  {}\n  {} — {}（发表：{}）\n  元数据指纹：{}",
+            "[{}；{}；词项覆盖 {} / 100；命中：{matched}]\n  [PMID: {}](https://pubmed.ncbi.nlm.nih.gov/{}/)\n  {}\n  {} — {}（发表：{}）\n  筛查依据：{}\n  摘要线索：{}\n  元数据指纹：{}",
             item.verification.status.label(),
+            item.eligibility.label(),
             item.score,
             paper.pmid,
             paper.pmid,
@@ -661,6 +991,8 @@ fn format_search_report(
             authors,
             journal,
             year,
+            screening,
+            abstract_excerpt(paper.abstract_text.as_deref()),
             item.verification.fingerprint,
         );
         if let Some(doi) = paper.doi.as_deref() {
@@ -676,6 +1008,17 @@ fn format_search_report(
         lines.push(entry);
     }
     lines.join("\n\n")
+}
+
+fn abstract_excerpt(abstract_text: Option<&str>) -> String {
+    let Some(text) = abstract_text.map(str::trim).filter(|text| !text.is_empty()) else {
+        return "PubMed 未提供摘要".to_string();
+    };
+    let mut excerpt = text.chars().take(240).collect::<String>();
+    if text.chars().count() > 240 {
+        excerpt.push('…');
+    }
+    excerpt.replace('\n', " ")
 }
 
 fn is_review(paper: &Paper) -> bool {
@@ -748,6 +1091,74 @@ mod tests {
         let ranked = rank_papers(&papers, "type 2 diabetes prognosis risk factors", 2);
         assert_eq!(ranked[0].paper.pmid, "22222222");
         assert!(ranked[0].score > ranked[1].score);
+    }
+
+    #[test]
+    fn required_concepts_reject_topically_similar_population_mismatch() {
+        let papers = vec![
+            paper(
+                "11111111",
+                "Robot-assisted gait training after stroke",
+                "Adults with stroke completed exoskeleton gait rehabilitation.",
+            ),
+            paper(
+                "22222222",
+                "Robot-assisted gait training after spinal cord injury",
+                "Adults with spinal cord injury completed exoskeleton gait rehabilitation.",
+            ),
+        ];
+        let constraints = SearchConstraints {
+            required_concepts: vec![ConceptGroup {
+                label: "population: spinal cord injury".to_string(),
+                terms: vec!["spinal cord injury".to_string(), "SCI".to_string()],
+            }],
+            ..SearchConstraints::default()
+        };
+
+        let ranked = rank_papers_with_constraints(
+            &papers,
+            "robot assisted gait training",
+            &constraints,
+            10,
+        );
+
+        assert_eq!(ranked.shown.len(), 1);
+        assert_eq!(ranked.shown[0].paper.pmid, "22222222");
+        assert_eq!(ranked.rejected_count, 1);
+    }
+
+    #[test]
+    fn excluded_concepts_override_lexical_score() {
+        let papers = vec![paper(
+            "33333333",
+            "Robot-assisted gait training in children with cerebral palsy",
+            "A pediatric rehabilitation trial of robotic gait training.",
+        )];
+        let constraints = SearchConstraints {
+            excluded_concepts: vec![ConceptGroup {
+                label: "pediatric population".to_string(),
+                terms: vec!["children".to_string(), "pediatric".to_string()],
+            }],
+            ..SearchConstraints::default()
+        };
+
+        let ranked = rank_papers_with_constraints(
+            &papers,
+            "robot assisted gait training children pediatric",
+            &constraints,
+            10,
+        );
+
+        assert!(ranked.shown.is_empty());
+        assert_eq!(ranked.rejected_count, 1);
+    }
+
+    #[test]
+    fn chinese_question_falls_back_to_english_query_for_ranking() {
+        assert_eq!(
+            ranking_anchor("脊髓损伤外骨骼步态训练", "spinal cord injury exoskeleton gait"),
+            "spinal cord injury exoskeleton gait"
+        );
     }
 
     #[test]

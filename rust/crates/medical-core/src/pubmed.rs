@@ -49,8 +49,12 @@ impl PubMedClient {
             query_params.push(("datetype", "pdat"));
         }
 
-        let url = build_url(ESEARCH_URL, &query_params);
-        let response = self.client.get(&url).send().await?;
+        let response = self
+            .client
+            .get(ESEARCH_URL)
+            .query(&query_params)
+            .send()
+            .await?;
         let body: ESearchResult = response.json().await?;
 
         Ok(SearchResult {
@@ -78,8 +82,12 @@ impl PubMedClient {
             query_params.push(("api_key", key.as_str()));
         }
 
-        let url = build_url(EFETCH_URL, &query_params);
-        let response = self.client.get(&url).send().await?;
+        let response = self
+            .client
+            .get(EFETCH_URL)
+            .query(&query_params)
+            .send()
+            .await?;
         let xml = response.text().await?;
         parse_pubmed_xml(&xml)
     }
@@ -102,8 +110,12 @@ impl PubMedClient {
             query_params.push(("api_key", key.as_str()));
         }
 
-        let url = build_url(EFETCH_URL, &query_params);
-        let response = self.client.get(&url).send().await?;
+        let response = self
+            .client
+            .get(EFETCH_URL)
+            .query(&query_params)
+            .send()
+            .await?;
         let xml = response.text().await?;
         parse_pmc_fulltext(&xml)
     }
@@ -115,29 +127,18 @@ impl PubMedClient {
             ("tool", TOOL_NAME),
             ("email", EMAIL),
         ];
-        let url = build_url(ESPELL_URL, &query_params);
-        let response = self.client.get(&url).send().await?;
+        let response = self
+            .client
+            .get(ESPELL_URL)
+            .query(&query_params)
+            .send()
+            .await?;
         let body: ESpellResult = response.json().await?;
         Ok(body
             .esearchresult
             .correctedquery
             .unwrap_or_else(|| query.to_string()))
     }
-}
-
-fn build_url(base: &str, params: &[(&str, &str)]) -> String {
-    let query: Vec<String> = params
-        .iter()
-        .map(|(k, v)| format!("{}={}", urlencoding(k), urlencoding(v)))
-        .collect();
-    format!("{}?{}", base, query.join("&"))
-}
-
-fn urlencoding(s: &str) -> String {
-    s.replace(' ', "+")
-        .replace('[', "%5B")
-        .replace(']', "%5D")
-        .replace('\"', "%22")
 }
 
 #[derive(Debug)]
@@ -227,15 +228,26 @@ fn parse_pubmed_article(_doc: &roxmltree::Document, article: roxmltree::Node) ->
     let title = article_node
         .descendants()
         .find(|n| n.has_tag_name("ArticleTitle"))
-        .and_then(|n| n.text())
-        .unwrap_or("")
-        .to_string();
+        .map(node_text)
+        .unwrap_or_default();
 
-    let abstract_text = article_node
+    let abstract_sections = article_node
         .descendants()
-        .find(|n| n.has_tag_name("AbstractText"))
-        .and_then(|n| n.text())
-        .map(|s| s.to_string());
+        .filter(|n| n.has_tag_name("AbstractText"))
+        .filter_map(|node| {
+            let text = node_text(node);
+            if text.is_empty() {
+                return None;
+            }
+            let label = node.attribute("Label").unwrap_or_default().trim();
+            Some(if label.is_empty() {
+                text
+            } else {
+                format!("{label}: {text}")
+            })
+        })
+        .collect::<Vec<_>>();
+    let abstract_text = (!abstract_sections.is_empty()).then(|| abstract_sections.join("\n"));
 
     let journal = article_node
         .descendants()
@@ -364,6 +376,16 @@ fn parse_pubmed_article(_doc: &roxmltree::Document, article: roxmltree::Node) ->
     })
 }
 
+fn node_text(node: roxmltree::Node<'_, '_>) -> String {
+    node.descendants()
+        .filter(|descendant| descendant.is_text())
+        .filter_map(|descendant| descendant.text())
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn parse_pmc_fulltext(xml: &str) -> Result<Vec<FullText>, PubMedError> {
     let options = roxmltree::ParsingOptions {
         allow_dtd: true,
@@ -426,4 +448,42 @@ fn parse_pmc_fulltext(xml: &str) -> Result<Vec<FullText>, PubMedError> {
     }
 
     Ok(fulltexts)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pubmed_parser_preserves_inline_title_markup_and_structured_abstract() {
+        let xml = r#"
+            <PubmedArticleSet>
+              <PubmedArticle>
+                <MedlineCitation>
+                  <PMID>12345678</PMID>
+                  <Article>
+                    <ArticleTitle>Effects of <i>robot-assisted</i> gait training</ArticleTitle>
+                    <Abstract>
+                      <AbstractText Label="BACKGROUND">Earlier evidence.</AbstractText>
+                      <AbstractText Label="METHODS">Adults with <b>stroke</b> were enrolled.</AbstractText>
+                      <AbstractText Label="RESULTS">Walking speed improved.</AbstractText>
+                    </Abstract>
+                    <Journal><Title>Test Journal</Title><JournalIssue><PubDate><Year>2025</Year></PubDate></JournalIssue></Journal>
+                  </Article>
+                </MedlineCitation>
+              </PubmedArticle>
+            </PubmedArticleSet>
+        "#;
+
+        let papers = parse_pubmed_xml(xml).unwrap();
+        assert_eq!(papers.len(), 1);
+        assert_eq!(
+            papers[0].title,
+            "Effects of robot-assisted gait training"
+        );
+        assert_eq!(
+            papers[0].abstract_text.as_deref(),
+            Some("BACKGROUND: Earlier evidence.\nMETHODS: Adults with stroke were enrolled.\nRESULTS: Walking speed improved.")
+        );
+    }
 }

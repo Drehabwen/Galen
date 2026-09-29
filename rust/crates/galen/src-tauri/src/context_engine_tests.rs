@@ -955,8 +955,13 @@ mod context_tests {
     fn tool_result_budgets_are_task_specific() {
         let read_budget = tool_result_budget("read_file", false);
         let search_budget = tool_result_budget("search_files", false);
+        let mcp_literature_budget = tool_result_budget(
+            "mcp__crossref__crossref_search_works",
+            false,
+        );
         let error_budget = tool_result_budget("read_file", true);
         assert!(read_budget.0 > search_budget.0);
+        assert_eq!(mcp_literature_budget.0, 8_000);
         assert!(error_budget.0 < read_budget.0);
     }
 

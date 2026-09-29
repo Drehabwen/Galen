@@ -27,7 +27,7 @@ STAGED = ROOT / "evals" / "runs" / "scienceagentbench-after-download" / "pred_pr
 RUN_ROOT = ROOT / "evals" / "runs" / "scienceagentbench-clintox-pilot"
 AGENTS = ("codex", "claude")
 PROGRAM_NAME = "pred_clintox_nn.py"
-TIMEOUT_SECONDS = 900
+TIMEOUT_SECONDS = 1800
 
 
 def file_hash(path: Path) -> str:
@@ -110,16 +110,41 @@ def run_agent(agent: str, python: Path, force: bool) -> dict:
     started = time.time()
     env = os.environ.copy()
     env.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
-    completed = subprocess.run(
-        [str(python), str(program)],
-        cwd=workspace,
-        env=env,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=TIMEOUT_SECONDS,
-    )
+    try:
+        completed = subprocess.run(
+            [str(python), str(program)],
+            cwd=workspace,
+            env=env,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout or ""
+        stderr = exc.stderr or ""
+        if isinstance(stdout, bytes):
+            stdout = stdout.decode("utf-8", errors="replace")
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", errors="replace")
+        (workspace / "program.stdout.log").write_text(stdout, encoding="utf-8")
+        (workspace / "program.stderr.log").write_text(stderr, encoding="utf-8")
+        result = {
+            "schema_version": 1,
+            "agent": agent,
+            "status": "timeout",
+            "source_sha256": source_sha256,
+            "duration_seconds": round(time.time() - started, 3),
+            "timeout_seconds": TIMEOUT_SECONDS,
+            "valid_program": False,
+            "roc_auc": None,
+            "threshold": 0.77,
+            "threshold_passed": False,
+            "official_success": 0,
+        }
+        write_json(result_path, result)
+        return result
     (workspace / "program.stdout.log").write_text(completed.stdout, encoding="utf-8")
     (workspace / "program.stderr.log").write_text(completed.stderr, encoding="utf-8")
 

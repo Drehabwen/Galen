@@ -52,6 +52,7 @@ const WORKSPACE_TOOLS: &[&str] = &[
 ];
 pub(crate) const READ_WRITE_TOOLS: &[&str] = &["read_file", "write_file", "replace_text"];
 pub(crate) const WRITE_ONLY_TOOLS: &[&str] = &["write_file", "replace_text"];
+const GENERATION_ARTIFACT_TOOLS: &[&str] = &["write_file", "append_file", "replace_text"];
 const LOOKUP_TOOLS: &[&str] = &[
     "search_evidence",
     "search_pubmed",
@@ -301,6 +302,13 @@ pub(crate) fn compile_task_contract(
             1,
             "\n\n## 快速回答契约\n这是无需检索或工作区操作的直接回答。禁止调用工具；用最短路径给出核心定义、用途和方向性解释，严格遵守用户字数要求。",
         )
+    } else if is_generation_only_artifact_task(&lower) {
+        (
+            TaskClass::ArtifactCreation,
+            Some(GENERATION_ARTIFACT_TOOLS),
+            8,
+            "\n\n## Generation-only artifact contract\nThe runtime filesystem is unavailable during generation. Do not list, read, search, or execute runtime paths. Deliver only the requested workspace artifact. For a large artifact, first call write_file with a small complete syntactic skeleton, then use append_file with bounded sections or replace_text for an exact revision. Every tool call must contain one complete JSON object; never retry a truncated payload unchanged.",
+        )
     } else if is_pdf_paper_delivery_task(&lower) {
         (
             TaskClass::PaperDelivery,
@@ -339,9 +347,9 @@ pub(crate) fn compile_task_contract(
             Some(LITERATURE_TOOLS),
             20,
             if artifact_paths.is_empty() {
-                ""
+                "\n\n## 文献检索契约\n将每个证据子问题拆成一次宽召回：PubMed query 只保留 2-4 个英文核心概念，完整英文问题放入 research_question，人群、干预、结局和排除条件放入 required_concepts / excluded_concepts 做检索后筛查。每个子问题最多一次主检索和一次有明确放宽理由的改写；0 结果时删去一个非核心检索概念，禁止继续增加关键词。只有“约束匹配”记录可直接支撑结论；“信息不足”记录须 fetch_article 后再判断。"
             } else {
-                "\n\n## 文献交付收尾契约\n先读取用户指定的研究约束，再执行检索与引用核验；每条关键结论都要保留来源标识或可打开链接。检索完成后必须调用 write_file 写入用户指定的最终 Artifact，确认写入成功且非空后才能结束，不得只返回检索摘要或把写文件留给用户。"
+                "\n\n## 文献检索与交付契约\n先读取用户指定的研究约束。将每个证据子问题拆成一次宽召回：PubMed query 只保留 2-4 个英文核心概念，完整英文问题放入 research_question，人群、干预、结局和排除条件放入 required_concepts / excluded_concepts 做检索后筛查。每个子问题最多一次主检索和一次有明确放宽理由的改写；0 结果时删去一个非核心检索概念，禁止继续增加关键词。只有“约束匹配”记录可直接支撑结论；“信息不足”记录须 fetch_article 后再判断。每条关键结论都要保留来源标识或可打开链接。检索完成后必须调用 write_file 写入用户指定的最终 Artifact，确认写入成功且非空后才能结束，不得只返回检索摘要或把写文件留给用户。"
             },
         )
     } else if is_focused_plan_artifact_task(&lower) {
@@ -719,4 +727,10 @@ mod tests {
         let discuss = compile_task_contract(model_router::TaskKind::Chat, "先讨论，不要调用工具");
         assert!(!discuss.requires_mcp());
     }
+}
+
+fn is_generation_only_artifact_task(text: &str) -> bool {
+    text.contains("current phase: code_generation")
+        && (text.contains("runtime paths available during generation: no")
+            || text.contains("do not read or probe /testbed paths"))
 }

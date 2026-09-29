@@ -11,6 +11,10 @@ def test_pinned_public_assets_and_runtimes_are_ready() -> None:
     assert result["task_count"] == 102
     assert result["runtime_ready"] is True
     assert result["checks"]["annotation_parquet"]["ok"] is True
+    assert result["checks"]["clintox_task_contract"]["ok"] is True
+    assert result["checks"]["v41_flash_model_lock"]["ok"] is True
+    assert result["checks"]["v41_flash_model_lock"]["api_model_id"] == "deepseek-flash"
+    assert result["clintox_pilot_ready"] is True
 
 
 def test_official_score_cannot_be_claimed_without_locked_inputs() -> None:

@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "display_name": "DeepSeek V4.1 Flash",
+  "api_model_id": "deepseek-flash",
+  "catalog_source": "evals/external-runtimes/cache/codex-deepseek-setup-en.ps1",
+  "catalog_version": "1.4.0",
+  "adapters": {
+    "codex": "deepseek-flash",
+    "claude": "deepseek-flash",
+    "galen": "deepseek-flash"
+  },
+  "policy": "A comparison run is invalid when any adapter reports a different model identifier."
+}

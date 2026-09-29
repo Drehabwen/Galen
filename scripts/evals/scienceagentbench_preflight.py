@@ -5,14 +5,24 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
+try:
+    from .scienceagentbench_contract import DEFAULT_CONTRACT, load_contract, validate_contract
+except ImportError:  # direct script execution
+    from scienceagentbench_contract import DEFAULT_CONTRACT, load_contract, validate_contract
+
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_MANIFEST = ROOT / "evals" / "public-benchmarks" / "scienceagentbench-manifest.json"
+DEFAULT_MODEL_LOCK = ROOT / "evals/contracts/deepseek-v4.1-flash-lock.json"
+VERIFIED_BENCHMARK = (
+    ROOT / "evals/public-benchmarks/downloads/benchmark_verified/benchmark"
+)
 
 
 def _sha256(path: Path) -> str:
@@ -60,6 +70,20 @@ def inspect(manifest_path: Path) -> dict[str, Any]:
     pilot = ROOT / "evals" / "agent" / "baselines" / "framework_pilot.py"
     wrapper_text = wrapper.read_text(encoding="utf-8") if wrapper.exists() else ""
     pilot_text = pilot.read_text(encoding="utf-8") if pilot.exists() else ""
+    model_lock = json.loads(DEFAULT_MODEL_LOCK.read_text(encoding="utf-8"))
+    locked_model = model_lock["api_model_id"]
+    adapter_models = model_lock["adapters"]
+    catalog = ROOT / model_lock["catalog_source"]
+    catalog_text = catalog.read_text(encoding="utf-8") if catalog.is_file() else ""
+    try:
+        contract_result = validate_contract(load_contract(DEFAULT_CONTRACT), VERIFIED_BENCHMARK)
+        contract_check: dict[str, Any] = {"ok": True, **contract_result}
+    except (KeyError, TypeError, ValueError, OSError, json.JSONDecodeError) as error:
+        contract_check = {
+            "ok": False,
+            "contract": str(DEFAULT_CONTRACT),
+            "error": f"{type(error).__name__}: {error}",
+        }
 
     checks = {
         "codex_runtime": {
@@ -105,6 +129,18 @@ def inspect(manifest_path: Path) -> dict[str, Any]:
                 "codex_host_context_isolation", "unknown"
             ),
         },
+        "clintox_task_contract": contract_check,
+        "v41_flash_model_lock": {
+            "ok": (
+                locked_model == "deepseek-flash"
+                and set(adapter_models.values()) == {locked_model}
+                and f'"slug": "{locked_model}"' in catalog_text
+                and re.search(r"\$SCRIPT_VERSION\s*=\s*'1\.4\.0'", catalog_text) is not None
+            ),
+            "display_name": model_lock["display_name"],
+            "api_model_id": locked_model,
+            "adapters": adapter_models,
+        },
     }
     runtime_ready = all(
         checks[name]["ok"]
@@ -118,6 +154,11 @@ def inspect(manifest_path: Path) -> dict[str, Any]:
     controlled_core_score_ready = (
         native_agent_score_ready and checks["codex_controlled_context"]["ok"]
     )
+    clintox_pilot_ready = (
+        native_agent_score_ready
+        and checks["clintox_task_contract"]["ok"]
+        and checks["v41_flash_model_lock"]["ok"]
+    )
     return {
         "benchmark": manifest["benchmark"],
         "split": parquet_info["split"],
@@ -126,6 +167,7 @@ def inspect(manifest_path: Path) -> dict[str, Any]:
         "official_score_ready": native_agent_score_ready,
         "native_agent_score_ready": native_agent_score_ready,
         "controlled_core_score_ready": controlled_core_score_ready,
+        "clintox_pilot_ready": clintox_pilot_ready,
         "checks": checks,
     }
 
@@ -135,6 +177,7 @@ def main() -> int:
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--require-official-ready", action="store_true")
+    parser.add_argument("--require-clintox-ready", action="store_true")
     args = parser.parse_args()
 
     result = inspect(args.manifest.resolve())
@@ -148,6 +191,8 @@ def main() -> int:
         output.write_text(rendered + "\n", encoding="utf-8")
     if args.require_official_ready and not result["official_score_ready"]:
         return 2
+    if args.require_clintox_ready and not result["clintox_pilot_ready"]:
+        return 3
     return 0
 
 
