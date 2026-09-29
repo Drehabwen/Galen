@@ -7,6 +7,8 @@
 <p align="center">
   <a href="https://github.com/Drehabwen/Galen">GitHub</a>
   ·
+  <a href="HANDOVER.md">接手与贡献</a>
+  ·
   <a href="#快速开始">快速开始</a>
   ·
   <a href="#核心能力">核心能力</a>
@@ -19,6 +21,8 @@
 ---
 
 Galen 是面向**康复科研**的闭环工作台：一线场景的多模态数据（量表 / 评估 / 视频 / 语音）统一接入后，由 AI 自主完成数据处理、证据分析、报告成文，人类只做**计划把关**与**最终签核**。命名致敬古希腊医学之父盖伦（Galen of Pergamon）。
+
+准备接手维护或贡献代码，请从 [Galen 项目交接与贡献指南](HANDOVER.md) 开始。
 
 ## 产品宣传片
 

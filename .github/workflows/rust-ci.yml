@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - galen-research-workbench
       - 'gaebal/**'
       - 'omx-issue-*'
     paths:
@@ -20,6 +21,7 @@ on:
   pull_request:
     branches:
       - main
+      - galen-research-workbench
     paths:
       - .github/workflows/rust-ci.yml
       - .github/scripts/check_doc_source_of_truth.py
