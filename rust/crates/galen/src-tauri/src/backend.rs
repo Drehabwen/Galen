@@ -182,7 +182,13 @@ fn classify_trace_error(tool: &str, output: &str) -> String {
         "contract".to_string()
     } else if hit(&["超时", "timeout", "timed out"]) {
         "timeout".to_string()
-    } else if hit(&["不存在", "not found", "does not exist", "no such file", "cannot find"]) {
+    } else if hit(&[
+        "不存在",
+        "not found",
+        "does not exist",
+        "no such file",
+        "cannot find",
+    ]) {
         "not_found".to_string()
     } else if hit(&["权限", "拒绝", "forbidden", "denied", "not allowed"]) {
         "policy".to_string()
@@ -295,18 +301,16 @@ pub fn make_client(model_alias: &str, router: &ModelRouter) -> Result<ProviderCl
     // Try model-router config first (for models.toml entries)
     if let Some(provider_config) = router.to_provider_config(model_alias) {
         if let Some(api_key) = provider_config.api_key() {
-            let config = OpenAiCompatConfig {
-                provider_name: intern(provider_config.provider.clone()),
-                api_key_env: "",
-                base_url_env: "",
-                default_base_url: intern(
-                    provider_config
-                        .base_url
-                        .clone()
-                        .unwrap_or_else(|| crate::model_defaults::DEFAULT_OPENAI_BASE_URL.to_string()),
-                ),
-                max_request_body_bytes: 104_857_600,
-            };
+            let config =
+                OpenAiCompatConfig {
+                    provider_name: intern(provider_config.provider.clone()),
+                    api_key_env: "",
+                    base_url_env: "",
+                    default_base_url: intern(provider_config.base_url.clone().unwrap_or_else(
+                        || crate::model_defaults::DEFAULT_OPENAI_BASE_URL.to_string(),
+                    )),
+                    max_request_body_bytes: 104_857_600,
+                };
             // Desktop interactions must fail fast. The API crate default of
             // eight exponential retries can hide transient upstream failures
             // behind 2–4 minutes of apparent "thinking" before the first byte.
@@ -404,14 +408,20 @@ mod tests {
             "timeout"
         );
         assert_eq!(
-            classify_trace_error("read_file", "Cannot find path 'a' because it does not exist."),
+            classify_trace_error(
+                "read_file",
+                "Cannot find path 'a' because it does not exist."
+            ),
             "not_found"
         );
         assert_eq!(
             classify_trace_error("__stream_retry__", "stream error"),
             "stream"
         );
-        assert_eq!(classify_trace_error("execute_command", "Exit code: 1"), "exec");
+        assert_eq!(
+            classify_trace_error("execute_command", "Exit code: 1"),
+            "exec"
+        );
     }
 
     #[test]

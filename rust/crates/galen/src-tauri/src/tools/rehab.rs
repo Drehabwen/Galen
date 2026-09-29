@@ -96,8 +96,7 @@ fn read_rehab_id_case(
         .iter()
         .filter(|item| {
             include_candidates
-                || item.verification_status
-                    == crate::rehab_context::VerificationStatus::Verified
+                || item.verification_status == crate::rehab_context::VerificationStatus::Verified
         })
         .take(limit)
         .collect::<Vec<_>>();
@@ -510,9 +509,7 @@ mod tests {
                     value: 7.0,
                     unit: "deg".into(),
                     source_record_id: Some("assessment-a1".into()),
-                    verification_status: Some(
-                        crate::rehab_context::VerificationStatus::Candidate,
-                    ),
+                    verification_status: Some(crate::rehab_context::VerificationStatus::Candidate),
                 }],
             },
         )

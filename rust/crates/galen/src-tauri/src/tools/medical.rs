@@ -99,12 +99,8 @@ async fn execute_pubmed(input: Value, ctx: &ToolContext) -> ToolExecution {
     };
     let candidates = dedupe_papers(candidates);
     let ranking_anchor = ranking_anchor(research_question, query);
-    let ranked = rank_papers_with_constraints(
-        &candidates,
-        &ranking_anchor,
-        &constraints,
-        limit as usize,
-    );
+    let ranked =
+        rank_papers_with_constraints(&candidates, &ranking_anchor, &constraints, limit as usize);
     let papers = ranked
         .shown
         .iter()
@@ -698,8 +694,7 @@ fn rank_papers_with_constraints<'a>(
                 }
             }
             let lexical_score = score_from_hits(&terms, &matched_terms, weighted_hits);
-            let (eligibility, screening_reasons) =
-                screen_paper(paper, constraints, lexical_score);
+            let (eligibility, screening_reasons) = screen_paper(paper, constraints, lexical_score);
             RankedPaper {
                 paper,
                 score: lexical_score,
@@ -891,7 +886,9 @@ fn search_terms(research_question: &str) -> Vec<String> {
         .split_whitespace()
         .filter(|term| {
             term.len() >= 3
-                && term.chars().any(|character| character.is_ascii_alphabetic())
+                && term
+                    .chars()
+                    .any(|character| character.is_ascii_alphabetic())
                 && !STOP_WORDS.contains(term)
         })
         .map(ToString::to_string)
@@ -1115,12 +1112,8 @@ mod tests {
             ..SearchConstraints::default()
         };
 
-        let ranked = rank_papers_with_constraints(
-            &papers,
-            "robot assisted gait training",
-            &constraints,
-            10,
-        );
+        let ranked =
+            rank_papers_with_constraints(&papers, "robot assisted gait training", &constraints, 10);
 
         assert_eq!(ranked.shown.len(), 1);
         assert_eq!(ranked.shown[0].paper.pmid, "22222222");
@@ -1156,7 +1149,10 @@ mod tests {
     #[test]
     fn chinese_question_falls_back_to_english_query_for_ranking() {
         assert_eq!(
-            ranking_anchor("脊髓损伤外骨骼步态训练", "spinal cord injury exoskeleton gait"),
+            ranking_anchor(
+                "脊髓损伤外骨骼步态训练",
+                "spinal cord injury exoskeleton gait"
+            ),
             "spinal cord injury exoskeleton gait"
         );
     }

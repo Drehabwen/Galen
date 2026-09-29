@@ -900,14 +900,10 @@ pub fn review_observation(
 
     match input.action {
         ObservationReviewAction::Accept => {
-            if observation
-                .protocol
-                .as_ref()
-                .is_some_and(|protocol| {
-                    protocol.allowed_use == crate::rehab_protocol::AllowedUse::Excluded
-                        || !protocol.unit_matches
-                })
-            {
+            if observation.protocol.as_ref().is_some_and(|protocol| {
+                protocol.allowed_use == crate::rehab_protocol::AllowedUse::Excluded
+                    || !protocol.unit_matches
+            }) {
                 return Err("协议排除或单位不匹配的观察不能直接接受，请更正或拒绝。".into());
             }
             observation.verification_status = VerificationStatus::Verified;
@@ -923,7 +919,10 @@ pub fn review_observation(
             if corrected_value.as_f64().is_none() && corrected_value.as_str().is_none() {
                 return Err("correctedValue 只支持有限数值或文本。".into());
             }
-            if corrected_value.as_f64().is_some_and(|value| !value.is_finite()) {
+            if corrected_value
+                .as_f64()
+                .is_some_and(|value| !value.is_finite())
+            {
                 return Err("correctedValue 不能是非有限数值。".into());
             }
             let corrected_unit = input
@@ -944,7 +943,10 @@ pub fn review_observation(
             if !resolution.unit_matches {
                 return Err(format!(
                     "更正单位仍与协议不一致；预期 {}。",
-                    resolution.expected_unit.as_deref().unwrap_or("协议允许单位")
+                    resolution
+                        .expected_unit
+                        .as_deref()
+                        .unwrap_or("协议允许单位")
                 ));
             }
             observation.value = Some(corrected_value);
@@ -969,7 +971,11 @@ pub fn review_observation(
     let resulting_status = observation.verification_status;
     let event_id = observation.event_id.clone();
     bundle.observation_reviews.push(ObservationReviewRecord {
-        review_id: format!("review-{}-{}", slug(&input.observation_id, 36), now_millis()),
+        review_id: format!(
+            "review-{}-{}",
+            slug(&input.observation_id, 36),
+            now_millis()
+        ),
         observation_id: input.observation_id,
         action: input.action,
         reason: input.reason.trim().chars().take(500).collect(),
@@ -1013,7 +1019,11 @@ fn refresh_event_verification(bundle: &mut RehabCaseBundle, event_id: &str) {
     } else {
         VerificationStatus::Candidate
     };
-    if let Some(event) = bundle.events.iter_mut().find(|event| event.event_id == event_id) {
+    if let Some(event) = bundle
+        .events
+        .iter_mut()
+        .find(|event| event.event_id == event_id)
+    {
         event.verification_status = status;
     }
 }
@@ -1679,7 +1689,10 @@ mod tests {
         .unwrap();
         assert_eq!(accepted.cohort_row.open_review_count, 2);
         assert_eq!(accepted.observation_reviews.len(), 1);
-        assert_eq!(accepted.observation_reviews[0].previous_status, VerificationStatus::Candidate);
+        assert_eq!(
+            accepted.observation_reviews[0].previous_status,
+            VerificationStatus::Candidate
+        );
         let stale = review_observation(
             &workspace,
             ObservationReviewInput {

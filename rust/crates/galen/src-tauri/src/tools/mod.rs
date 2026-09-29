@@ -396,8 +396,7 @@ impl ToolRegistry {
             let scope = search.and_then(|_| snapshot_search_scope(ctx));
             let arguments = input.clone();
             let (provider_input, screening) = if search.is_some() {
-                let (provider_input, screening) =
-                    research::split_mcp_search_arguments(&input)?;
+                let (provider_input, screening) = research::split_mcp_search_arguments(&input)?;
                 (provider_input, Some(screening))
             } else {
                 (input, None)
@@ -414,30 +413,30 @@ impl ToolRegistry {
                 if let (Some(search), Some(screening), Some(raw)) =
                     (search, screening.as_ref(), raw_output.as_ref())
                 {
-                match declared_search_outcome(Some(raw)) {
-                    Some(DeclaredSearchOutcome::Partial(_)) => {
-                        result = Ok(format!(
+                    match declared_search_outcome(Some(raw)) {
+                        Some(DeclaredSearchOutcome::Partial(_)) => {
+                            result = Ok(format!(
                             "来源：{}\n状态：partial\n提供方声明本次结果不完整；候选记录未进入 Galen 证据上下文，不得据此声称零结果或无证据。",
                             search.provider_id
                         ));
-                    }
-                    Some(DeclaredSearchOutcome::Failed(_)) => {
-                        result = Err(format!(
-                            "{} provider declared search failure; raw candidates were withheld",
-                            search.provider_id
-                        ));
-                    }
-                    None => {
-                        let query = search.query_from(&arguments);
-                        match research::normalize_mcp_search(search, raw, &query, screening) {
-                            Ok(normalized) => {
-                                normalized_count = Some(normalized.result_count);
-                                result = Ok(normalized.report);
+                        }
+                        Some(DeclaredSearchOutcome::Failed(_)) => {
+                            result = Err(format!(
+                                "{} provider declared search failure; raw candidates were withheld",
+                                search.provider_id
+                            ));
+                        }
+                        None => {
+                            let query = search.query_from(&arguments);
+                            match research::normalize_mcp_search(search, raw, &query, screening) {
+                                Ok(normalized) => {
+                                    normalized_count = Some(normalized.result_count);
+                                    result = Ok(normalized.report);
+                                }
+                                Err(error) => result = Err(error),
                             }
-                            Err(error) => result = Err(error),
                         }
                     }
-                }
                 }
             }
             if let (Some(search), Some(scope)) = (search, scope.as_ref()) {

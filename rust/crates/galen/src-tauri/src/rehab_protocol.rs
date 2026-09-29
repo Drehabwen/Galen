@@ -188,9 +188,11 @@ mod tests {
 
     #[test]
     fn flags_unit_mismatch_and_excluded_estimate() {
-        assert!(!resolve_metric("rom_knee_flexion_left", "cm")
-            .unwrap()
-            .unit_matches);
+        assert!(
+            !resolve_metric("rom_knee_flexion_left", "cm")
+                .unwrap()
+                .unit_matches
+        );
         assert_eq!(
             resolve_metric("adams_cobbAngleEstimate", "deg")
                 .unwrap()

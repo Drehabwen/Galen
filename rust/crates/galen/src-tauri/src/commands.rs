@@ -10,9 +10,9 @@ use crate::runtime_manager::{self, McpServerStatus, RuntimeStatus};
 use crate::workspace::WorkspaceConfig;
 use medical_core::clinical::ClinicalCaseInput;
 
-pub mod rehab;
 pub mod memory;
 pub mod models;
+pub mod rehab;
 pub mod research;
 pub mod workspace;
 

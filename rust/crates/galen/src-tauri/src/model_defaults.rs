@@ -19,7 +19,10 @@ fn model_entry(api_key: &str, model_id: &str, description: &str) -> toml::Value 
         "base_url".into(),
         toml::Value::String(DEFAULT_DEEPSEEK_BASE_URL.into()),
     );
-    entry.insert("description".into(), toml::Value::String(description.into()));
+    entry.insert(
+        "description".into(),
+        toml::Value::String(description.into()),
+    );
     entry.insert("max_tokens".into(), toml::Value::Integer(32_768));
     toml::Value::Table(entry)
 }
@@ -36,7 +39,10 @@ pub fn default_models_toml(api_key: &str, default_model: Option<&str>) -> Result
 
     let mut router = toml::Table::new();
     router.insert("default".into(), toml::Value::String(default_model.into()));
-    router.insert("fast".into(), toml::Value::String(DEFAULT_FAST_MODEL.into()));
+    router.insert(
+        "fast".into(),
+        toml::Value::String(DEFAULT_FAST_MODEL.into()),
+    );
     router.insert(
         "analysis".into(),
         toml::Value::String(DEFAULT_ANALYSIS_MODEL.into()),
@@ -45,11 +51,19 @@ pub fn default_models_toml(api_key: &str, default_model: Option<&str>) -> Result
     let mut models = toml::Table::new();
     models.insert(
         DEFAULT_ANALYSIS_MODEL.into(),
-        model_entry(api_key, DEFAULT_ANALYSIS_MODEL, "DeepSeek V4 Pro（深度研究）"),
+        model_entry(
+            api_key,
+            DEFAULT_ANALYSIS_MODEL,
+            "DeepSeek V4 Pro（深度研究）",
+        ),
     );
     models.insert(
         DEFAULT_FAST_MODEL.into(),
-        model_entry(api_key, DEFAULT_FAST_MODEL, "DeepSeek V4 Flash（默认，快速）"),
+        model_entry(
+            api_key,
+            DEFAULT_FAST_MODEL,
+            "DeepSeek V4 Flash（默认，快速）",
+        ),
     );
 
     let mut root = toml::Table::new();

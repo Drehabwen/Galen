@@ -162,7 +162,7 @@ pub(crate) fn augment_mcp_search_definition(
             .or_insert_with(|| json!({}))
             .as_object_mut();
         if let Some(properties) = properties {
-        properties.insert(
+            properties.insert(
             GALEN_SCREENING_FIELD.to_string(),
             json!({
                 "type": "object",
@@ -262,7 +262,9 @@ fn parse_concept_groups(value: Option<&Value>) -> Result<Vec<ConceptGroup>, Stri
                 .ok_or("every screening concept needs a label")?;
             let terms = parse_string_values(group.get("terms"))?;
             if terms.is_empty() {
-                return Err(format!("screening concept '{label}' needs at least one term"));
+                return Err(format!(
+                    "screening concept '{label}' needs at least one term"
+                ));
             }
             Ok(ConceptGroup {
                 label: label.to_string(),
@@ -494,10 +496,7 @@ fn normalize_candidate(
         &sources,
         &["title", "paperTitle", "paper_title", "题名", "标题"],
     )?;
-    let abstract_text = first_text(
-        &sources,
-        &["abstract", "abstractText", "summary", "摘要"],
-    );
+    let abstract_text = first_text(&sources, &["abstract", "abstractText", "summary", "摘要"]);
     let authors = first_authors(&sources);
     let year = first_year(&sources);
     let venue = first_text(
@@ -521,9 +520,8 @@ fn normalize_candidate(
         })
     });
     let url = first_text(&sources, &["url", "URL", "link", "链接"]).or_else(|| {
-        first_text(&sources, &["paperId", "paper_id"]).map(|paper_id| {
-            format!("https://www.semanticscholar.org/paper/{paper_id}")
-        })
+        first_text(&sources, &["paperId", "paper_id"])
+            .map(|paper_id| format!("https://www.semanticscholar.org/paper/{paper_id}"))
     });
     let publication_types = first_string_list(
         &sources,
@@ -581,7 +579,10 @@ fn first_authors(sources: &[&Value]) -> Vec<String> {
         else {
             continue;
         };
-        let values = value.as_array().cloned().unwrap_or_else(|| vec![value.clone()]);
+        let values = value
+            .as_array()
+            .cloned()
+            .unwrap_or_else(|| vec![value.clone()]);
         let authors = values
             .iter()
             .filter_map(|author| match author {
@@ -617,7 +618,12 @@ fn first_year(sources: &[&Value]) -> Option<String> {
         return Some(year);
     }
     for source in sources {
-        for key in ["published", "publicationDate", "publication_date", "发表时间"] {
+        for key in [
+            "published",
+            "publicationDate",
+            "publication_date",
+            "发表时间",
+        ] {
             let Some(value) = source.get(key) else {
                 continue;
             };
@@ -703,8 +709,8 @@ fn candidate_searchable(candidate: &LiteratureCandidate) -> String {
 
 fn lexical_terms(question: &str) -> Vec<String> {
     const STOP_WORDS: &[&str] = &[
-        "and", "or", "not", "the", "with", "for", "from", "after", "before", "study",
-        "research", "paper", "evidence",
+        "and", "or", "not", "the", "with", "for", "from", "after", "before", "study", "research",
+        "paper", "evidence",
     ];
     let mut terms = normalize_text(question)
         .split_whitespace()
@@ -857,7 +863,13 @@ fn render_normalized_search(
         let authors = if candidate.authors.is_empty() {
             "作者未提供".to_string()
         } else {
-            candidate.authors.iter().take(4).cloned().collect::<Vec<_>>().join("、")
+            candidate
+                .authors
+                .iter()
+                .take(4)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("、")
         };
         let mut entry = format!(
             "[{}；词项覆盖 {} / 100]\n  {}\n  {} — {}（{}）\n  筛查依据：{}\n  摘要线索：{}",
@@ -1029,16 +1041,16 @@ impl GalenTool for UpdateResearchContext {
     }
 
     async fn execute(&self, input: Value, ctx: &ToolContext) -> Result<String, String> {
-        let patch: crate::research_task::ActiveResearchContext =
-            serde_json::from_value(input).map_err(|error| format!("context patch invalid: {error}"))?;
+        let patch: crate::research_task::ActiveResearchContext = serde_json::from_value(input)
+            .map_err(|error| format!("context patch invalid: {error}"))?;
         let root = ctx
             .workspace_root
             .lock()
             .map_err(|error| format!("workspace lock failed: {error}"))?
             .clone()
             .ok_or("workspace is not selected")?;
-        let current = crate::research_task::load_active_task(&root)?
-            .ok_or("no active research task")?;
+        let current =
+            crate::research_task::load_active_task(&root)?.ok_or("no active research task")?;
         let task = crate::research_task::update_active_context(
             &root,
             &current.task_id,
@@ -1054,7 +1066,8 @@ impl GalenTool for UpdateResearchContext {
             json!({"revision": task.revision, "activeContext": task.active_context}),
         )?;
         ctx.send_event(ChatEvent::ResearchTaskUpdated(task.clone()));
-        serde_json::to_string(&task).map_err(|error| format!("context update serialization failed: {error}"))
+        serde_json::to_string(&task)
+            .map_err(|error| format!("context update serialization failed: {error}"))
     }
 }
 
@@ -1142,7 +1155,10 @@ mod search_catalog_tests {
             search,
             &raw,
             "robot assisted gait training",
-            &screening("population: spinal cord injury", &["spinal cord injury", "SCI"]),
+            &screening(
+                "population: spinal cord injury",
+                &["spinal cord injury", "SCI"],
+            ),
         )
         .unwrap();
 
@@ -1154,11 +1170,8 @@ mod search_catalog_tests {
 
     #[test]
     fn semantic_scholar_and_cnki_aliases_normalize_to_the_same_report_contract() {
-        let semantic = recognized_mcp_search(
-            "semantic-scholar",
-            "semantic_scholar_search_papers",
-        )
-        .unwrap();
+        let semantic =
+            recognized_mcp_search("semantic-scholar", "semantic_scholar_search_papers").unwrap();
         let semantic_raw = json!({
             "content": [{"type": "text", "text": serde_json::to_string(&json!({
                 "data": [{

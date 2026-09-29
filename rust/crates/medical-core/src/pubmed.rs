@@ -477,10 +477,7 @@ mod tests {
 
         let papers = parse_pubmed_xml(xml).unwrap();
         assert_eq!(papers.len(), 1);
-        assert_eq!(
-            papers[0].title,
-            "Effects of robot-assisted gait training"
-        );
+        assert_eq!(papers[0].title, "Effects of robot-assisted gait training");
         assert_eq!(
             papers[0].abstract_text.as_deref(),
             Some("BACKGROUND: Earlier evidence.\nMETHODS: Adults with stroke were enrolled.\nRESULTS: Walking speed improved.")

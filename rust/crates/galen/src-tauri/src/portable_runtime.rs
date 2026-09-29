@@ -40,8 +40,7 @@ pub fn runtime_dir() -> Option<PathBuf> {
 
 pub fn ensure() -> Result<PathBuf, String> {
     let dir = runtime_dir().ok_or_else(|| "无法定位 Windows 用户数据目录".to_string())?;
-    fs::create_dir_all(&dir)
-        .map_err(|error| format!("无法创建 Galen 便携运行时目录：{error}"))?;
+    fs::create_dir_all(&dir).map_err(|error| format!("无法创建 Galen 便携运行时目录：{error}"))?;
 
     install(&dir, "typst.exe", &TYPST, TYPST_SIZE)?;
     install(&dir, "deno.exe", &DENO, DENO_SIZE)?;
@@ -64,8 +63,8 @@ fn install(dir: &Path, name: &str, payload: &IFlate, expected_size: u64) -> Resu
         return Err(format!("内置运行时 {name} 校验失败"));
     }
 
-    let mut file = fs::File::create(&temporary)
-        .map_err(|error| format!("无法释放 {name}：{error}"))?;
+    let mut file =
+        fs::File::create(&temporary).map_err(|error| format!("无法释放 {name}：{error}"))?;
     file.write_all(&decoded)
         .and_then(|_| file.sync_all())
         .map_err(|error| format!("无法写入 {name}：{error}"))?;

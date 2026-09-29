@@ -1837,8 +1837,7 @@ fn is_previewable(path: &Path) -> bool {
         .is_some_and(|extension| {
             matches!(
                 extension.to_ascii_lowercase().as_str(),
-                "md"
-                    | "txt"
+                "md" | "txt"
                     | "csv"
                     | "tsv"
                     | "json"
@@ -2052,10 +2051,8 @@ mod tests {
         let mut summary = summary();
         summary.ttfr_ms = Some(200);
         summary.total_ms = 500;
-        let workspace = std::env::temp_dir().join(format!(
-            "galen-eval-latency-{}",
-            std::process::id()
-        ));
+        let workspace =
+            std::env::temp_dir().join(format!("galen-eval-latency-{}", std::process::id()));
         std::fs::create_dir_all(&workspace).unwrap();
         let record = RunRecord::evaluate(
             &case,

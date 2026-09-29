@@ -423,28 +423,28 @@ fn infer_interaction_mode(text: &str) -> InteractionMode {
         "不要调用工具",
         "不调用工具",
     ]
-            .iter()
-            .any(|needle| text.contains(needle))
+    .iter()
+    .any(|needle| text.contains(needle))
     {
         InteractionMode::Discuss
     } else if ["只读", "不要修改", "先不要写"]
-            .iter()
-            .any(|needle| text.contains(needle))
+        .iter()
+        .any(|needle| text.contains(needle))
     {
         InteractionMode::Inspect
     } else if ["先读取", "先扫描"]
+        .iter()
+        .any(|needle| text.contains(needle))
+        && !["写入", "写进", "保存到", "生成文件", "write_file"]
             .iter()
             .any(|needle| text.contains(needle))
-            && !["写入", "写进", "保存到", "生成文件", "write_file"]
-                .iter()
-                .any(|needle| text.contains(needle))
     {
         // 「先读取」是弱信号：若本轮同时要求写产物（如"读取…并写入…"），
         // 保持 Execute，交给产物契约分支，避免把读写任务误判为只读检查。
         InteractionMode::Inspect
     } else if ["编译验证", "验证一次", "运行测试", "跑测试", "检查构建"]
-            .iter()
-            .any(|needle| text.contains(needle))
+        .iter()
+        .any(|needle| text.contains(needle))
     {
         InteractionMode::Verify
     } else {

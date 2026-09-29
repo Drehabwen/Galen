@@ -8,9 +8,24 @@ static EXECUTION_CONTEXT_LOCK: Mutex<()> = Mutex::new(());
 
 const CONTINUATION_CUES: &[&str] = &["继续", "接着", "继续做", "继续执行", "任务不变", "可以继续"];
 const DISCUSS_CUES: &[&str] = &["先讨论", "停下来讨论", "只讨论", "先别做", "先不要做"];
-const INSPECT_CUES: &[&str] = &["先读", "先读取", "先扫描", "只读", "不要修改", "先不要写", "不要写"];
+const INSPECT_CUES: &[&str] = &[
+    "先读",
+    "先读取",
+    "先扫描",
+    "只读",
+    "不要修改",
+    "先不要写",
+    "不要写",
+];
 const VERIFY_CUES: &[&str] = &["编译验证", "验证一次", "运行测试", "跑测试", "检查构建"];
-const EXECUTE_CUES: &[&str] = &["直接做", "直接修改", "直接生成", "开始执行", "继续执行", "继续完成"];
+const EXECUTE_CUES: &[&str] = &[
+    "直接做",
+    "直接修改",
+    "直接生成",
+    "开始执行",
+    "继续执行",
+    "继续完成",
+];
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -173,10 +188,7 @@ pub(crate) fn prepare_model_message(
     update_context: bool,
 ) -> Result<String, String> {
     let _guard = lock_context()?;
-    let mut context = workspace
-        .map(load_context)
-        .transpose()?
-        .unwrap_or_default();
+    let mut context = workspace.map(load_context).transpose()?.unwrap_or_default();
     if update_context {
         context.advance(message);
         if let Some(workspace) = workspace {
@@ -210,8 +222,7 @@ fn save_context(workspace: &Path, context: &ExecutionContext) -> Result<(), Stri
             std::fs::remove_file(&backup)
                 .map_err(|error| format!("清理执行上下文备份失败: {error}"))?;
         }
-        std::fs::rename(&path, &backup)
-            .map_err(|error| format!("备份执行上下文失败: {error}"))?;
+        std::fs::rename(&path, &backup).map_err(|error| format!("备份执行上下文失败: {error}"))?;
     }
     if let Err(error) = std::fs::rename(&temporary, &path) {
         if backup.exists() {
@@ -247,13 +258,17 @@ fn infer_mode(text: &str, fallback: InteractionMode) -> InteractionMode {
 }
 
 fn update_sticky_forbidden(text: &str, forbidden: &mut Vec<String>) {
-    if contains_any(text, &["不要编译", "不要一直编译", "别编译", "无需编译", "先不编译"])
-        && !forbidden.iter().any(|action| action == "full_build")
+    if contains_any(
+        text,
+        &["不要编译", "不要一直编译", "别编译", "无需编译", "先不编译"],
+    ) && !forbidden.iter().any(|action| action == "full_build")
     {
         forbidden.push("full_build".to_string());
     }
-    if contains_any(text, &["可以编译", "允许编译", "现在编译", "开始编译", "编译验证"])
-    {
+    if contains_any(
+        text,
+        &["可以编译", "允许编译", "现在编译", "开始编译", "编译验证"],
+    ) {
         forbidden.retain(|action| action != "full_build");
     }
     if contains_any(text, &["不要生成", "别生成"])
@@ -261,8 +276,7 @@ fn update_sticky_forbidden(text: &str, forbidden: &mut Vec<String>) {
     {
         forbidden.push("generation".to_string());
     }
-    if contains_any(text, &["可以生成", "允许生成", "现在生成"])
-    {
+    if contains_any(text, &["可以生成", "允许生成", "现在生成"]) {
         forbidden.retain(|action| action != "generation");
     }
 }
@@ -277,7 +291,17 @@ fn is_continuation(text: &str) -> bool {
 fn is_correction(text: &str) -> bool {
     contains_any(
         text,
-        &["不要", "别再", "先别", "先不要", "任务不变", "我说的是", "直接", "停下来", "继续"],
+        &[
+            "不要",
+            "别再",
+            "先别",
+            "先不要",
+            "任务不变",
+            "我说的是",
+            "直接",
+            "停下来",
+            "继续",
+        ],
     )
 }
 
@@ -327,7 +351,10 @@ mod tests {
     use super::*;
 
     fn workspace(tag: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("galen-execution-context-{tag}-{}", std::process::id()))
+        std::env::temp_dir().join(format!(
+            "galen-execution-context-{tag}-{}",
+            std::process::id()
+        ))
     }
 
     #[test]
@@ -335,7 +362,8 @@ mod tests {
         let root = workspace("persist");
         let first = prepare_model_message(Some(&root), "不要一直编译，直接修改组件", true).unwrap();
         assert!(first.contains("forbidden:full_build"));
-        let internal = prepare_model_message(Some(&root), "计划已确认。请执行节点。", false).unwrap();
+        let internal =
+            prepare_model_message(Some(&root), "计划已确认。请执行节点。", false).unwrap();
         assert!(internal.contains("goal:不要一直编译，直接修改组件"));
         assert!(internal.contains("forbidden:full_build"));
         let continued = prepare_model_message(Some(&root), "继续", true).unwrap();
