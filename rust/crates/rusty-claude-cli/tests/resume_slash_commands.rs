@@ -189,7 +189,7 @@ fn resume_latest_restores_the_most_recent_managed_session() {
         .push_user_text("older session")
         .expect("older session write should succeed");
     older
-        .save_to_path(&older_path)
+        .ensure_persisted()
         .expect("older session should persist");
 
     let mut newer = workspace_session(&project_dir).with_persistence_path(&newer_path);
@@ -200,7 +200,7 @@ fn resume_latest_restores_the_most_recent_managed_session() {
         .push_user_text("resume me")
         .expect("newer session write should succeed");
     newer
-        .save_to_path(&newer_path)
+        .ensure_persisted()
         .expect("newer session should persist");
 
     // when
